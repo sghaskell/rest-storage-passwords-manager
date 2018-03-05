@@ -5,3 +5,19 @@ modtime = 1519396685.160234000
 [app/launcher]
 version = 7.0.1
 modtime = 1519396685.161522000
+
+[passwords/credential%3Aflkjl%3Abill%3A]
+owner = admin
+version = 7.0.1
+modtime = 1519400025.667213000
+
+[passwords/credential%3A%3Afoo%3A]
+owner = admin
+version = 7.0.1
+modtime = 1519400060.294874000
+
+[]
+access = read : [ * ], write : [ admin, power ]
+export = system
+version = 7.0.1
+modtime = 1519400554.232371000
