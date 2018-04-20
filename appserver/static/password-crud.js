@@ -77,9 +77,9 @@ function ($,
                 "earliest_time": "-24h@h",
                 "latest_time": "now",
                 "sample_ratio": 1,
-                "search": "| rest /services/storage/passwords \
-                           | table username, password, realm, clear_password, eai:acl.app \
-                           | rename eai:acl.app as app",
+                "search": "| rest /servicesNS/-/-/storage/passwords \
+                           | table username, password, realm, clear_password, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing \
+                           | rename eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing",
                 "app": utils.getCurrentApp(),
                 "auto_cancel": 90,
                 "preview": true,
@@ -139,6 +139,10 @@ function ($,
                             <th data-field="realm" data-sortable="true"><div><h3><h3>Realm</h3></div></th> \
                             <th data-field="app" data-sortable="true"><div><h3>App</h3></div></th> \
                             <th data-field="clear_password" data-visible="false"><div><h3>Clear Password</h3></div></th> \
+                            <th data-field="owner" data-sortable="true"><div><h3>Owner</h3></div></th> \
+                            <th data-field="acl_read" data-sortable="true"><div><h3>Read</h3></div></th> \
+                            <th data-field="acl_write" data-sortable="true"><div><h3>Write</h3></div></th> \
+                            <th data-field="acl_sharing" data-sortable="true"><div><h3>Sharing</h3></div></th> \
                         </tr> \
                       </thead> \
                       <tbody>';
@@ -154,6 +158,10 @@ function ($,
                          <td>' + row.realm + '</td> \
                          <td>' + row.app + '</td> \
                          <td>' + row.clear_password + '</td> \
+                         <td>' + row.owner + '</td> \
+                         <td>' + row.acl_read + '</td> \
+                         <td>' + row.acl_write + '</td> \
+                         <td>' + row.acl_sharing + '</td> \
                        </tr>';
         });
         
