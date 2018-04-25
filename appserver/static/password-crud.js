@@ -394,21 +394,22 @@ function ($,
                           <br></br>\
                         </div> \
                         <div class="form-group"> \
-                          <label for="appName">App Name</label> \
+                          <label for="appName">Read Users</label> \
                         </div> \
                         <div id="dropdown-container"></div> \
                     </form>';
 
         var appSearchString = "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value";
+        var userSearchString = "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value";
 
         // Remove instance of multi-dropdown if it exists
-        var appMultiDropdown = mvc.Components.get("app-multidropdown");
-        if(appMultiDropdown) {
+        var userMultiDropdown = mvc.Components.get("user-multidropdown");
+        if(userMultiDropdown) {
             console.log("removing multi");
-            appMultiDropdown.remove();
+            userMultiDropdown.remove();
         }
 
-        execSearch(appSearchString, "multi-dropdown")
+        execSearch(userSearchString, "multi-dropdown")
         .then(function(data) {
             var myModal = renderCreateModal("create-user-form",
                 "Create User",
