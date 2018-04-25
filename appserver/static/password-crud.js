@@ -6,8 +6,9 @@ require(['jquery',
         'splunkjs/mvc/utils',
         'splunkjs/mvc/tokenutils',
         'splunkjs/mvc/messages',
-        'splunkjs/mvc/searchmanager',        
-        '/static/app/TA-zenoss/Modal.js',
+        'splunkjs/mvc/searchmanager',
+        "splunkjs/mvc/multidropdownview",        
+        '/static/app/password-manager/Modal.js',
         'splunkjs/mvc/simpleform/input/dropdown',
         'splunkjs/mvc/simplexml/ready!'],
 function ($,
@@ -17,6 +18,7 @@ function ($,
           TokenUtils,
           Messages,
           SearchManager,
+          MultiDropdownView,
           Modal,
           Dropdown) {
 
@@ -35,24 +37,60 @@ function ($,
         }
     }
 
-    function renderModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
+    function execSearch(searchString, id) {
+        
+        console.log("Executing search: " + searchString);
+        var dfd = $.Deferred();
+        var searchId = "generic-search-" + id;
+        var componentExists = mvc.Components.getInstance(searchId);
+        
+        if(!componentExists) {
+            var genericSearch = new SearchManager({
+                id: searchId,
+                search: searchString,
+                cache: false
+            });
+        }
+
+        var mainSearch = splunkjs.mvc.Components.getInstance(searchId);
+        var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
+
+        mainSearch.on('search:done', function(properties) {
+
+            if(properties.content.resultCount == 0) {
+                console.log("No Results");
+                dfd.reject("No Results");
+            }
+        });
+
+        myResults.on("data", function() {
+            var data = myResults.data().results;
+            dfd.resolve(data);
+        });
+
+        return dfd.promise();
+
+    }
+
+    function renderCreateModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
         var myModal = new Modal(id, {
                     title: title,
                     destroyOnHide: true,
-                    type: 'normal'
+                    type: 'wide'
         }); 
+    
+        myModal.body.append($(body));
+    
+        return myModal;
+    }
 
-        var hold = function () {
-            if(reload == true) {
-                location.reload();
-            }
-            console.log("returning");
-            return true;
-        }
+    function renderModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
 
-        // $(myModal.$el).on("hide", function(){
-            // Not taking any action on hide, but you can if you want to!
-        // })
+        var myModal = new Modal(id, {
+                    title: title,
+                    destroyOnHide: true,
+                    type: 'wide'
+        }); 
     
         myModal.body.append($(body));
     
@@ -62,6 +100,7 @@ function ($,
         }).addClass('btn btn-primary mlts-modal-submit').text(buttonText).on('click', function () {
                 anonCallback(callback, callbackArgs); 
             }))
+
         myModal.show(); // Launch it!  
     }
 
@@ -70,6 +109,9 @@ function ($,
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
 
+        // | rest /servicesNS/-/-/authentication/users | table title | rename title as user
+        // | rest /servicesNS/-/-/apps/local | table title, label | rename title as app_name, label as app_description
+        
         var search1 = new SearchManager({
                 "id": "search1",
                 "cancelOnUnload": true,
@@ -166,9 +208,12 @@ function ($,
         });
         
         tdHtml += "</tbody></table>";
+        //var foola = '<div id="fuck"><div id="app-multidropdown"></div></div>';
+        var foola = '<div id="fuck"></div>';
+        html += foola;
         html += tdHtml;
+
         $(tableDiv).append(html);
-        
         $(contextMenuDiv).append(contextMenu);
         $('#main-create').on('click', function () { anonCallback(renderCreateUserForm, ["",""])});
 
@@ -221,9 +266,54 @@ function ($,
     }
 
     function renderCreateUserForm(cUsername = false, cRealm = false) {
+        var getUsersAndApps = function getUsersAndApps() {
+            var dfd = $.Deferred();
+            if(!usersAndApps) {
+                var usersAndApps = new SearchManager({
+                    "id": "usersAndApps",
+                    "cancelOnUnload": true,
+                    "status_buckets": 0,
+                    "earliest_time": "-24h@h",
+                    "latest_time": "now",
+                    "sample_ratio": 1,
+                    "search": "| rest /servicesNS/-/-/authentication/users | table title | rename title as user | mvcombine user \
+                            | appendcols [| rest /servicesNS/-/-/apps/local | fields title | mvcombine title] \
+                            | appendcols [| rest /servicesNS/-/-/apps/local | fields label | mvcombine label]",
+                    "app": utils.getCurrentApp(),
+                    "auto_cancel": 90,
+                    "preview": true,
+                    "tokenDependencies": {
+                    },
+                    "runWhenTimeIsUndefined": false
+                }, {tokens: true, tokenNamespace: "submitted"});
+            }
+
+            var mainSearch = splunkjs.mvc.Components.getInstance("usersAndApps");
+            var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
+
+            mainSearch.on('search:done', function(properties) {
+                //document.getElementById("password-table").innerHTML = "";
+
+                if(properties.content.resultCount == 0) {
+                    console.log("No Results");
+                    var noData = null;
+                    //createTable(passwordTableDiv, contextMenuDiv, noData);
+                }
+            });
+
+            myResults.on("data", function() {
+                var data = myResults.data().results;
+                //console.log(data);
+                dfd.resolve(data);
+            });
+
+            return dfd.promise();
+        }
+
         var createUser = function createUser() {
             event.preventDefault();
-            console.log(cUsername + cRealm);
+            console.log(cUsername + cRealm + multiComponent);
+            console.log(multiComponent.val());
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
             var confirmPassword = $('input[id=createConfirmPassword]').val();
@@ -303,14 +393,51 @@ function ($,
                           <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
                           <br></br>\
                         </div> \
-                      </form>'
+                        <div class="form-group"> \
+                          <label for="appName">App Name</label> \
+                        </div> \
+                        <div id="dropdown-container"></div> \
+                    </form>';
 
-        renderModal("create-user-form",
-            "Create User",
-            html,
-            "Create",
-            createUser,
-            [cUsername, cRealm]);
+        var appSearchString = "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value";
+
+        // Remove instance of multi-dropdown if it exists
+        var appMultiDropdown = mvc.Components.get("app-multidropdown");
+        if(appMultiDropdown) {
+            console.log("removing multi");
+            appMultiDropdown.remove();
+        }
+
+        execSearch(appSearchString, "multi-dropdown")
+        .then(function(data) {
+            var myModal = renderCreateModal("create-user-form",
+                "Create User",
+                html);
+            myModal.show();
+
+            return {"data": data, "modal":myModal};
+        })
+        .done(function(res) {
+            console.log("creating NEW multi");
+            var componentId = "app-multidropdown";
+            setTimeout(function () {
+                var multiComponent = this.multiComponent = new MultiDropdownView({
+                    id: componentId,
+                    choices: res.data,
+                    labelField: "label",
+                    valueField: "value",
+                    width: 500,
+                    el: $('#dropdown-container')
+                }).render();
+
+                res.modal.footer.append($('<button>').attr({
+                    type: 'button',
+                    'data-dismiss': 'modal'
+                }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
+                        anonCallback(createUser, [cUsername, cRealm, multiComponent]); 
+                    }))
+            }, 500);
+        });
     
         setTimeout(function () {
             //if(cUsername != "" || (cUsername != "" && cRealm != "")) {
