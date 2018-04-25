@@ -44,7 +44,11 @@ define(['underscore'], function (_) {
 
             this.footer = $('<div>').addClass('modal-footer');
 
-            this.$el = $('<div>').addClass('modal hid fade mlts-modal').attr('id', modalId).append($('<div>').addClass('modal-dialog').append($('<div>').addClass('modal-content').append(header.append(headerCloseButton, this.title), this.body, this.footer)));
+            // Multiselect can grow large and step over footer causing issues clicking button in footer
+            this.footer.css('position', 'relative');
+            this.footer.css('z-index', 1);
+
+            this.$el = $('<div>').addClass('modal hide fade mlts-modal').attr('id', modalId).append($('<div>').addClass('modal-dialog').append($('<div>').addClass('modal-content').append(header.append(headerCloseButton, this.title), this.body, this.footer)));
 
             if (modalOptions.title != null) this.setTitle(modalOptions.title);
 
