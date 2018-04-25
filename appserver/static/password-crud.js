@@ -208,9 +208,6 @@ function ($,
         });
         
         tdHtml += "</tbody></table>";
-        //var foola = '<div id="fuck"><div id="app-multidropdown"></div></div>';
-        var foola = '<div id="fuck"></div>';
-        html += foola;
         html += tdHtml;
 
         $(tableDiv).append(html);
@@ -427,7 +424,7 @@ function ($,
                     choices: res.data,
                     labelField: "label",
                     valueField: "value",
-                    width: 500,
+                    width: 200,
                     el: $('#dropdown-container')
                 }).render();
 
