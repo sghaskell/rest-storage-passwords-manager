@@ -7,7 +7,8 @@ require(['jquery',
         'splunkjs/mvc/tokenutils',
         'splunkjs/mvc/messages',
         'splunkjs/mvc/searchmanager',
-        "splunkjs/mvc/multidropdownview",        
+        'splunkjs/mvc/multidropdownview',
+        'splunkjs/mvc/dropdownview',        
         '/static/app/password-manager/Modal.js',
         'splunkjs/mvc/simpleform/input/dropdown',
         'splunkjs/mvc/simplexml/ready!'],
@@ -19,6 +20,7 @@ function ($,
           Messages,
           SearchManager,
           MultiDropdownView,
+          DropdownView,
           Modal,
           Dropdown) {
 
@@ -391,22 +393,47 @@ function ($,
                           <br></br>\
                         </div> \
                         <div class="form-group"> \
-                          <label for="appName">Read Users</label> \
+                          <label for="readUsers">Read Users</label> \
+                          <div id="read-user-multi"></div> \
                         </div> \
-                        <div id="dropdown-container"></div> \
+                        <div class="form-group"> \
+                          <label for="writeUsers">Write Users</label> \
+                          <div id="write-user-multi"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                          <label for="appScope">App Scope</label> \
+                          <div id="app-scope-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                          <label for="sharing">Sharing</label> \
+                          <div id="sharing-dropdown"></div> \
+                        </div> \
                     </form>';
 
-        var appSearchString = "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value";
-        var userSearchString = "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value";
+        var splunkJsInputs = [{"id": "app-scope-dropdown",
+                               "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                               "el": "#app-scope-dropdown"},
+                               {"id": "read-user-multi",
+                               "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                               "el": "#read-user-multi"},
+                               {"id": "write-user-multi",
+                               "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                               "el": "#write-user-multi"},
+                               {"id": "sharing-dropdown",
+                               "searchString": null,
+                               "el": "#sharing-dropdown"}];        
 
-        // Remove instance of multi-dropdown if it exists
-        var userMultiDropdown = mvc.Components.get("user-multidropdown");
-        if(userMultiDropdown) {
-            console.log("removing multi");
-            userMultiDropdown.remove();
-        }
+        // Remove component if it exists
+        _.each(splunkJsInputs, function(input, i) {
+            var splunkJsComponent = mvc.Components.get(input.id);
+            if(splunkJsComponent) {
+                splunkJsComponent.remove();
+            }
+        });
 
-        execSearch(userSearchString, "multi-dropdown")
+        var readUserMulti = _.findWhere(splunkJsInputs, {"id": "read-user-multi"});
+
+        execSearch(readUserMulti.searchString, readUserMulti.id)
         .then(function(data) {
             var myModal = renderCreateModal("create-user-form",
                 "Create User",
@@ -416,18 +443,18 @@ function ($,
             return {"data": data, "modal":myModal};
         })
         .done(function(res) {
-            console.log("creating NEW multi");
-            var componentId = "user-multidropdown";
+            //var componentId = "user-multidropdown";
             setTimeout(function () {
                 var multiComponent = this.multiComponent = new MultiDropdownView({
-                    id: componentId,
+                    id: readUserMulti.id,
                     choices: res.data,
                     labelField: "label",
                     valueField: "value",
                     width: 350,
-                    el: $('#dropdown-container')
+                    el: $(readUserMulti.el)
                 }).render();
 
+                // Register callback to create user
                 res.modal.footer.append($('<button>').attr({
                     type: 'button',
                     'data-dismiss': 'modal'
@@ -438,7 +465,6 @@ function ($,
         });
     
         setTimeout(function () {
-            //if(cUsername != "" || (cUsername != "" && cRealm != "")) {
             if(cUsername != "" || cRealm != "") {
                 $('input[id=createUsername]').val(cUsername);
                 $('input[id=createRealm]').val(cRealm);
