@@ -39,6 +39,54 @@ function ($,
         }
     }
 
+    function execMultiSearch(components) {
+        var dfd = $.Deferred();
+        var splunkJsComponents = [];
+
+        _.each(components, function(component, i) {
+            // Skip components that have static choices
+            if(_.has(component, "choices")) {
+                console.log("Skipping component with choices");
+                console.log(component);
+                splunkJsComponents.push(component);
+                return; 
+            }
+
+            console.log("Executing search: " + component.searchString);
+            var searchId = "generic-search-" + component.id;
+            var componentExists = mvc.Components.getInstance(searchId);
+            
+            if(!componentExists) {
+                var genericSearch = new SearchManager({
+                    id: searchId,
+                    search: component.searchString,
+                    cache: false
+                });
+            }
+    
+            var mainSearch = splunkjs.mvc.Components.getInstance(searchId);
+            var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
+    
+            mainSearch.on('search:done', function(properties) {
+    
+                if(properties.content.resultCount == 0) {
+                    console.log("No Results");
+                    //dfd.reject("No Results");
+                }
+            });
+    
+            myResults.on("data", function() {
+                var data = myResults.data().results;
+                component.data = data;
+                splunkJsComponents.push(component);
+            });
+        });
+
+        dfd.resolve(splunkJsComponents)
+        return dfd.promise();
+
+    }
+
     function execSearch(searchString, id) {
         
         console.log("Executing search: " + searchString);
@@ -311,8 +359,9 @@ function ($,
 
         var createUser = function createUser() {
             event.preventDefault();
-            console.log(cUsername + cRealm + multiComponent);
-            console.log(multiComponent.val());
+            console.log(arguments);
+            //console.log(cUsername + cRealm + components);
+            console.log(_.findWhere(arguments[2], {"id": "read-user-multi"}).instance.val());
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
             var confirmPassword = $('input[id=createConfirmPassword]').val();
@@ -393,6 +442,10 @@ function ($,
                           <br></br>\
                         </div> \
                         <div class="form-group"> \
+                          <label for="owner">Owner</label> \
+                          <div id="owner-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
                           <label for="readUsers">Read Users</label> \
                           <div id="read-user-multi"></div> \
                         </div> \
@@ -412,16 +465,27 @@ function ($,
 
         var splunkJsInputs = [{"id": "app-scope-dropdown",
                                "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
-                               "el": "#app-scope-dropdown"},
+                               "el": "#app-scope-dropdown",
+                               "type": "dropdown"},
                                {"id": "read-user-multi",
                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                               "el": "#read-user-multi"},
+                               "el": "#read-user-multi",
+                               "type": "multi-dropdown"},
                                {"id": "write-user-multi",
                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                               "el": "#write-user-multi"},
+                               "el": "#write-user-multi",
+                               "type": "multi-dropdown"},
                                {"id": "sharing-dropdown",
                                "searchString": null,
-                               "el": "#sharing-dropdown"}];        
+                               "choices": [{"label":"global", "value": "global"},
+                                           {"label":"app", "value": "app"},
+                                           {"label":"private", "value": "private"}],
+                               "el": "#sharing-dropdown",
+                               "type": "dropdown"},
+                               {"id": "owner-dropdown",
+                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                                "el": "#owner-dropdown",
+                                "type": "dropdown"}];        
 
         // Remove component if it exists
         _.each(splunkJsInputs, function(input, i) {
@@ -430,38 +494,52 @@ function ($,
                 splunkJsComponent.remove();
             }
         });
-
-        var readUserMulti = _.findWhere(splunkJsInputs, {"id": "read-user-multi"});
-
-        execSearch(readUserMulti.searchString, readUserMulti.id)
-        .then(function(data) {
+            
+        execMultiSearch(splunkJsInputs)
+        .then(function(splunkJsComponents) {
             var myModal = renderCreateModal("create-user-form",
                 "Create User",
                 html);
             myModal.show();
 
-            return {"data": data, "modal":myModal};
+            console.log("DATA: SplunkJS Components");
+            console.log(splunkJsComponents);
+
+            return {"components": splunkJsComponents, "modal":myModal};
         })
         .done(function(res) {
-            //var componentId = "user-multidropdown";
             setTimeout(function () {
-                var multiComponent = this.multiComponent = new MultiDropdownView({
-                    id: readUserMulti.id,
-                    choices: res.data,
-                    labelField: "label",
-                    valueField: "value",
-                    width: 350,
-                    el: $(readUserMulti.el)
-                }).render();
+                _.each(res.components, function(component, i) {
+                    var choices = _.has(component, "data") ? component.data:component.choices;
 
-                // Register callback to create user
-                res.modal.footer.append($('<button>').attr({
-                    type: 'button',
-                    'data-dismiss': 'modal'
-                }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
-                        anonCallback(createUser, [cUsername, cRealm, multiComponent]); 
-                    }))
-            }, 500);
+                    if(component.type == "dropdown") {
+                        component.instance = new DropdownView({
+                            id: component.id,
+                            choices: choices,
+                            labelField: "label",
+                            valueField: "value",
+                            el: $(component.el)
+                        }).render();
+                    } else {
+                        component.instance = new MultiDropdownView({
+                            id: component.id,
+                            choices: choices,
+                            labelField: "label",
+                            valueField: "value",
+                            width: 350,
+                            el: $(component.el)
+                        }).render();
+                    }
+                })
+            }, 700);
+
+            // Register callback to create user
+            res.modal.footer.append($('<button>').attr({
+                type: 'button',
+                'data-dismiss': 'modal'
+            }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
+                    anonCallback(createUser, [cUsername, cRealm, res.components]); 
+                }))
         });
     
         setTimeout(function () {
