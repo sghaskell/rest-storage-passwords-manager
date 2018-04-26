@@ -470,7 +470,8 @@ function ($,
                                {"id": "read-user-multi",
                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
                                "el": "#read-user-multi",
-                               "type": "multi-dropdown"},
+                               "type": "multi-dropdown",
+                               "default": "*"},
                                {"id": "write-user-multi",
                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
                                "el": "#write-user-multi",
@@ -479,7 +480,7 @@ function ($,
                                "searchString": null,
                                "choices": [{"label":"global", "value": "global"},
                                            {"label":"app", "value": "app"},
-                                           {"label":"private", "value": "private"}],
+                                           {"label":"user", "value": "user"}],
                                "el": "#sharing-dropdown",
                                "type": "dropdown"},
                                {"id": "owner-dropdown",
@@ -521,12 +522,16 @@ function ($,
                             el: $(component.el)
                         }).render();
                     } else {
+                        if(component.id == "read-user-multi") {
+                            choices.unshift({"label":"*", "value":"*"});
+                        }
                         component.instance = new MultiDropdownView({
                             id: component.id,
                             choices: choices,
                             labelField: "label",
                             valueField: "value",
                             width: 350,
+                            default: _.has(component, "default") ? component.default:null,
                             el: $(component.el)
                         }).render();
                     }
