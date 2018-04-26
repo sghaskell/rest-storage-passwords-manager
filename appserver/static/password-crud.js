@@ -417,14 +417,14 @@ function ($,
         })
         .done(function(res) {
             console.log("creating NEW multi");
-            var componentId = "app-multidropdown";
+            var componentId = "user-multidropdown";
             setTimeout(function () {
                 var multiComponent = this.multiComponent = new MultiDropdownView({
                     id: componentId,
                     choices: res.data,
                     labelField: "label",
                     valueField: "value",
-                    width: 200,
+                    width: 350,
                     el: $('#dropdown-container')
                 }).render();
 
