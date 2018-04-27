@@ -39,65 +39,65 @@ function ($,
         }
     }
 
+    // Wrapper to execute multiple searches in order and resolve when they've all finished
+    function all(array){
+        console.log("Array");
+        console.log(array);
+        var deferred = $.Deferred();
+        var fulfilled = 0, length = array.length;
+        var results = [];
+    
+        if (length === 0) {
+            deferred.resolve(results);
+        } else {
+            _.each(array, function(promise, i){
+                $.when(promise()).then(function(value) {
+                    results[i] = value;
+                    fulfilled++;
+                    if(fulfilled === length){
+                        deferred.resolve(results);
+                    }
+                });
+            });
+        }
+    
+        return deferred.promise();
+    };
+
     function execMultiSearch(components) {
         var dfd = $.Deferred();
         var splunkJsComponents = [];
 
-        _.each(components, function(component, i) {
-            // Skip components that have static choices
-            if(_.has(component, "choices")) {
-                console.log("Skipping component with choices");
-                console.log(component);
-                splunkJsComponents.push(component);
-                return; 
-            }
+        // push individual searches
+        var promises = [];
 
-            console.log("Executing search: " + component.searchString);
-            var searchId = "generic-search-" + component.id;
-            var componentExists = mvc.Components.getInstance(searchId);
-            
-            if(!componentExists) {
-                var genericSearch = new SearchManager({
-                    id: searchId,
-                    search: component.searchString,
-                    cache: false
-                });
-            }
-    
-            var mainSearch = splunkjs.mvc.Components.getInstance(searchId);
-            var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
-    
-            mainSearch.on('search:done', function(properties) {
-    
-                if(properties.content.resultCount == 0) {
-                    console.log("No Results");
-                    //dfd.reject("No Results");
-                }
-            });
-    
-            myResults.on("data", function() {
-                var data = myResults.data().results;
-                component.data = data;
-                splunkJsComponents.push(component);
-            });
+        _.each(components, function(component, i) {
+            promises.push(function() {
+                return execSearch(component);
+            });    
         });
 
-        dfd.resolve(splunkJsComponents)
+        // 
+        $.when(all(promises)).then(function(components) {
+            dfd.resolve(components);
+        });
+        
         return dfd.promise();
-
     }
 
-    function execSearch(searchString, id) {
-        
-        console.log("Executing search: " + searchString);
+    function execSearch(component) {
         var dfd = $.Deferred();
-        var searchId = "generic-search-" + id;
+        if(!component.searchString) {
+            dfd.resolve(component);
+        }
+
+        var searchId = "generic-search-" + component.id;
         var componentExists = mvc.Components.getInstance(searchId);
         
         if(!componentExists) {
             var genericSearch = new SearchManager({
                 id: searchId,
-                search: searchString,
+                search: component.searchString,
                 cache: false
             });
         }
@@ -109,17 +109,17 @@ function ($,
 
             if(properties.content.resultCount == 0) {
                 console.log("No Results");
-                dfd.reject("No Results");
+                //dfd.reject("No Results");
             }
         });
 
         myResults.on("data", function() {
             var data = myResults.data().results;
-            dfd.resolve(data);
+            component.data = data;
+            dfd.resolve(component);
         });
 
         return dfd.promise();
-
     }
 
     function renderCreateModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
@@ -312,6 +312,42 @@ function ($,
                                      removeUser);
     }
 
+    function waitForElAndRender(component) {        
+        if ($(component.el).length) {
+            var choices = _.has(component, "data") ? component.data:component.choices;
+            console.log("Rendering " + component.id);
+            console.log(choices);
+            console.log(component);
+
+            if(component.type == "dropdown") {
+                component.instance = new DropdownView({
+                    id: component.id,
+                    choices: choices,
+                    labelField: "label",
+                    valueField: "value",
+                    el: $(component.el)
+                }).render();                
+            } else {
+                if(component.id == "read-user-multi") {
+                    choices.unshift({"label":"*", "value":"*"});
+                }
+                component.instance = new MultiDropdownView({
+                    id: component.id,
+                    choices: choices,
+                    labelField: "label",
+                    valueField: "value",
+                    width: 350,
+                    default: _.has(component, "default") ? component.default:null,
+                    el: $(component.el)
+                }).render();                
+            }
+        } else {
+            setTimeout(function() {
+                waitForElAndRender(component);
+            }, 100);
+        }
+    }
+
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var getUsersAndApps = function getUsersAndApps() {
             var dfd = $.Deferred();
@@ -477,7 +513,6 @@ function ($,
                                "el": "#write-user-multi",
                                "type": "multi-dropdown"},
                                {"id": "sharing-dropdown",
-                               "searchString": null,
                                "choices": [{"label":"global", "value": "global"},
                                            {"label":"app", "value": "app"},
                                            {"label":"user", "value": "user"}],
@@ -495,55 +530,25 @@ function ($,
                 splunkJsComponent.remove();
             }
         });
-            
-        execMultiSearch(splunkJsInputs)
-        .then(function(splunkJsComponents) {
-            var myModal = renderCreateModal("create-user-form",
-                "Create User",
-                html);
-            myModal.show();
 
-            console.log("DATA: SplunkJS Components");
-            console.log(splunkJsComponents);
+        // Create and show modal
+        var myModal = renderCreateModal("create-user-form",
+                                        "Create User",
+                                        html);
+        myModal.show();
 
-            return {"components": splunkJsComponents, "modal":myModal};
-        })
-        .done(function(res) {
-            setTimeout(function () {
-                _.each(res.components, function(component, i) {
-                    var choices = _.has(component, "data") ? component.data:component.choices;
-
-                    if(component.type == "dropdown") {
-                        component.instance = new DropdownView({
-                            id: component.id,
-                            choices: choices,
-                            labelField: "label",
-                            valueField: "value",
-                            el: $(component.el)
-                        }).render();
-                    } else {
-                        if(component.id == "read-user-multi") {
-                            choices.unshift({"label":"*", "value":"*"});
-                        }
-                        component.instance = new MultiDropdownView({
-                            id: component.id,
-                            choices: choices,
-                            labelField: "label",
-                            valueField: "value",
-                            width: 350,
-                            default: _.has(component, "default") ? component.default:null,
-                            el: $(component.el)
-                        }).render();
-                    }
-                })
-            }, 700);
+        // Fire searches and render splunkJS form components to modal
+        $.when(execMultiSearch(splunkJsInputs)).done(function(components) {
+            _.each(components, function(component, i) {
+                waitForElAndRender(component);
+            });
 
             // Register callback to create user
-            res.modal.footer.append($('<button>').attr({
+            myModal.footer.append($('<button>').attr({
                 type: 'button',
                 'data-dismiss': 'modal'
             }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
-                    anonCallback(createUser, [cUsername, cRealm, res.components]); 
+                    anonCallback(createUser, [cUsername, cRealm, res]); 
                 }))
         });
     
@@ -612,7 +617,6 @@ function ($,
                     }
                 });
             }
-            //});
         }
         var html = '<form id="updateCredential"> \
                       <div class="form-group"> \
