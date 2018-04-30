@@ -72,6 +72,7 @@ function ($,
         var promises = [];
 
         _.each(components, function(component, i) {
+            console.log(component);
             promises.push(function() {
                 return execSearch(component);
             });    
@@ -87,17 +88,17 @@ function ($,
 
     function execSearch(component) {
         var dfd = $.Deferred();
-        if(!component.searchString) {
+        if(!component.config.searchString) {
             dfd.resolve(component);
         }
 
-        var searchId = "generic-search-" + component.id;
+        var searchId = "generic-search-" + component.config.id;
         var componentExists = mvc.Components.getInstance(searchId);
         
         if(!componentExists) {
             var genericSearch = new SearchManager({
                 id: searchId,
-                search: component.searchString,
+                search: component.config.searchString,
                 cache: false
             });
         }
@@ -108,14 +109,14 @@ function ($,
         mainSearch.on('search:done', function(properties) {
 
             if(properties.content.resultCount == 0) {
-                console.log("No Results");
-                //dfd.reject("No Results");
+                component.config.data = [];
+                dfd.resolve(component);
             }
         });
 
         myResults.on("data", function() {
             var data = myResults.data().results;
-            component.data = data;
+            component.config.data = data;
             dfd.resolve(component);
         });
 
@@ -153,6 +154,8 @@ function ($,
 
         myModal.show(); // Launch it!  
     }
+
+    
 
     /* Run Search */
     function runSearch() {
@@ -312,87 +315,55 @@ function ($,
                                      removeUser);
     }
 
-    function waitForElAndRender(component) {        
-        if ($(component.el).length) {
-            var choices = _.has(component, "data") ? component.data:component.choices;
-            console.log("Rendering " + component.id);
-            console.log(choices);
-            console.log(component);
+    function splunkJSInput(config) {
+        var config = this.config = config;
+        var that = this;
 
-            if(component.type == "dropdown") {
-                component.instance = new DropdownView({
-                    id: component.id,
-                    choices: choices,
-                    labelField: "label",
-                    valueField: "value",
-                    el: $(component.el)
-                }).render();                
-            } else {
-                if(component.id == "read-user-multi") {
-                    choices.unshift({"label":"*", "value":"*"});
-                }
-                component.instance = new MultiDropdownView({
-                    id: component.id,
-                    choices: choices,
-                    labelField: "label",
-                    valueField: "value",
-                    width: 350,
-                    default: _.has(component, "default") ? component.default:null,
-                    el: $(component.el)
-                }).render();                
+        this.remove = function() {
+            var splunkJsComponent = mvc.Components.get(this.config.id);
+            if(splunkJsComponent) {
+                console.log("Removing component " + this.config.id);
+                splunkJsComponent.remove();
             }
-        } else {
-            setTimeout(function() {
-                waitForElAndRender(component);
-            }, 100);
+        }
+
+        this.waitForElAndRender = function() {        
+            if ($(this.config.el).length) {
+                var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;
+                console.log("Rendering " + this.config.id);
+    
+                if(this.config.type == "dropdown") {
+                    this.config.instance = new DropdownView({
+                        id: this.config.id,
+                        choices: choices,
+                        labelField: "label",
+                        valueField: "value",
+                        el: $(this.config.el)
+                    }).render();                
+                } else {
+                    if(this.config.id == "read-user-multi") {
+                        console.log("unshifting");
+                        choices.unshift({"label":"*", "value":"*"});
+                    }
+                    this.config.instance = new MultiDropdownView({
+                        id: this.config.id,
+                        choices: choices,
+                        labelField: "label",
+                        valueField: "value",
+                        width: 350,
+                        default: _.has(this.config, "default") ? this.config.default:null,
+                        el: $(this.config.el)
+                    }).render();                
+                }
+            } else {
+                setTimeout(function() {
+                    that.waitForElAndRender();
+                }, 100);
+            }
         }
     }
 
     function renderCreateUserForm(cUsername = false, cRealm = false) {
-        var getUsersAndApps = function getUsersAndApps() {
-            var dfd = $.Deferred();
-            if(!usersAndApps) {
-                var usersAndApps = new SearchManager({
-                    "id": "usersAndApps",
-                    "cancelOnUnload": true,
-                    "status_buckets": 0,
-                    "earliest_time": "-24h@h",
-                    "latest_time": "now",
-                    "sample_ratio": 1,
-                    "search": "| rest /servicesNS/-/-/authentication/users | table title | rename title as user | mvcombine user \
-                            | appendcols [| rest /servicesNS/-/-/apps/local | fields title | mvcombine title] \
-                            | appendcols [| rest /servicesNS/-/-/apps/local | fields label | mvcombine label]",
-                    "app": utils.getCurrentApp(),
-                    "auto_cancel": 90,
-                    "preview": true,
-                    "tokenDependencies": {
-                    },
-                    "runWhenTimeIsUndefined": false
-                }, {tokens: true, tokenNamespace: "submitted"});
-            }
-
-            var mainSearch = splunkjs.mvc.Components.getInstance("usersAndApps");
-            var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
-
-            mainSearch.on('search:done', function(properties) {
-                //document.getElementById("password-table").innerHTML = "";
-
-                if(properties.content.resultCount == 0) {
-                    console.log("No Results");
-                    var noData = null;
-                    //createTable(passwordTableDiv, contextMenuDiv, noData);
-                }
-            });
-
-            myResults.on("data", function() {
-                var data = myResults.data().results;
-                //console.log(data);
-                dfd.resolve(data);
-            });
-
-            return dfd.promise();
-        }
-
         var createUser = function createUser() {
             event.preventDefault();
             console.log(arguments);
@@ -499,38 +470,58 @@ function ($,
                         </div> \
                     </form>';
 
-        var splunkJsInputs = [{"id": "app-scope-dropdown",
-                               "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
-                               "el": "#app-scope-dropdown",
-                               "type": "dropdown"},
-                               {"id": "read-user-multi",
-                               "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                               "el": "#read-user-multi",
-                               "type": "multi-dropdown",
-                               "default": "*"},
-                               {"id": "write-user-multi",
-                               "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                               "el": "#write-user-multi",
-                               "type": "multi-dropdown"},
-                               {"id": "sharing-dropdown",
-                               "choices": [{"label":"global", "value": "global"},
-                                           {"label":"app", "value": "app"},
-                                           {"label":"user", "value": "user"}],
-                               "el": "#sharing-dropdown",
-                               "type": "dropdown"},
-                               {"id": "owner-dropdown",
-                                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                                "el": "#owner-dropdown",
-                                "type": "dropdown"}];        
+        // var inputs = [{"id": "app-scope-dropdown",
+        //               "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+        //               "el": "#app-scope-dropdown",
+        //               "type": "dropdown"},
+        //               {"id": "read-user-multi",
+        //                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+        //                "el": "#read-user-multi",
+        //                "type": "multi-dropdown",
+        //                "default": "*"},
+        //               {"id": "write-user-multi",
+        //                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+        //                "el": "#write-user-multi",
+        //                "type": "multi-dropdown"},
+        //               {"id": "sharing-dropdown",
+        //                "choices": [{"label":"global", "value": "global"},
+        //                            {"label":"app", "value": "app"},
+        //                            {"label":"user", "value": "user"}],
+        //                "el": "#sharing-dropdown",
+        //                "type": "dropdown"},
+        //               {"id": "owner-dropdown",
+        //                "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+        //                "el": "#owner-dropdown",
+        //                "type": "dropdown"}]; 
+                       
+        var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
+                       "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                       "el": "#app-scope-dropdown",
+                       "type": "dropdown"}),
+                       new splunkJSInput({"id": "read-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                        "el": "#read-user-multi",
+                        "type": "multi-dropdown",
+                        "default": "*"}),
+                       new splunkJSInput({"id": "write-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                        "el": "#write-user-multi",
+                        "type": "multi-dropdown"}),
+                       new splunkJSInput({"id": "sharing-dropdown",
+                        "choices": [{"label":"global", "value": "global"},
+                                    {"label":"app", "value": "app"},
+                                    {"label":"user", "value": "user"}],
+                        "el": "#sharing-dropdown",
+                        "type": "dropdown"}),
+                       new splunkJSInput({"id": "owner-dropdown",
+                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                        "el": "#owner-dropdown",
+                        "type": "dropdown"})];
 
         // Remove component if it exists
-        _.each(splunkJsInputs, function(input, i) {
-            var splunkJsComponent = mvc.Components.get(input.id);
-            if(splunkJsComponent) {
-                splunkJsComponent.remove();
-            }
+        _.each(inputs, function(input, i) {
+            input.remove();
         });
-
         // Create and show modal
         var myModal = renderCreateModal("create-user-form",
                                         "Create User",
@@ -538,9 +529,9 @@ function ($,
         myModal.show();
 
         // Fire searches and render splunkJS form components to modal
-        $.when(execMultiSearch(splunkJsInputs)).done(function(components) {
+        $.when(execMultiSearch(inputs)).done(function(components) {
             _.each(components, function(component, i) {
-                waitForElAndRender(component);
+                component.waitForElAndRender();
             });
 
             // Register callback to create user
