@@ -361,14 +361,27 @@ function ($,
                 }, 100);
             }
         }
+
+        this.getVals = function() {
+            return this.config.instance.val();
+        }
     }
 
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
             event.preventDefault();
             console.log(arguments);
-            //console.log(cUsername + cRealm + components);
-            console.log(_.findWhere(arguments[2], {"id": "read-user-multi"}).instance.val());
+                        
+            _.find(arguments[2], function(i) {
+                console.log(i.config.id);
+                if(i.config.id == "read-user-multi") {
+                    console.log("Found read-multi-user ");
+                    console.log(i);
+                    console.log(i.getVals());
+                }
+            })
+
+            
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
             var confirmPassword = $('input[id=createConfirmPassword]').val();
@@ -515,7 +528,7 @@ function ($,
                 type: 'button',
                 'data-dismiss': 'modal'
             }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
-                    anonCallback(createUser, [cUsername, cRealm, res]); 
+                    anonCallback(createUser, [cUsername, cRealm, inputs]); 
                 }))
         });
     
