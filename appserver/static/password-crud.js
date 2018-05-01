@@ -66,7 +66,6 @@ function ($,
 
     function execMultiSearch(components) {
         var dfd = $.Deferred();
-        var splunkJsComponents = [];
 
         // push individual searches
         var promises = [];
@@ -145,12 +144,22 @@ function ($,
     
         myModal.body.append($(body));
     
+        if(id == "user-delete-confirm") {
+            myModal.footer.append($('<cancel>').attr({
+                type: 'button',
+                'data-dismiss': 'modal'
+            })
+            .addClass('btn btn-secondary').text("Cancel")).on('click', function(){});
+            //<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        }
+
         myModal.footer.append($('<button>').attr({
             type: 'button',
             'data-dismiss': 'modal'
-        }).addClass('btn btn-primary mlts-modal-submit').text(buttonText).on('click', function () {
+        })
+        .addClass('btn btn-primary').text(buttonText).on('click', function () {
                 anonCallback(callback, callbackArgs); 
-            }))
+        }))
 
         myModal.show(); // Launch it!  
     }
@@ -208,7 +217,54 @@ function ($,
 
     function createTable(tableDiv, contextMenuDiv, data) {
         var html = '<p> Click <b>Create</b> to add a user or right click on a row to create, update or delete.</p> \
-                    <p><button id="main-create" class="btn btn-primary">Create</button></p>';
+                    <p><button id="main-create" class="btn btn-primary" data-toggle="collapse" href="#create-update-form">Create</button></p> \
+                    <div id="create-update-form" class="collapse multi-collapse"> \
+                      <div id="createCredential"> \
+                       <form id="createCredential"> \
+                        <div class="form-group"> \
+                            <label for="username">Username</label> \
+                            <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="password">Password</label> \
+                            <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
+                        </div> \
+                        <div> \
+                            <label for="confirmPassword">Confirm Password</label> \
+                            <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="realm">Realm</label> \
+                            <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
+                            <br></br>\
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="owner" id="owner">Owner</label> \
+                            <div id="owner-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="readUsers" id="read-users">Read Users</label> \
+                            <div id="read-user-multi"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="writeUsers" id="write-users">Write Users</label> \
+                            <div id="write-user-multi"></div> \
+                        </div> \
+                        <div class="form-group" id="app-scope"> \
+                            <label for="appScope">App Scope</label> \
+                            <div id="app-scope-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="sharing" id="sharing">Sharing</label> \
+                            <div id="sharing-dropdown"></div> \
+                         </div> \
+                        <div id="create-credential-submit"> \
+                          <button id="create-submit" class="btn btn-primary">Submit</button> \
+                        </div> \
+                        </form> \
+                      </div> \
+                    </div>';                      
+
         var tdHtml = "";
         var contextMenu = '<ul id="example1-context-menu" class="dropdown-menu"> \
                              <li data-item="update"><a>Update</a></li> \
@@ -262,10 +318,21 @@ function ($,
         
         tdHtml += "</tbody></table>";
         html += tdHtml;
+        var formOpen = false;
 
         $(tableDiv).append(html);
         $(contextMenuDiv).append(contextMenu);
-        $('#main-create').on('click', function () { anonCallback(renderCreateUserForm, ["",""])});
+        $('#main-create').on('click', function () { 
+            if(!formOpen) {
+                $('#main-create').text("Close");
+                formOpen = true;
+            } else {
+                $('#main-create').text("Create");
+                formOpen = false;
+            }
+            
+            anonCallback(renderCreateUserForm, ["",""])
+        });
 
         $('#rest-password-table').bootstrapTable({
             contextMenu: '#example1-context-menu',
@@ -320,16 +387,21 @@ function ($,
         var that = this;
 
         this.remove = function() {
+            var el = "#" + this.config.parentEl;
             var splunkJsComponent = mvc.Components.get(this.config.id);
             if(splunkJsComponent) {
                 console.log("Removing component " + this.config.id);
                 splunkJsComponent.remove();
+                $(el).append('<div id="' + this.config.el + '"></div>');    
             }
         }
 
         this.waitForElAndRender = function() {        
-            if ($(this.config.el).length) {
-                var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;
+            var el = "#" + this.config.el;
+
+            //if ($(this.config.el).length) {
+            if ($(el).length) {
+                var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;    
                 console.log("Rendering " + this.config.id);
     
                 if(this.config.type == "dropdown") {
@@ -338,11 +410,12 @@ function ($,
                         choices: choices,
                         labelField: "label",
                         valueField: "value",
-                        el: $(this.config.el)
+                        default: _.has(this.config, "default") ? this.config.default:null,
+                        el: $(el)
                     }).render();                
+                    //});                
                 } else {
                     if(this.config.id == "read-user-multi") {
-                        console.log("unshifting");
                         choices.unshift({"label":"*", "value":"*"});
                     }
                     this.config.instance = new MultiDropdownView({
@@ -352,8 +425,9 @@ function ($,
                         valueField: "value",
                         width: 350,
                         default: _.has(this.config, "default") ? this.config.default:null,
-                        el: $(this.config.el)
-                    }).render();                
+                        el: $(el)
+                    }).render();       
+                    //});                         
                 }
             } else {
                 setTimeout(function() {
@@ -371,7 +445,7 @@ function ($,
         var createUser = function createUser() {
             event.preventDefault();
             console.log(arguments);
-                        
+
             _.find(arguments[2], function(i) {
                 console.log(i.config.id);
                 if(i.config.id == "read-user-multi") {
@@ -442,80 +516,89 @@ function ($,
             }
         }
 
-        var html = '<form id="createCredential"> \
-                        <div class="form-group"> \
-                          <label for="username">Username</label> \
-                          <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
-                        </div> \
-                        <p></p> \
-                        <div class="form-group"> \
-                          <label for="password">Password</label> \
-                          <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
-                        </div> \
-                        <div> \
-                          <label for="confirmPassword">Confirm Password</label> \
-                          <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="realm">Realm</label> \
-                          <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
-                          <br></br>\
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="owner">Owner</label> \
-                          <div id="owner-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="readUsers">Read Users</label> \
-                          <div id="read-user-multi"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="writeUsers">Write Users</label> \
-                          <div id="write-user-multi"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="appScope">App Scope</label> \
-                          <div id="app-scope-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                          <label for="sharing">Sharing</label> \
-                          <div id="sharing-dropdown"></div> \
-                        </div> \
-                    </form>';
+        // var html = '<form id="createCredential"> \
+        //                 <div class="form-group"> \
+        //                   <label for="username">Username</label> \
+        //                   <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
+        //                 </div> \
+        //                 <p></p> \
+        //                 <div class="form-group"> \
+        //                   <label for="password">Password</label> \
+        //                   <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
+        //                 </div> \
+        //                 <div> \
+        //                   <label for="confirmPassword">Confirm Password</label> \
+        //                   <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="realm">Realm</label> \
+        //                   <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
+        //                   <br></br>\
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="owner">Owner</label> \
+        //                   <div id="owner-dropdown"></div> \
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="readUsers">Read Users</label> \
+        //                   <div id="read-user-multi"></div> \
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="writeUsers">Write Users</label> \
+        //                   <div id="write-user-multi"></div> \
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="appScope">App Scope</label> \
+        //                   <div id="app-scope-dropdown"></div> \
+        //                 </div> \
+        //                 <div class="form-group"> \
+        //                   <label for="sharing">Sharing</label> \
+        //                   <div id="sharing-dropdown"></div> \
+        //                 </div> \
+        //             </form>';
 
         var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
                        "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
-                       "el": "#app-scope-dropdown",
-                       "type": "dropdown"}),
+                       "el": "app-scope-dropdown",
+                       "type": "dropdown",
+                       "default": utils.getCurrentApp(),
+                       "parentEl": "app-scope"}),
                        new splunkJSInput({"id": "read-user-multi",
-                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                        "el": "#read-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "read-user-multi",
                         "type": "multi-dropdown",
-                        "default": "*"}),
+                        "default": "*",
+                        "parentEl": "read-users"}),
                        new splunkJSInput({"id": "write-user-multi",
-                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                        "el": "#write-user-multi",
-                        "type": "multi-dropdown"}),
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "write-user-multi",
+                        "type": "multi-dropdown",
+                        "parentEl": "write-users",
+                        "default": ["admin","power"]}),
                        new splunkJSInput({"id": "sharing-dropdown",
                         "choices": [{"label":"global", "value": "global"},
                                     {"label":"app", "value": "app"},
                                     {"label":"user", "value": "user"}],
-                        "el": "#sharing-dropdown",
-                        "type": "dropdown"}),
+                        "el": "sharing-dropdown",
+                        "type": "dropdown",
+                        "parentEl": "sharing",
+                        "default": "app"}),
                        new splunkJSInput({"id": "owner-dropdown",
                         "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
-                        "el": "#owner-dropdown",
-                        "type": "dropdown"})];
+                        "el": "owner-dropdown",
+                        "type": "dropdown",
+                        "default": Splunk.util.getConfigValue("USERNAME"),
+                        "parentEl": "owner"})];
 
         // Remove component if it exists
         _.each(inputs, function(input, i) {
             input.remove();
         });
-        // Create and show modal
-        var myModal = renderCreateModal("create-user-form",
-                                        "Create User",
-                                        html);
-        myModal.show();
+        // // Create and show modal
+        // var myModal = renderCreateModal("create-user-form",
+        //                                 "Create User",
+        //                                 html);
+        // myModal.show();
 
         // Fire searches and render splunkJS form components to modal
         $.when(execMultiSearch(inputs)).done(function(components) {
@@ -523,13 +606,35 @@ function ($,
                 component.waitForElAndRender();
             });
 
+            console.log(components);
+
             // Register callback to create user
-            myModal.footer.append($('<button>').attr({
-                type: 'button',
-                'data-dismiss': 'modal'
-            }).addClass('btn btn-primary mlts-modal-submit').text("Create").on('click', function () {
+            //  $('#createCredential').append($('<button>').attr({
+            //      type: 'button',
+            //      'data-dismiss': 'modal'
+            //  }).addClass('btn btn-primary').text("Submit").on('click', function () {
+            //          anonCallback(createUser, [cUsername, cRealm, inputs]); 
+            //  }))
+            // Register callback to create user
+            
+            //console.log($._data($("#create-submit").get(0), "events"));
+
+            
+            
+            // $('#create-submit').on('click', function () {
+            //     anonCallback(createUser, [cUsername, cRealm, inputs]); 
+            // });
+
+            if(_.isUndefined($._data($("#create-submit").get(0), "events"))) {
+                console.log("Registering Create Callback");
+                $('#create-submit').on('click', function () {
                     anonCallback(createUser, [cUsername, cRealm, inputs]); 
-                }))
+                });
+            }
+
+            // _.find($._data($("#create-submit").get(0), "events"), function(o) {
+            //     console.log(o[0].type);
+            // });
         });
     
         setTimeout(function () {
