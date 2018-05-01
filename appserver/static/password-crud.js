@@ -144,13 +144,13 @@ function ($,
     
         myModal.body.append($(body));
     
-        if(id == "user-delete-confirm") {
+        // Add cancel button for update/delete action
+        if(id == "user-delete-confirm" || id == "update-user-form") {
             myModal.footer.append($('<cancel>').attr({
                 type: 'button',
                 'data-dismiss': 'modal'
             })
             .addClass('btn btn-secondary').text("Cancel")).on('click', function(){});
-            //<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
         }
 
         myModal.footer.append($('<button>').attr({
