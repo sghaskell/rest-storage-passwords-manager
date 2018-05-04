@@ -64,6 +64,17 @@ function ($,
         return deferred.promise();
     };
 
+    function isFormOpen() {
+        var formOpen = window.sessionStorage.getItem("formOpen");
+        if(_.isNull(formOpen) || _.isUndefined(formOpen) || formOpen === "false") {
+            console.log("Form not open - returning false");
+            return false;
+        } else {
+            console.log("Form is open - returning true");
+            return true;
+        }
+    }
+
     function execMultiSearch(components) {
         var dfd = $.Deferred();
 
@@ -164,6 +175,24 @@ function ($,
         myModal.show(); // Launch it!  
     }
 
+    function clearOnClickAndRegister(el, callback, callbackArgs=null) {
+        console.log($._data($(el).get(0), "events"));
+        //console.log($._data($(el).get(0), "events").click);
+        if(_.isUndefined($._data($(el).get(0), "events"))) {
+            $(el).on('click', function () {
+                anonCallback(callback, callbackArgs);
+            });
+            return;    
+        }
+
+        if(_.isObject($._data($(el).get(0), "events")) && _.has($._data($(el).get(0), "events"), "click")) {
+            console.log("Unregistering click callback");
+            $(el).off('click');
+            $(el).on('click', function () {
+                anonCallback(callback, callbackArgs);
+            });
+        }
+    }
     
 
     /* Run Search */
@@ -280,11 +309,13 @@ function ($,
                              data-sortable="true" \
                              data-page-size="10" \
                              data-page-list="[10, 25, 50, 100, ALL]" \
+                             data-id-field="id" \
                              data-smart-display="true" \
                              data-search="true" \
                              data-show-footer="false"> \
                       <thead> \
                         <tr> \
+                            <th data-field="id" data-visible="false"><div><h3>ID</h3></div></th> \
                             <th data-field="username" data-sortable="true"><div><h3>Username</h3></div></th> \
                             <th data-field="password" data-events="operateEvents"><div><h3>Password</h3></div></th> \
                             <th data-field="realm" data-sortable="true"><div><h3><h3>Realm</h3></div></th> \
@@ -300,6 +331,7 @@ function ($,
         html += header;
         _.each(data, function(row, i) {
             tdHtml += '<tr class="striped"> \
+                         <td>' + i + '</td> \
                          <td>' + row.username + '</td> \
                          <td> \
                            <a class="show" href="javascript:void(0)" title="Show Password"> \
@@ -318,17 +350,26 @@ function ($,
         
         tdHtml += "</tbody></table>";
         html += tdHtml;
-        var formOpen = false;
-
+        
         $(tableDiv).append(html);
         $(contextMenuDiv).append(contextMenu);
         $('#main-create').on('click', function () { 
-            if(!formOpen) {
+            // var formOpen = window.sessionStorage.getItem("formOpen");
+            // if(_.isUndefined(formOpen)) {
+            //     formOpen = false;
+            // }
+
+            // console.log("form open:" + formOpen);
+
+            //if(formOpen == "true") {
+            if(!isFormOpen()) {
                 $('#main-create').text("Close");
-                formOpen = true;
+                window.sessionStorage.setItem("formOpen", "true");
+                //console.log(window.sessionStorage.getItem("formOpen"));
             } else {
                 $('#main-create').text("Create");
-                formOpen = false;
+                window.sessionStorage.setItem("formOpen", "false");
+                //console.log(window.sessionStorage.getItem("formOpen"));
             }
             
             anonCallback(renderCreateUserForm, ["",""])
@@ -399,7 +440,6 @@ function ($,
         this.waitForElAndRender = function() {        
             var el = "#" + this.config.el;
 
-            //if ($(this.config.el).length) {
             if ($(el).length) {
                 var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;    
                 console.log("Rendering " + this.config.id);
@@ -412,8 +452,7 @@ function ($,
                         valueField: "value",
                         default: _.has(this.config, "default") ? this.config.default:null,
                         el: $(el)
-                    }).render();                
-                    //});                
+                    }).render();                       
                 } else {
                     if(this.config.id == "read-user-multi") {
                         choices.unshift({"label":"*", "value":"*"});
@@ -426,8 +465,7 @@ function ($,
                         width: 350,
                         default: _.has(this.config, "default") ? this.config.default:null,
                         el: $(el)
-                    }).render();       
-                    //});                         
+                    }).render();         
                 }
             } else {
                 setTimeout(function() {
@@ -594,11 +632,6 @@ function ($,
         _.each(inputs, function(input, i) {
             input.remove();
         });
-        // // Create and show modal
-        // var myModal = renderCreateModal("create-user-form",
-        //                                 "Create User",
-        //                                 html);
-        // myModal.show();
 
         // Fire searches and render splunkJS form components to modal
         $.when(execMultiSearch(inputs)).done(function(components) {
@@ -606,35 +639,7 @@ function ($,
                 component.waitForElAndRender();
             });
 
-            console.log(components);
-
-            // Register callback to create user
-            //  $('#createCredential').append($('<button>').attr({
-            //      type: 'button',
-            //      'data-dismiss': 'modal'
-            //  }).addClass('btn btn-primary').text("Submit").on('click', function () {
-            //          anonCallback(createUser, [cUsername, cRealm, inputs]); 
-            //  }))
-            // Register callback to create user
-            
-            //console.log($._data($("#create-submit").get(0), "events"));
-
-            
-            
-            // $('#create-submit').on('click', function () {
-            //     anonCallback(createUser, [cUsername, cRealm, inputs]); 
-            // });
-
-            if(_.isUndefined($._data($("#create-submit").get(0), "events"))) {
-                console.log("Registering Create Callback");
-                $('#create-submit').on('click', function () {
-                    anonCallback(createUser, [cUsername, cRealm, inputs]); 
-                });
-            }
-
-            // _.find($._data($("#create-submit").get(0), "events"), function(o) {
-            //     console.log(o[0].type);
-            // });
+            clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
         });
     
         setTimeout(function () {
@@ -703,37 +708,72 @@ function ($,
                 });
             }
         }
-        var html = '<form id="updateCredential"> \
-                      <div class="form-group"> \
-                        <input type="hidden" class="form-control" id="updateUsername"> \
-                      </div> \
-                      <p></p> \
-                      <div class="form-group"> \
-                        <label for="password">Password</label> \
-                        <input type="password" class="form-control" id="updatePassword" placeholder="Password"> \
-                      </div> \
-                      <div> \
-                        <label for="confirmPassword">Confirm Password</label> \
-                        <input type="password" class="form-control" id="updateConfirmPassword" placeholder="Confirm Password"> \
-                      </div> \
-                      <div> \
-                        <input type="hidden" class="form-control" id="updateRealm"> \
-                      </div> \
-                      <div class="form-group"> \
-                        <input type="hidden" class="form-control" id="updateApp"> \
-                      </div> \
-                    </form>'
+        // var html = '<form id="updateCredential"> \
+        //               <div class="form-group"> \
+        //                 <input type="hidden" class="form-control" id="updateUsername"> \
+        //               </div> \
+        //               <p></p> \
+        //               <div class="form-group"> \
+        //                 <label for="password">Password</label> \
+        //                 <input type="password" class="form-control" id="updatePassword" placeholder="Password"> \
+        //               </div> \
+        //               <div> \
+        //                 <label for="confirmPassword">Confirm Password</label> \
+        //                 <input type="password" class="form-control" id="updateConfirmPassword" placeholder="Confirm Password"> \
+        //               </div> \
+        //               <div> \
+        //                 <input type="hidden" class="form-control" id="updateRealm"> \
+        //               </div> \
+        //               <div class="form-group"> \
+        //                 <input type="hidden" class="form-control" id="updateApp"> \
+        //               </div> \
+        //             </form>'
 
-        renderModal("update-user-form",
-                    "Update User",
-                    html,
-                    "Update",
-                    updateUser);
+        // var randomId = 100 + ~~(Math.random() * 100);
+        // $('#rest-password-table').bootstrapTable('insertRow', {
+        //         index: 1,
+        //         row:{}
+        //     });
+
+        // renderModal("update-user-form",
+        //             "Update User",
+        //             html,
+        //             "Update",
+        //             updateUser);
+
+        if(!isFormOpen()) {
+            $('#create-update-form').collapse('show');
+            $('#main-create').text("Close");
+            window.sessionStorage.setItem("formOpen", "true");
+        } else {
+            $('#create-update-form').collapse('hide');
+            setTimeout(function() {
+                $('#create-update-form').collapse('show');
+                $('#main-create').text("Close");
+                window.sessionStorage.setItem("formOpen", "true");
+            }, 700) 
+        }
+
+        clearOnClickAndRegister('#create-submit', updateUser);
+
+        //if(formOpen == "true") {
+            // if(!isFormOpen()) {
+            //     $('#main-create').text("Close");
+            //     window.sessionStorage.setItem("formOpen", "true");
+            //     //console.log(window.sessionStorage.getItem("formOpen"));
+            // } else {
+            //     $('#main-create').text("Create");
+            //     window.sessionStorage.setItem("formOpen", "false");
+            //     //console.log(window.sessionStorage.getItem("formOpen"));
+            // }
+        
+
         
     }
 
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
+            console.log(row);
             showPassword(row);
         }
     };
