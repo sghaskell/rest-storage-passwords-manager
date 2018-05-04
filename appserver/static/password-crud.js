@@ -365,6 +365,10 @@ function ($,
             if(!isFormOpen()) {
                 $('#main-create').text("Close");
                 window.sessionStorage.setItem("formOpen", "true");
+
+                // Clear form values
+                $('input[id=createUsername]').val("");
+                $('input[id=createRealm]').val("");        
                 //console.log(window.sessionStorage.getItem("formOpen"));
             } else {
                 $('#main-create').text("Create");
@@ -651,17 +655,18 @@ function ($,
     }
 
     function renderUpdateUserForm(row) {
-        var updateUser = function updateUser () {
+        var updateUser = function updateUser (row) {
+            console.log(row);
             event.preventDefault();
-            $('input[id=updateUsername]').val(row.username);
-            $('input[id=updateRealm]').val(row.realm);
-            $('input[id=updateApp]').val(row.app);
+            // $('input[id=createUsername]').val(row.username);
+            // $('input[id=createRealm]').val(row.realm);
+            // $('input[id=createApp]').val(row.app);
 
             var username = $('input[id=updateUsername]').val();
             var password = $('input[id=updatePassword]').val();
             var confirmPassword = $('input[id=updateConfirmPassword]').val();
             var realm = $('input[id=updateRealm]').val();
-            var app = $('input[id=updateApp]').val();
+            //var app = $('input[id=updateApp]').val();
 
             var formData = {"password": password};
 
@@ -741,6 +746,8 @@ function ($,
         //             "Update",
         //             updateUser);
 
+        console.log(row);
+
         if(!isFormOpen()) {
             $('#create-update-form').collapse('show');
             $('#main-create').text("Close");
@@ -754,7 +761,59 @@ function ($,
             }, 700) 
         }
 
-        clearOnClickAndRegister('#create-submit', updateUser);
+        $('input[id=createUsername]').val(row.username);
+        $('input[id=createRealm]').val(row.realm);
+        //$('input[id=createApp]').val(row.app);
+
+        var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
+                       "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                       "el": "app-scope-dropdown",
+                       "type": "dropdown",
+                       "default": [row.app],
+                       "parentEl": "app-scope"}),
+                       new splunkJSInput({"id": "read-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "read-user-multi",
+                        "type": "multi-dropdown",
+                        "default": row.acl_read.split(','),
+                        "parentEl": "read-users"}),
+                       new splunkJSInput({"id": "write-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "write-user-multi",
+                        "type": "multi-dropdown",
+                        "parentEl": "write-users",
+                        "default": row.acl_write.split(',')}),
+                       new splunkJSInput({"id": "sharing-dropdown",
+                        "choices": [{"label":"global", "value": "global"},
+                                    {"label":"app", "value": "app"},
+                                    {"label":"user", "value": "user"}],
+                        "el": "sharing-dropdown",
+                        "type": "dropdown",
+                        "parentEl": "sharing",
+                        "default": [row.acl_sharing]}),
+                       new splunkJSInput({"id": "owner-dropdown",
+                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                        "el": "owner-dropdown",
+                        "type": "dropdown",
+                        "default": [row.owner],
+                        "parentEl": "owner"})];
+
+        // Remove component if it exists
+        _.each(inputs, function(input, i) {
+            input.remove();
+        });
+
+        // Fire searches and render splunkJS form components to modal
+        $.when(execMultiSearch(inputs)).done(function(components) {
+            _.each(components, function(component, i) {
+                component.waitForElAndRender();
+            });
+
+            //clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
+            clearOnClickAndRegister('#create-submit', updateUser, [inputs]);
+        });
+
+        
 
         //if(formOpen == "true") {
             // if(!isFormOpen()) {
