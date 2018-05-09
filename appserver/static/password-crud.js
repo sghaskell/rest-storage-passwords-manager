@@ -501,7 +501,6 @@ function ($,
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
             event.preventDefault();
-            console.log(arguments);
         
             var aclData = {};
 
@@ -509,19 +508,6 @@ function ($,
                 var aclKey = component.config.aclKey;
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
             });
-
-            console.log(aclData);
-
-            // _.each(formKeys, function(key, i) {
-            //     _.find(arguments[2], function(v) {
-            //         console.log(v.config.id);
-            //         if(v.config.id == key) {
-            //             console.log("Found read-multi-user ");
-            //             console.log(v);
-            //             console.log(v.getVals());
-            //         }
-            //     })
-            // });
 
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
@@ -544,11 +530,11 @@ function ($,
                                     renderCreateUserForm);
             }
 
-            var formData = {"name": username,
-                            "password": password,
-                            "realm": realm};
+            // Create object to POST for user creation
+            var createData = {"name": username,
+                              "password": password,
+                              "realm": realm};
 
-            console.log(password, confirmPassword);
             if(password != confirmPassword) {
                 return renderModal("password-mismatch",
                                     "Password Mismatch",
@@ -559,7 +545,8 @@ function ($,
             } else {
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
-                delete aclData.app; 
+
+                 
 
                 // Success message for final modal display
                 var successMessage = [];
@@ -569,13 +556,8 @@ function ($,
                 $.ajax({
                     type: "POST",
                     url: createUrl,
-                    data: formData,
+                    data: createData,
                     success: function() {
-                        // renderModal("user-added",
-                        //             "User Created",
-                        //             "<p>Successfully created user " + username + ":" + realm + "</p>",
-                        //             "Close",
-                        //             refreshWindow);
                         successMessage.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>")
                     },
                     error: function(e) {
@@ -587,15 +569,14 @@ function ($,
                     }
                 })
                 .then(function() {
+                    // App not a valid key for updating Splunk ACL's, remove it before posting
+                    delete aclData.app;
+
                     return $.ajax({
                         type: "POST",
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            // renderModal("user-deleted",
-                            //             "User Deleted",
-                            //             "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
-                            //             "Close") 
                             successMessage.push("<p>Successfully applied ACL's</p>")
                         },
                         error: function(e) {
@@ -732,16 +713,16 @@ function ($,
             } else {
                 var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move";
-
-                // App not a valid key for updating Splunk ACL's, remove it before posting
-                delete aclData.app; 
+                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
 
                 // Success message for final modal display
                 var successMessage = [];
                 var chainStart = null;
 
                 if(applyAcl) {
+                    // App not a valid key for updating Splunk ACL's, remove it before posting
+                    delete aclData.app;
+                    
                     chainStart = $.ajax({
                         type: "POST",
                         url: aclUrl,
