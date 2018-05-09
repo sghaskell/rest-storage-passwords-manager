@@ -197,6 +197,7 @@ function ($,
 
     /* Run Search */
     function runSearch() {
+        window.sessionStorage.setItem("formOpen", "false");
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
 
@@ -211,8 +212,15 @@ function ($,
                 "latest_time": "now",
                 "sample_ratio": 1,
                 "search": "| rest /servicesNS/-/-/storage/passwords \
-                           | table username, password, realm, clear_password, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing \
-                           | rename eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing",
+                | table username, password, realm, clear_password, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing \
+                | rename eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
+                | append [| rest /servicesNS/-/-/configs/conf-passwords \
+                    | rex field=title \"credential:(?<realm>.*?):(?<username>.*?):\" \
+                    | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm \
+                    | rename eai:userName as user, eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
+                    | eval owner=if(owner=user, owner, user) \
+                    | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing] \
+                | dedup username, realm",
                 "app": utils.getCurrentApp(),
                 "auto_cancel": 90,
                 "preview": true,
@@ -401,12 +409,12 @@ function ($,
 
     function deleteCredential(row, tableDiv) {
         var username=Splunk.util.getConfigValue("USERNAME");      
-        var url = "/en-US/splunkd/__raw/servicesNS/" + username + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
+        var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + username + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
 
         var removeUser = function () {
             $.ajax({
                 type: "DELETE",
-                url: url,
+                url: deleteUrl,
                 success: function() {
                     renderModal("user-deleted",
                                 "User Deleted",
@@ -483,21 +491,32 @@ function ($,
         }
     }
 
+
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
             event.preventDefault();
             console.log(arguments);
+        
+            var aclData = {};
 
-            _.find(arguments[2], function(i) {
-                console.log(i.config.id);
-                if(i.config.id == "read-user-multi") {
-                    console.log("Found read-multi-user ");
-                    console.log(i);
-                    console.log(i.getVals());
-                }
-            })
+            _.each(arguments[2], function(component, i) {
+                var aclKey = component.config.aclKey;
+                aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
+            });
 
-            
+            console.log(aclData);
+
+            // _.each(formKeys, function(key, i) {
+            //     _.find(arguments[2], function(v) {
+            //         console.log(v.config.id);
+            //         if(v.config.id == key) {
+            //             console.log("Found read-multi-user ");
+            //             console.log(v);
+            //             console.log(v.getVals());
+            //         }
+            //     })
+            // });
+
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
             var confirmPassword = $('input[id=createConfirmPassword]').val();
@@ -534,11 +553,17 @@ function ($,
             } else {
                 var currentUser = Splunk.util.getConfigValue("USERNAME");      
                 var app = utils.getCurrentApp();
-                var url = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + app + "/storage/passwords";
-                
+                //var createUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + app + "/storage/passwords";
+                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
+                // https://localhost:8089/servicesNS/admin/password-manager/configs/conf-passwords/credential%3A%3Afoo%3A/acl -d owner=admin -d perms.read=admin,shaskell -d sharing=app
+                delete aclData.app; 
+
+                console.log(aclData);
+
                 $.ajax({
                     type: "POST",
-                    url: url,
+                    url: createUrl,
                     data: formData,
                     success: function() {
                         renderModal("user-added",
@@ -555,6 +580,26 @@ function ($,
                                     "Close");
                     }
                 })
+                .then(function() {
+                    $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclData,
+                        success: function() {
+                            renderModal("user-deleted",
+                                        "User Deleted",
+                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
+                                        "Close") 
+                        },
+                        error: function(e) {
+                            console.log(e);
+                            renderModal("acl-update-fail",
+                                    "Failed To Apply ACL",
+                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
+                                    "Close");
+                        }
+                    })                
+                });
             }
         }
 
@@ -604,18 +649,21 @@ function ($,
                        "el": "app-scope-dropdown",
                        "type": "dropdown",
                        "default": utils.getCurrentApp(),
+                       "aclKey": "app",
                        "parentEl": "app-scope"}),
                        new splunkJSInput({"id": "read-user-multi",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "read-user-multi",
                         "type": "multi-dropdown",
                         "default": "*",
+                        "aclKey": "perms.read",
                         "parentEl": "read-users"}),
                        new splunkJSInput({"id": "write-user-multi",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "write-user-multi",
                         "type": "multi-dropdown",
                         "parentEl": "write-users",
+                        "aclKey": "perms.write",
                         "default": ["admin","power"]}),
                        new splunkJSInput({"id": "sharing-dropdown",
                         "choices": [{"label":"global", "value": "global"},
@@ -624,11 +672,13 @@ function ($,
                         "el": "sharing-dropdown",
                         "type": "dropdown",
                         "parentEl": "sharing",
+                        "aclKey": "sharing",
                         "default": "app"}),
                        new splunkJSInput({"id": "owner-dropdown",
                         "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
                         "el": "owner-dropdown",
                         "type": "dropdown",
+                        "aclKey": "owner",
                         "default": Splunk.util.getConfigValue("USERNAME"),
                         "parentEl": "owner"})];
 
@@ -655,62 +705,155 @@ function ($,
     }
 
     function renderUpdateUserForm(row) {
-        var updateUser = function updateUser (row) {
-            console.log(row);
+        var updateUser = function updateUser () {
             event.preventDefault();
             // $('input[id=createUsername]').val(row.username);
             // $('input[id=createRealm]').val(row.realm);
             // $('input[id=createApp]').val(row.app);
 
-            var username = $('input[id=updateUsername]').val();
-            var password = $('input[id=updatePassword]').val();
-            var confirmPassword = $('input[id=updateConfirmPassword]').val();
-            var realm = $('input[id=updateRealm]').val();
+            var formVals = {};
+            var aclData = {};
+
+            _.each(arguments[0], function(component, i) {
+                var aclKey = component.config.aclKey;
+                aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
+                formVals[aclKey] = component.config.default.join();
+            });            
+
+            formVals.realm = arguments[1].realm;
+            var username = $('input[id=createUsername]').val();
+            var password = $('input[id=createPassword]').val();
+            var confirmPassword = $('input[id=createConfirmPassword]').val();
+            var realm = $('input[id=createRealm]').val();
+            var aclApp = aclData.app;
+            var app = formVals.app;
+
+            if(aclData.sharing === "user" && password) {
+                return renderModal("sharing-scope-error",
+                                   "Sharing Error",
+                                   "<p>Set sharing to App or Global before changing password.<p>",
+                                   "Close")
+            }
+            // var username = $('input[id=updateUsername]').val();
+            // var password = $('input[id=updatePassword]').val();
+            // var confirmPassword = $('input[id=updateConfirmPassword]').val();
+            // var realm = $('input[id=updateRealm]').val();
             //var app = $('input[id=updateApp]').val();
 
-            var formData = {"password": password};
+            //var formData = {"password": password};
 
-            if(password == "") {
-                return renderModal("password-missing",
-                                   "Empty Password",
-                                   "<p>Empty password. Please re-enter<p>",
-                                   "Close",
-                                   renderUpdateUserForm,
-                                   [row]);
-            }
+            // if(password == "") {
+            //     return renderModal("password-missing",
+            //                        "Empty Password",
+            //                        "<p>Empty password. Please re-enter<p>",
+            //                        "Close",
+            //                        renderUpdateUserForm,
+            //                        [row]);
+            // }
+
             if(password != confirmPassword) {
                 renderModal("password-mismatch",
                             "Password Mismatch",
                             "<p>Passwords do not match. Please re-enter.<p>",
                             "Close",
                             renderUpdateUserForm,
-                            [row]); 
+                            [arguments[1]]); 
             } else {
                 var currentUser = Splunk.util.getConfigValue("USERNAME"); 
-                console.log(row);     
-                var url = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + app + "/storage/passwords/" + realm + ":" + username;
+                console.log(row);
+                var url = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move";
+                delete aclData.app; 
                 console.log(url);
-    
-                $.ajax({
-                    type: "POST",
-                    url: url,
-                    data: formData,
-                    success: function() {
-                        renderModal("password-updated",
-                                    "Password Updated",
-                                    "<p>Password successfully updated for user " + username + ":" + app + "</p>",
-                                    "Close",
-                                    refreshWindow);
-                    },
-                    error: function(e) {
-                        console.log(e);
-                        renderModal("password-updated",
-                                    "Password Updated",
-                                    "<p>Failed to update password for user " + username + ". " + e.responseText,
-                                    "Close",
-                                    refreshWindow);
-                    }
-                });
+
+                if(password) { 
+                    $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclData,
+                        success: function() {
+                            console.log(aclUrl);
+                            renderModal("user-deleted",
+                                        "User Deleted",
+                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
+                                        "Close") 
+                        },
+                        error: function(e) {
+                            console.log(e);
+                            renderModal("acl-update-fail",
+                                    "Failed To Apply ACL",
+                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
+                                    "Close");
+                        }
+                    })
+                    .then (function() {
+                        $.ajax({
+                            type: "POST",
+                            url: url,
+                            data: {"password": password},
+                            success: function() {
+                                renderModal("password-updated",
+                                            "Password Updated",
+                                            "<p>Password successfully updated password for user " + username + ":" + app + "</p>",
+                                            "Close",
+                                            refreshWindow);
+                            },
+                            error: function(e) {
+                                console.log(e);
+                                renderModal("password-updated",
+                                            "Password Updated",
+                                            "<p>Failed to update password for user " + username + ". " + e.responseText,
+                                            "Close",
+                                            refreshWindow);
+                            }
+                        })                                         
+                    })
+                    .done(function() {
+                        console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                        if(formVals.app != aclApp) {
+                            console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                            $.ajax({
+                                type: "POST",
+                                url: moveUrl,
+                                data: {"app": aclApp, "user": "nobody"},
+                                success: function() {
+                                    renderModal("user-deleted",
+                                                "User Deleted",
+                                                "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>",
+                                                "Close") 
+                                },
+                                error: function(e) {
+                                    console.log(e);
+                                    console.log(moveUrl);
+                                    renderModal("acl-update-fail",
+                                            "Failed To Apply ACL",
+                                            "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p>",
+                                            "Close");
+                                }
+                            })
+                        }
+                    });
+                } else {
+                    $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclData,
+                        success: function() {
+                            renderModal("user-deleted",
+                                        "User Deleted",
+                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
+                                        "Close") 
+                        },
+                        error: function(e) {
+                            console.log(e);
+                            renderModal("acl-update-fail",
+                                    "Failed To Apply ACL",
+                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
+                                    "Close");
+                        }
+                    })
+                } 
             }
         }
         // var html = '<form id="updateCredential"> \
@@ -761,27 +904,30 @@ function ($,
             }, 700) 
         }
 
+        // Set form username and realm
         $('input[id=createUsername]').val(row.username);
         $('input[id=createRealm]').val(row.realm);
-        //$('input[id=createApp]').val(row.app);
 
         var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
                        "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
                        "el": "app-scope-dropdown",
                        "type": "dropdown",
                        "default": [row.app],
+                       "aclKey": "app",
                        "parentEl": "app-scope"}),
                        new splunkJSInput({"id": "read-user-multi",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "read-user-multi",
                         "type": "multi-dropdown",
                         "default": row.acl_read.split(','),
+                        "aclKey": "perms.read",
                         "parentEl": "read-users"}),
                        new splunkJSInput({"id": "write-user-multi",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "write-user-multi",
                         "type": "multi-dropdown",
                         "parentEl": "write-users",
+                        "aclKey": "perms.write",
                         "default": row.acl_write.split(',')}),
                        new splunkJSInput({"id": "sharing-dropdown",
                         "choices": [{"label":"global", "value": "global"},
@@ -790,12 +936,14 @@ function ($,
                         "el": "sharing-dropdown",
                         "type": "dropdown",
                         "parentEl": "sharing",
+                        "aclKey": "sharing",
                         "default": [row.acl_sharing]}),
                        new splunkJSInput({"id": "owner-dropdown",
                         "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
                         "el": "owner-dropdown",
                         "type": "dropdown",
                         "default": [row.owner],
+                        "aclKey": "owner",
                         "parentEl": "owner"})];
 
         // Remove component if it exists
@@ -809,8 +957,7 @@ function ($,
                 component.waitForElAndRender();
             });
 
-            //clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
-            clearOnClickAndRegister('#create-submit', updateUser, [inputs]);
+            clearOnClickAndRegister('#create-submit', updateUser, [inputs, row]);
         });
 
         
