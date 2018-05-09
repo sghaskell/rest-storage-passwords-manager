@@ -39,6 +39,12 @@ function ($,
         }
     }
 
+    function genericPromise() {
+        var dfd = $.Deferred();
+        dfd.resolve();
+        return dfd.promise();
+    }
+
     // Wrapper to execute multiple searches in order and resolve when they've all finished
     function all(array){
         console.log("Array");
@@ -713,15 +719,32 @@ function ($,
                 var aclKey = component.config.aclKey;
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
                 formVals[aclKey] = component.config.default.join();
-            });            
-
-            formVals.realm = arguments[1].realm;
+            });
+            
+            
+            
             var username = $('input[id=createUsername]').val();
             var password = $('input[id=createPassword]').val();
             var confirmPassword = $('input[id=createConfirmPassword]').val();
             var realm = $('input[id=createRealm]').val();
             var aclApp = aclData.app;
             var app = formVals.app;
+            var applyAcl = true;
+
+            if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
+                return renderModal("no-change",
+                                "No Change Detected",
+                                "<p>Nothing to see here.<p>",
+                                "Close")
+            }
+
+            // If ACL's haven't changed, don't apply
+            if(JSON.stringify(formVals) === JSON.stringify(aclData)) {
+                applyAcl = false;
+            }
+
+            // Add realm to formVals for refrence in REST url's
+            formVals.realm = arguments[1].realm;
 
             if(aclData.sharing === "user" && password) {
                 return renderModal("sharing-scope-error",
@@ -747,14 +770,15 @@ function ($,
 
                 // Success message for final modal display
                 var successMessage = [];
+                var chainStart = null;
 
-                if(password) { 
-                    $.ajax({
+                if(applyAcl) {
+                    chainStart = $.ajax({
                         type: "POST",
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            successMessage.push("<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>");
+                            successMessage.push("<p>Successfully applied ACL's</p>");
                         },
                         error: function(e) {
                             console.log(e);
@@ -764,13 +788,19 @@ function ($,
                                     "Close");
                         }
                     })
-                    .then (function() {
+                } else {
+                    chainStart = genericPromise();
+                }
+
+                chainStart
+                .then (function() {
+                    if(password) {
                         return $.ajax({
                             type: "POST",
                             url: passwordUrl,
                             data: {"password": password},
                             success: function() {
-                                successMessage.push("<p>Password successfully updated password for user " + username + ":" + app + "</p>");
+                                successMessage.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
                             },
                             error: function(e) {
                                 console.log(e);
@@ -781,54 +811,35 @@ function ($,
                                             refreshWindow);
                             }
                         })
-                    })
-                    .then(function() {
-                        if(formVals.app != aclApp) {
-                            console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
-                            return $.ajax({
-                                type: "POST",
-                                url: moveUrl,
-                                data: {"app": aclApp, "user": "nobody"},
-                                success: function() {
-                                    successMessage.push("<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>");
-                                },
-                                error: function(e) {
-                                    console.log(e);
-                                    renderModal("acl-update-fail",
-                                            "Failed To Move",
-                                            "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>",
-                                            "Close");
-                                }
-                            })
-                        }
-                    })
-                    .done(function() {
-                        renderModal("user-updated",
-                                    "User Updated",
-                                    successMessage.join('\n'),
-                                    "Close",
-                                    refreshWindow)                        
-                    });
-                } else {
-                    $.ajax({
-                        type: "POST",
-                        url: aclUrl,
-                        data: aclData,
-                        success: function() {
-                            renderModal("user-deleted",
-                                        "User Deleted",
-                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
-                                        "Close") 
-                        },
-                        error: function(e) {
-                            console.log(e);
-                            renderModal("acl-update-fail",
-                                    "Failed To Apply ACL",
-                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
-                                    "Close");
-                        }
-                    })
-                } 
+                    }
+                })
+                .then(function() {
+                    if(formVals.app != aclApp) {
+                        console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                        return $.ajax({
+                            type: "POST",
+                            url: moveUrl,
+                            data: {"app": aclApp, "user": "nobody"},
+                            success: function() {
+                                successMessage.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
+                            },
+                            error: function(e) {
+                                console.log(e);
+                                renderModal("acl-update-fail",
+                                        "Failed To Move",
+                                        "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>",
+                                        "Close");
+                            }
+                        })
+                    }
+                })
+                .done(function() {
+                    renderModal("user-updated",
+                                "User Updated",
+                                successMessage.join('\n'),
+                                "Close",
+                                refreshWindow)                        
+                });
             }
         }
 
@@ -900,22 +911,6 @@ function ($,
 
             clearOnClickAndRegister('#create-submit', updateUser, [inputs, row]);
         });
-
-        
-
-        //if(formOpen == "true") {
-            // if(!isFormOpen()) {
-            //     $('#main-create').text("Close");
-            //     window.sessionStorage.setItem("formOpen", "true");
-            //     //console.log(window.sessionStorage.getItem("formOpen"));
-            // } else {
-            //     $('#main-create').text("Create");
-            //     window.sessionStorage.setItem("formOpen", "false");
-            //     //console.log(window.sessionStorage.getItem("formOpen"));
-            // }
-        
-
-        
     }
 
     window.operateEvents = {
