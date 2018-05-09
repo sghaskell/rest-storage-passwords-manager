@@ -738,14 +738,15 @@ function ($,
                             renderUpdateUserForm,
                             [arguments[1]]); 
             } else {
-                var currentUser = Splunk.util.getConfigValue("USERNAME"); 
-                console.log(row);
-                var url = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
+                var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
                 var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move";
+
+                // App not a valid key for updating Splunk ACL's, remove it before posting
                 delete aclData.app; 
-                console.log(url);
-                var successMessage = "";
+
+                // Success message for final modal display
+                var successMessage = [];
 
                 if(password) { 
                     $.ajax({
@@ -753,15 +754,7 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            console.log(aclUrl);
-                            console.log("Success Message: " + successMessage);
-                            // successMessage.push("<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>");
-                            successMessage += "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>";
-                            console.log("Success Message: " + successMessage);
-                            // renderModal("user-deleted",
-                            //             "User Deleted",
-                            //             "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
-                            //             "Close") 
+                            successMessage.push("<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>");
                         },
                         error: function(e) {
                             console.log(e);
@@ -774,18 +767,10 @@ function ($,
                     .then (function() {
                         return $.ajax({
                             type: "POST",
-                            url: url,
+                            url: passwordUrl,
                             data: {"password": password},
                             success: function() {
-                                console.log("Success Message: " + successMessage);
-                                // successMessage.push("<p>Password successfully updated password for user " + username + ":" + app + "</p>");
-                                successMessage += "<p>Password successfully updated password for user " + username + ":" + app + "</p>";
-                                console.log("Success Message: " + successMessage);
-                                // renderModal("password-updated",
-                                //             "Password Updated",
-                                //             "<p>Password successfully updated password for user " + username + ":" + app + "</p>",
-                                //             "Close",
-                                //             refreshWindow);
+                                successMessage.push("<p>Password successfully updated password for user " + username + ":" + app + "</p>");
                             },
                             error: function(e) {
                                 console.log(e);
@@ -805,36 +790,24 @@ function ($,
                                 url: moveUrl,
                                 data: {"app": aclApp, "user": "nobody"},
                                 success: function() {
-                                    console.log("Success Message: " + successMessage);
-                                    // successMessage.push("<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>");
-                                    successMessage += "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>";
-                                    console.log("Success Message: " + successMessage);
-                                    // renderModal("user-deleted",
-                                    //             "User Deleted",
-                                    //             "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>",
-                                    //             "Close") 
+                                    successMessage.push("<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>");
                                 },
                                 error: function(e) {
                                     console.log(e);
-                                    console.log(moveUrl);
                                     renderModal("acl-update-fail",
-                                            "Failed To Apply ACL",
-                                            "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p>",
+                                            "Failed To Move",
+                                            "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>",
                                             "Close");
                                 }
                             })
                         }
                     })
                     .done(function() {
-                        console.log(successMessage);
-                        //console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
-                        console.log("Rendering Modal");
                         renderModal("user-updated",
                                     "User Updated",
-                                    successMessage,
+                                    successMessage.join('\n'),
                                     "Close",
-                                    refreshWindow) 
-                        
+                                    refreshWindow)                        
                     });
                 } else {
                     $.ajax({
