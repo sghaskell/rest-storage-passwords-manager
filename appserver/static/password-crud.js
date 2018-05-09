@@ -557,11 +557,12 @@ function ($,
                                     renderCreateUserForm,
                                     [username, realm]);
             } else {
-                //var app = utils.getCurrentApp();
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
-                // https://localhost:8089/servicesNS/admin/password-manager/configs/conf-passwords/credential%3A%3Afoo%3A/acl -d owner=admin -d perms.read=admin,shaskell -d sharing=app
                 delete aclData.app; 
+
+                // Success message for final modal display
+                var successMessage = [];
 
                 console.log(aclData);
 
@@ -570,11 +571,12 @@ function ($,
                     url: createUrl,
                     data: formData,
                     success: function() {
-                        renderModal("user-added",
-                                    "User Created",
-                                    "<p>Successfully created user " + username + ":" + realm + "</p>",
-                                    "Close",
-                                    refreshWindow);
+                        // renderModal("user-added",
+                        //             "User Created",
+                        //             "<p>Successfully created user " + username + ":" + realm + "</p>",
+                        //             "Close",
+                        //             refreshWindow);
+                        successMessage.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>")
                     },
                     error: function(e) {
                         console.log(e);
@@ -585,15 +587,16 @@ function ($,
                     }
                 })
                 .then(function() {
-                    $.ajax({
+                    return $.ajax({
                         type: "POST",
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            renderModal("user-deleted",
-                                        "User Deleted",
-                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
-                                        "Close") 
+                            // renderModal("user-deleted",
+                            //             "User Deleted",
+                            //             "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
+                            //             "Close") 
+                            successMessage.push("<p>Successfully applied ACL's</p>")
                         },
                         error: function(e) {
                             console.log(e);
@@ -603,50 +606,16 @@ function ($,
                                     "Close");
                         }
                     })                
+                })
+                .done(function () {
+                    renderModal("user-created",
+                                "User Created",
+                                successMessage.join('\n'),
+                                "Close",
+                                refreshWindow)
                 });
             }
         }
-
-        // var html = '<form id="createCredential"> \
-        //                 <div class="form-group"> \
-        //                   <label for="username">Username</label> \
-        //                   <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
-        //                 </div> \
-        //                 <p></p> \
-        //                 <div class="form-group"> \
-        //                   <label for="password">Password</label> \
-        //                   <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
-        //                 </div> \
-        //                 <div> \
-        //                   <label for="confirmPassword">Confirm Password</label> \
-        //                   <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="realm">Realm</label> \
-        //                   <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
-        //                   <br></br>\
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="owner">Owner</label> \
-        //                   <div id="owner-dropdown"></div> \
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="readUsers">Read Users</label> \
-        //                   <div id="read-user-multi"></div> \
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="writeUsers">Write Users</label> \
-        //                   <div id="write-user-multi"></div> \
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="appScope">App Scope</label> \
-        //                   <div id="app-scope-dropdown"></div> \
-        //                 </div> \
-        //                 <div class="form-group"> \
-        //                   <label for="sharing">Sharing</label> \
-        //                   <div id="sharing-dropdown"></div> \
-        //                 </div> \
-        //             </form>';
 
         var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
                        "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
