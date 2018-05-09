@@ -551,9 +551,7 @@ function ($,
                                     renderCreateUserForm,
                                     [username, realm]);
             } else {
-                var currentUser = Splunk.util.getConfigValue("USERNAME");      
-                var app = utils.getCurrentApp();
-                //var createUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + app + "/storage/passwords";
+                //var app = utils.getCurrentApp();
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
                 // https://localhost:8089/servicesNS/admin/password-manager/configs/conf-passwords/credential%3A%3Afoo%3A/acl -d owner=admin -d perms.read=admin,shaskell -d sharing=app
@@ -707,9 +705,6 @@ function ($,
     function renderUpdateUserForm(row) {
         var updateUser = function updateUser () {
             event.preventDefault();
-            // $('input[id=createUsername]').val(row.username);
-            // $('input[id=createRealm]').val(row.realm);
-            // $('input[id=createApp]').val(row.app);
 
             var formVals = {};
             var aclData = {};
@@ -734,23 +729,7 @@ function ($,
                                    "<p>Set sharing to App or Global before changing password.<p>",
                                    "Close")
             }
-            // var username = $('input[id=updateUsername]').val();
-            // var password = $('input[id=updatePassword]').val();
-            // var confirmPassword = $('input[id=updateConfirmPassword]').val();
-            // var realm = $('input[id=updateRealm]').val();
-            //var app = $('input[id=updateApp]').val();
-
-            //var formData = {"password": password};
-
-            // if(password == "") {
-            //     return renderModal("password-missing",
-            //                        "Empty Password",
-            //                        "<p>Empty password. Please re-enter<p>",
-            //                        "Close",
-            //                        renderUpdateUserForm,
-            //                        [row]);
-            // }
-
+            
             if(password != confirmPassword) {
                 renderModal("password-mismatch",
                             "Password Mismatch",
@@ -766,6 +745,7 @@ function ($,
                 var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move";
                 delete aclData.app; 
                 console.log(url);
+                var successMessage = "";
 
                 if(password) { 
                     $.ajax({
@@ -774,10 +754,14 @@ function ($,
                         data: aclData,
                         success: function() {
                             console.log(aclUrl);
-                            renderModal("user-deleted",
-                                        "User Deleted",
-                                        "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
-                                        "Close") 
+                            console.log("Success Message: " + successMessage);
+                            // successMessage.push("<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>");
+                            successMessage += "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>";
+                            console.log("Success Message: " + successMessage);
+                            // renderModal("user-deleted",
+                            //             "User Deleted",
+                            //             "<p>Successfully applied ACL's to " + aclData + " - " + username + ":" + realm + "</p>",
+                            //             "Close") 
                         },
                         error: function(e) {
                             console.log(e);
@@ -788,16 +772,20 @@ function ($,
                         }
                     })
                     .then (function() {
-                        $.ajax({
+                        return $.ajax({
                             type: "POST",
                             url: url,
                             data: {"password": password},
                             success: function() {
-                                renderModal("password-updated",
-                                            "Password Updated",
-                                            "<p>Password successfully updated password for user " + username + ":" + app + "</p>",
-                                            "Close",
-                                            refreshWindow);
+                                console.log("Success Message: " + successMessage);
+                                // successMessage.push("<p>Password successfully updated password for user " + username + ":" + app + "</p>");
+                                successMessage += "<p>Password successfully updated password for user " + username + ":" + app + "</p>";
+                                console.log("Success Message: " + successMessage);
+                                // renderModal("password-updated",
+                                //             "Password Updated",
+                                //             "<p>Password successfully updated password for user " + username + ":" + app + "</p>",
+                                //             "Close",
+                                //             refreshWindow);
                             },
                             error: function(e) {
                                 console.log(e);
@@ -807,21 +795,24 @@ function ($,
                                             "Close",
                                             refreshWindow);
                             }
-                        })                                         
+                        })
                     })
-                    .done(function() {
-                        console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                    .then(function() {
                         if(formVals.app != aclApp) {
                             console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
-                            $.ajax({
+                            return $.ajax({
                                 type: "POST",
                                 url: moveUrl,
                                 data: {"app": aclApp, "user": "nobody"},
                                 success: function() {
-                                    renderModal("user-deleted",
-                                                "User Deleted",
-                                                "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>",
-                                                "Close") 
+                                    console.log("Success Message: " + successMessage);
+                                    // successMessage.push("<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>");
+                                    successMessage += "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>";
+                                    console.log("Success Message: " + successMessage);
+                                    // renderModal("user-deleted",
+                                    //             "User Deleted",
+                                    //             "<p>Successfully moved credential from " + formVals.app + " to " + aclApp + "</p>",
+                                    //             "Close") 
                                 },
                                 error: function(e) {
                                     console.log(e);
@@ -833,6 +824,17 @@ function ($,
                                 }
                             })
                         }
+                    })
+                    .done(function() {
+                        console.log(successMessage);
+                        //console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                        console.log("Rendering Modal");
+                        renderModal("user-updated",
+                                    "User Updated",
+                                    successMessage,
+                                    "Close",
+                                    refreshWindow) 
+                        
                     });
                 } else {
                     $.ajax({
@@ -856,40 +858,6 @@ function ($,
                 } 
             }
         }
-        // var html = '<form id="updateCredential"> \
-        //               <div class="form-group"> \
-        //                 <input type="hidden" class="form-control" id="updateUsername"> \
-        //               </div> \
-        //               <p></p> \
-        //               <div class="form-group"> \
-        //                 <label for="password">Password</label> \
-        //                 <input type="password" class="form-control" id="updatePassword" placeholder="Password"> \
-        //               </div> \
-        //               <div> \
-        //                 <label for="confirmPassword">Confirm Password</label> \
-        //                 <input type="password" class="form-control" id="updateConfirmPassword" placeholder="Confirm Password"> \
-        //               </div> \
-        //               <div> \
-        //                 <input type="hidden" class="form-control" id="updateRealm"> \
-        //               </div> \
-        //               <div class="form-group"> \
-        //                 <input type="hidden" class="form-control" id="updateApp"> \
-        //               </div> \
-        //             </form>'
-
-        // var randomId = 100 + ~~(Math.random() * 100);
-        // $('#rest-password-table').bootstrapTable('insertRow', {
-        //         index: 1,
-        //         row:{}
-        //     });
-
-        // renderModal("update-user-form",
-        //             "Update User",
-        //             html,
-        //             "Update",
-        //             updateUser);
-
-        console.log(row);
 
         if(!isFormOpen()) {
             $('#create-update-form').collapse('show');
