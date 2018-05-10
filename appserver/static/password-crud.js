@@ -313,52 +313,59 @@ function ($,
                              <li data-item="update"><a>Update</a></li> \
                              <li data-item="delete"><a>Delete</a></li> \
                            </ul>';
-        var header = '<table id="rest-password-table" \
-                             class="table table-striped table-hover" \
-                             data-toolbar="#toolbar" \
-                             data-sort-name="username" \
-                             data-show-pagination-switch="true" \
-                             data-id-field="id" \
-                             data-pagination="true" \
-                             data-sortable="true" \
-                             data-page-size="10" \
-                             data-page-list="[10, 25, 50, 100, ALL]" \
-                             data-id-field="id" \
-                             data-smart-display="true" \
-                             data-search="true" \
-                             data-show-footer="false"> \
-                      <thead> \
-                        <tr> \
-                            <th data-field="id" data-visible="false"><div><h3>ID</h3></div></th> \
-                            <th data-field="username" data-sortable="true"><div><h3>Username</h3></div></th> \
-                            <th data-field="password" data-events="operateEvents"><div><h3>Password</h3></div></th> \
-                            <th data-field="realm" data-sortable="true"><div><h3><h3>Realm</h3></div></th> \
-                            <th data-field="app" data-sortable="true"><div><h3>App</h3></div></th> \
-                            <th data-field="clear_password" data-visible="false"><div><h3>Clear Password</h3></div></th> \
-                            <th data-field="owner" data-sortable="true"><div><h3>Owner</h3></div></th> \
-                            <th data-field="acl_read" data-sortable="true"><div><h3>Read</h3></div></th> \
-                            <th data-field="acl_write" data-sortable="true"><div><h3>Write</h3></div></th> \
-                            <th data-field="acl_sharing" data-sortable="true"><div><h3>Sharing</h3></div></th> \
-                        </tr> \
-                      </thead> \
+        var header = '<table id="rest-password-table"\
+                             class="table table-striped table-hover"\
+                             data-toolbar="#toolbar"\
+                             data-sort-name="username"\
+                             data-show-pagination-switch="true"\
+                             data-id-field="id"\
+                             data-pagination="true"\
+                             data-sortable="true"\
+                             data-page-size="10"\
+                             data-page-list="[10, 25, 50, 100, ALL]"\
+                             data-id-field="id"\
+                             data-toggle="table"\
+                             data-smart-display="true"\
+                             data-search="true"\
+                             data-checkbox-header="true"\
+                             data-show-footer="false"\
+                             data-select-item-name="button-select"\
+                             data-click-to-select="false">\
+                      <thead>\
+                        <tr>\
+                            <th data-field="state" data-checkbox="true"></th>\
+                            <th data-field="id" data-visible="false" data-align="center"><div><h3>ID</h3></th>\
+                            <th data-field="username" data-sortable="true" data-align="center"><div><h3>Username</h3></th>\
+                            <th data-field="password" data-events="operateEvents" data-align="center"><div><h3>Password</h3></div></th>\
+                            <th data-field="realm" data-sortable="true" data-align="center"><div><h3><h3>Realm</h3></div></th>\
+                            <th data-field="app" data-sortable="true" data-align="center"><div><h3>App</h3></div></th>\
+                            <th data-field="clear_password" data-visible="false" data-align="center"><div><h3>Clear Password</h3></div></th>\
+                            <th data-field="owner" data-sortable="true" data-align="center"><div><h3>Owner</h3></div></th>\
+                            <th data-field="acl_read" data-sortable="true" data-align="center"><div><h3>Read</h3></div></th>\
+                            <th data-field="acl_write" data-sortable="true" data-align="center"><div><h3>Write</h3></div></th>\
+                            <th data-field="acl_sharing" data-sortable="true" data-align="center"><div><h3>Sharing</h3></div></th>\
+                        </tr>\
+                      </thead>\
                       <tbody>';
         html += header;
+
         _.each(data, function(row, i) {
-            tdHtml += '<tr class="striped"> \
-                         <td>' + i + '</td> \
-                         <td>' + row.username + '</td> \
-                         <td> \
-                           <a class="show" href="javascript:void(0)" title="Show Password"> \
-                             <li class="icon-visible"></li> \
-                           </a> \
-                         </td> \
-                         <td>' + row.realm + '</td> \
-                         <td>' + row.app + '</td> \
-                         <td>' + row.clear_password + '</td> \
-                         <td>' + row.owner + '</td> \
-                         <td>' + row.acl_read + '</td> \
-                         <td>' + row.acl_write + '</td> \
-                         <td>' + row.acl_sharing + '</td> \
+            tdHtml += '<tr class="striped">\
+                         <td class="bs-checkbox"></td>\
+                         <td>' + i + '</td>\
+                         <td>' + row.username + '</td>\
+                         <td>\
+                           <a class="show" href="javascript:void(0)" title="Show Password">\
+                             <li class="icon-visible"></li>\
+                           </a>\
+                         </td>\
+                         <td>' + row.realm + '</td>\
+                         <td>' + row.app + '</td>\
+                         <td>' + row.clear_password + '</td>\
+                         <td>' + row.owner + '</td>\
+                         <td>' + row.acl_read + '</td>\
+                         <td>' + row.acl_write + '</td>\
+                         <td>' + row.acl_sharing + '</td>\
                        </tr>';
         });
         
@@ -403,6 +410,10 @@ function ($,
                 }
             }
         });
+
+        console.log($('#rest-password-table').bootstrapTable('getSelections'));
+
+        //$('#rest-password-table').bootstrapTable('uncheckAll');
     }
 
     // Callback to refresh window and hide create-user
@@ -722,7 +733,7 @@ function ($,
                 if(applyAcl) {
                     // App not a valid key for updating Splunk ACL's, remove it before posting
                     delete aclData.app;
-                    
+
                     chainStart = $.ajax({
                         type: "POST",
                         url: aclUrl,
