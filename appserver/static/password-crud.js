@@ -260,7 +260,9 @@ function ($,
 
     function createTable(tableDiv, contextMenuDiv, data) {
         var html = '<p> Click <b>Create</b> to add a user or right click on a row to create, update or delete.</p> \
-                    <p><button id="main-create" class="btn btn-primary" data-toggle="collapse" href="#create-update-form">Create</button></p> \
+                    <div id="open-close-button"> \
+                      <p><button id="main-create" class="btn btn-primary" data-toggle="collapse" href="#create-update-form">Create</button></p> \
+                    </div> \
                     <div id="create-update-form" class="collapse multi-collapse"> \
                       <div id="createCredential"> \
                        <form id="createCredential"> \
@@ -313,39 +315,39 @@ function ($,
                              <li data-item="update"><a>Update</a></li> \
                              <li data-item="delete"><a>Delete</a></li> \
                            </ul>';
-        var header = '<table id="rest-password-table"\
-                             class="table table-striped table-hover"\
-                             data-toolbar="#toolbar"\
-                             data-sort-name="username"\
-                             data-show-pagination-switch="true"\
-                             data-id-field="id"\
-                             data-pagination="true"\
-                             data-sortable="true"\
-                             data-page-size="10"\
-                             data-page-list="[10, 25, 50, 100, ALL]"\
-                             data-id-field="id"\
-                             data-toggle="table"\
-                             data-smart-display="true"\
-                             data-search="true"\
-                             data-checkbox-header="true"\
-                             data-show-footer="false"\
-                             data-select-item-name="button-select"\
-                             data-click-to-select="false">\
-                      <thead>\
-                        <tr>\
-                            <th data-field="state" data-checkbox="true"></th>\
-                            <th data-field="id" data-visible="false" data-align="center"><div><h3>ID</h3></th>\
-                            <th data-field="username" data-sortable="true" data-align="center"><div><h3>Username</h3></th>\
-                            <th data-field="password" data-events="operateEvents" data-align="center"><div><h3>Password</h3></div></th>\
-                            <th data-field="realm" data-sortable="true" data-align="center"><div><h3><h3>Realm</h3></div></th>\
-                            <th data-field="app" data-sortable="true" data-align="center"><div><h3>App</h3></div></th>\
-                            <th data-field="clear_password" data-visible="false" data-align="center"><div><h3>Clear Password</h3></div></th>\
-                            <th data-field="owner" data-sortable="true" data-align="center"><div><h3>Owner</h3></div></th>\
-                            <th data-field="acl_read" data-sortable="true" data-align="center"><div><h3>Read</h3></div></th>\
-                            <th data-field="acl_write" data-sortable="true" data-align="center"><div><h3>Write</h3></div></th>\
-                            <th data-field="acl_sharing" data-sortable="true" data-align="center"><div><h3>Sharing</h3></div></th>\
-                        </tr>\
-                      </thead>\
+        var header = '<table id="rest-password-table" \
+                             class="table table-striped table-hover" \
+                             data-toolbar="#toolbar" \
+                             data-sort-name="username" \
+                             data-show-pagination-switch="true" \
+                             data-id-field="id" \
+                             data-pagination="false" \
+                             data-sortable="true" \
+                             data-page-size="15" \
+                             data-page-list="[10, 25, 50, 100, ALL]" \
+                             data-id-field="id" \
+                             data-toggle="table" \
+                             data-smart-display="true" \
+                             data-search="true" \
+                             data-checkbox-header="true" \
+                             data-show-footer="false" \
+                             data-select-item-name="button-select" \
+                             data-click-to-select="false"> \
+                      <thead> \
+                        <tr> \
+                            <th data-field="state" data-checkbox="true"></th> \
+                            <th data-field="id" data-visible="false" data-align="center"><div><h3>ID</h3></th> \
+                            <th data-field="username" data-sortable="true" data-align="center"><div><h3>Username</h3></th> \
+                            <th data-field="password" data-events="operateEvents" data-align="center"><div><h3>Password</h3></div></th> \
+                            <th data-field="realm" data-sortable="true" data-align="center"><div><h3><h3>Realm</h3></div></th> \
+                            <th data-field="app" data-sortable="true" data-align="center"><div><h3>App</h3></div></th> \
+                            <th data-field="clear_password" data-visible="false" data-align="center"><div><h3>Clear Password</h3></div></th> \
+                            <th data-field="owner" data-sortable="true" data-align="center"><div><h3>Owner</h3></div></th> \
+                            <th data-field="acl_read" data-sortable="true" data-align="center"><div><h3>Read</h3></div></th> \
+                            <th data-field="acl_write" data-sortable="true" data-align="center"><div><h3>Write</h3></div></th> \
+                            <th data-field="acl_sharing" data-sortable="true" data-align="center"><div><h3>Sharing</h3></div></th> \
+                        </tr> \
+                      </thead> \
                       <tbody>';
         html += header;
 
@@ -866,6 +868,7 @@ function ($,
 
         // Fire searches and render splunkJS form components to modal
         $.when(execMultiSearch(inputs)).done(function(components) {
+            $('#open-close-button')[0].scrollIntoView(true);
             _.each(components, function(component, i) {
                 component.waitForElAndRender();
             });
