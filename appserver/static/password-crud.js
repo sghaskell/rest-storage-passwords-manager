@@ -199,6 +199,12 @@ function ($,
             });
         }
     }
+
+    function getIdSelections() {
+        return $.map($('#rest-password-table').bootstrapTable('getSelections'), function (row) {
+            return row
+        });
+    }
     
 
     /* Run Search */
@@ -315,7 +321,11 @@ function ($,
                              <li data-item="update"><a>Update</a></li> \
                              <li data-item="delete"><a>Delete</a></li> \
                            </ul>';
-        var header = '<table id="rest-password-table" \
+        var header = '  <div> \
+                            <div id="toolbar"> \
+                                <button id="remove" class="btn btn-danger icon-x" disabled> Delete</button> \
+                            </div> \
+                        <table id="rest-password-table" \
                              class="table table-striped table-hover" \
                              data-toolbar="#toolbar" \
                              data-sort-name="username" \
@@ -371,7 +381,7 @@ function ($,
                        </tr>';
         });
         
-        tdHtml += "</tbody></table>";
+        tdHtml += "</tbody></table></div>";
         html += tdHtml;
         
         $(tableDiv).append(html);
@@ -412,6 +422,28 @@ function ($,
                 }
             }
         });
+        
+
+        $('#rest-password-table').on('check.bs.table uncheck.bs.table ' +
+                'check-all.bs.table uncheck-all.bs.table', function () {
+            $('#remove').prop('disabled', !$('#rest-password-table').bootstrapTable('getSelections').length);
+            // save your data, here just save the current page
+            //selections = getIdSelections();
+            // push or splice the selections if you want to save all data selections
+        });
+
+        $('#remove').click(function () {
+            var rows = getIdSelections();
+            // $table.bootstrapTable('remove', {
+            //     field: 'id',
+            //     values: ids
+            // });
+            console.log(rows);
+            //_.each(rows, function(row, i) {
+            deleteMultiCredential(rows);
+            //})
+            $('#remove').prop('disabled', true);
+        });
 
         console.log($('#rest-password-table').bootstrapTable('getSelections'));
 
@@ -426,7 +458,66 @@ function ($,
         }, 500);
     }
 
-    function deleteCredential(row, tableDiv) {
+    function deleteMultiCredential(rows) {
+        var deleteCred = function (row) {
+            var dfd = $.Deferred();
+            var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
+            var message = [];
+            $.ajax({
+                type: "DELETE",
+                url: deleteUrl,
+                success: function() {
+                    console.log("<p>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></p>");
+                    message.push("<p>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></p>");
+                    dfd.resolve(message);
+                },
+                error: function(e) {
+                    message.push("<p>Failed to delete user " + row.username + " - " + e.responseText + "</p>");
+                    dfd.reject(message);
+                }
+            })
+
+            return dfd.promise();                                
+        }
+
+        var removeUsers = function () {
+            //var dfd = $.Deferred();
+            var successMessage = [];
+            var chainStart = genericPromise();
+            // push individual searches
+            var promises = [];
+            
+            _.each(rows, function(row, i) {
+                console.log(row);
+                promises.push(function() {
+                    return deleteCred(row);
+                });    
+            });
+
+            // 
+            $.when(all(promises)).then(function(success) {
+                console.log(success);
+                renderModal("user-deleted",
+                            "User Deleted",
+                            success.join("\n"),
+                            "Close",
+                            refreshWindow)                 
+            });
+        }
+
+        var users = $.map(rows, function(row) {
+            return row.username;
+        })
+
+        var deleteUser = renderModal("user-delete-confirm",
+                                     "Confirm Delete Action",
+                                     "<p>You're about to remove the users <b>" + users.join(', ') + "</b> - Press ok to continue</p>",
+                                     "Ok",
+                                     removeUsers,
+                                     [rows]);
+    }
+
+    function deleteCredential(row) {
         var username=Splunk.util.getConfigValue("USERNAME");      
         var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + username + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
 
@@ -437,12 +528,15 @@ function ($,
                 success: function() {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<p>Successfully deleted user " + row.username + ":" + row.realm + "</p>",
+                                "<p>Successfully deleted credential " + row.username + ":" + row.realm + "</p>",
                                 "Close",
                                 refreshWindow) 
                 },
-                error: function() {
-                    alert("Failed to delete user " + row[0] + ". See console for details");
+                error: function(e) {
+                    renderModal("user-deleted",
+                                "User Deleted",
+                                "<p>Failed to delete user " + row.username + " - " + e.responseText + "</p>",
+                                "Close")
                 }
             });
         }
@@ -571,7 +665,7 @@ function ($,
                     url: createUrl,
                     data: createData,
                     success: function() {
-                        successMessage.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>")
+                        ("<p>Successfully created user <b>" + successMessage.pushrealm + ":" + username + "</b></p>")
                     },
                     error: function(e) {
                         console.log(e);
