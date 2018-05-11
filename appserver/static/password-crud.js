@@ -323,7 +323,7 @@ function ($,
                            </ul>';
         var header = '  <div> \
                             <div id="toolbar"> \
-                                <button id="remove" class="btn btn-danger icon-x" disabled> Delete</button> \
+                                <button id="remove" class="btn icon-x" disabled> Delete</button> \
                             </div> \
                         <table id="rest-password-table" \
                              class="table table-striped table-hover" \
@@ -459,6 +459,7 @@ function ($,
     }
 
     function deleteMultiCredential(rows) {
+
         var deleteCred = function (row) {
             var dfd = $.Deferred();
             var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
@@ -467,13 +468,12 @@ function ($,
                 type: "DELETE",
                 url: deleteUrl,
                 success: function() {
-                    console.log("<p>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></p>");
                     message.push("<p>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></p>");
                     dfd.resolve(message);
                 },
                 error: function(e) {
-                    message.push("<p>Failed to delete user " + row.username + " - " + e.responseText + "</p>");
-                    dfd.reject(message);
+                    message.push("<p>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</p>");
+                    dfd.resolve(message);
                 }
             })
 
@@ -496,7 +496,6 @@ function ($,
 
             // 
             $.when(all(promises)).then(function(success) {
-                console.log(success);
                 renderModal("user-deleted",
                             "User Deleted",
                             success.join("\n"),
@@ -528,14 +527,14 @@ function ($,
                 success: function() {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<p>Successfully deleted credential " + row.username + ":" + row.realm + "</p>",
+                                "<p>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></p>",
                                 "Close",
                                 refreshWindow) 
                 },
                 error: function(e) {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<p>Failed to delete user " + row.username + " - " + e.responseText + "</p>",
+                                "<p>Failed to delete user <b>" + row.username + " - " + e.responseText + "</b></p>",
                                 "Close")
                 }
             });
@@ -665,7 +664,7 @@ function ($,
                     url: createUrl,
                     data: createData,
                     success: function() {
-                        ("<p>Successfully created user <b>" + successMessage.pushrealm + ":" + username + "</b></p>")
+                        successMessage.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>");
                     },
                     error: function(e) {
                         console.log(e);
