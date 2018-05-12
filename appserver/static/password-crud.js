@@ -323,7 +323,7 @@ function ($,
                            </ul>';
         var header = '  <div> \
                             <div id="toolbar"> \
-                                <button id="remove" class="btn icon-x" disabled> Delete</button> \
+                                <button id="remove" type="button" class="btn icon-x btn-primary" disabled> Delete</button> \
                             </div> \
                         <table id="rest-password-table" \
                              class="table table-striped table-hover" \
