@@ -328,6 +328,7 @@ function ($,
                         <table id="rest-password-table" \
                              class="table table-striped table-hover" \
                              data-toolbar="#toolbar" \
+                             data-detail-view="true" \
                              data-sort-name="username" \
                              data-show-pagination-switch="true" \
                              data-id-field="id" \
@@ -412,42 +413,53 @@ function ($,
             anonCallback(renderCreateUserForm, ["",""])
         });
 
+        var curIndex = null;
+        var curEl = null;
+
         $('#rest-password-table').bootstrapTable({
             contextMenu: '#example1-context-menu',
-            onContextMenuItem: function(row, $el){
+            onContextMenuItem: function(row, $el){   
                 if($el.data("item") == "update"){
-                    renderUpdateUserForm(row);
+                    //renderUpdateUserForm(row);
+                    $('#rest-password-table').bootstrapTable('expandRow', curIndex);                    
                 } else if($el.data("item") == "delete"){
                     deleteCredential(row, tableDiv);
-                }
+                }                
+            },
+            onContextMenuRow: function(row, $el){ 
+                //console.log($el.data().index);
+                curIndex = $el.data().index;
+                curEl = $el;
+                //$el.html('<table></table>').find('table').append('<div id="' + row.username + '"></div>');
+            },
+            onExpandRow: function(index, row, $detail) {
+                $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
+                renderUpdateUserInTable(row);
             }
+
         });
         
 
+        // Toggle remove button on or off depending whether rows are checked
         $('#rest-password-table').on('check.bs.table uncheck.bs.table ' +
                 'check-all.bs.table uncheck-all.bs.table', function () {
             $('#remove').prop('disabled', !$('#rest-password-table').bootstrapTable('getSelections').length);
-            // save your data, here just save the current page
-            //selections = getIdSelections();
-            // push or splice the selections if you want to save all data selections
         });
 
+        // Wire remove button to delete credentials
         $('#remove').click(function () {
             var rows = getIdSelections();
-            // $table.bootstrapTable('remove', {
-            //     field: 'id',
-            //     values: ids
-            // });
-            console.log(rows);
-            //_.each(rows, function(row, i) {
             deleteMultiCredential(rows);
-            //})
             $('#remove').prop('disabled', true);
         });
 
-        console.log($('#rest-password-table').bootstrapTable('getSelections'));
-
-        //$('#rest-password-table').bootstrapTable('uncheckAll');
+        // $('#rest-password-table').on('expand-row.bs.table', function(index, row, $detail) {
+        //     //console.log(row);
+        //     console.log(index);
+        //     //console.log($detail.html('<table></table>').find('table'));
+        //     //console.log($detail);
+        //     renderUpdateUserInTable($detail);
+        // });
     }
 
     // Callback to refresh window and hide create-user
@@ -481,14 +493,10 @@ function ($,
         }
 
         var removeUsers = function () {
-            //var dfd = $.Deferred();
-            var successMessage = [];
-            var chainStart = genericPromise();
             // push individual searches
             var promises = [];
             
             _.each(rows, function(row, i) {
-                console.log(row);
                 promises.push(function() {
                     return deleteCred(row);
                 });    
@@ -549,6 +557,52 @@ function ($,
 
     function splunkJSInput(config) {
         var config = this.config = config;
+        var htmlForm = '<div id="' + this.config.username + '" class="collapse multi-collapse"> \
+                      <div id="createCredential"> \
+                       <form id="createCredential"> \
+                        <div class="form-group"> \
+                            <label for="username">Username</label> \
+                            <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="password">Password</label> \
+                            <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
+                        </div> \
+                        <div> \
+                            <label for="confirmPassword">Confirm Password</label> \
+                            <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="realm">Realm</label> \
+                            <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
+                            <br></br>\
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="owner" id="owner">Owner</label> \
+                            <div id="owner-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="readUsers" id="read-users">Read Users</label> \
+                            <div id="read-user-multi"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="writeUsers" id="write-users">Write Users</label> \
+                            <div id="write-user-multi"></div> \
+                        </div> \
+                        <div class="form-group" id="app-scope"> \
+                            <label for="appScope">App Scope</label> \
+                            <div id="app-scope-dropdown"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="sharing" id="sharing">Sharing</label> \
+                            <div id="sharing-dropdown"></div> \
+                         </div> \
+                        <div id="create-credential-submit"> \
+                          <button id="create-submit" class="btn btn-primary">Submit</button> \
+                        </div> \
+                        </form> \
+                      </div> \
+                    </div>'
         var that = this;
 
         this.remove = function() {
@@ -558,6 +612,16 @@ function ($,
                 console.log("Removing component " + this.config.id);
                 splunkJsComponent.remove();
                 $(el).append('<div id="' + this.config.el + '"></div>');    
+            }
+        }
+
+        this.updateRemove = function() {
+            var el = "#" + this.config.parentEl;
+            var splunkJsComponent = mvc.Components.get(this.config.id);
+            if(splunkJsComponent) {
+                console.log("Removing component " + this.config.id);
+                splunkJsComponent.remove();
+                //$(el).append('<div id="' + this.config.el + '"></div>');    
             }
         }
 
@@ -655,7 +719,7 @@ function ($,
                  
 
                 // Success message for final modal display
-                var successMessage = [];
+                var message = [];
 
                 console.log(aclData);
 
@@ -664,14 +728,10 @@ function ($,
                     url: createUrl,
                     data: createData,
                     success: function() {
-                        successMessage.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>");
+                        message.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>");
                     },
                     error: function(e) {
-                        console.log(e);
-                        renderModal("user-add-fail",
-                                    "Failed User Creation",
-                                    "<p>Failed to create user " + username + ":" + realm + "</p><br><p>" + e.responseText + "</p>",
-                                    "Close");
+                        message.push("<p>Failed to create user " + username + ":" + realm + "</p><br><p>" + e.responseText + "</p>");
                     }
                 })
                 .then(function() {
@@ -683,21 +743,17 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            successMessage.push("<p>Successfully applied ACL's</p>")
+                            message.push("<p>Successfully applied ACL's</p>")
                         },
                         error: function(e) {
-                            console.log(e);
-                            renderModal("acl-update-fail",
-                                    "Failed To Apply ACL",
-                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
-                                    "Close");
+                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
                         }
                     })                
                 })
                 .done(function () {
                     renderModal("user-created",
                                 "User Created",
-                                successMessage.join('\n'),
+                                message.join('\n'),
                                 "Close",
                                 refreshWindow)
                 });
@@ -764,6 +820,247 @@ function ($,
         }, 300);
     }
 
+    function renderUpdateUserInTable(row) {
+        var updateUser = function updateUser () {
+            event.preventDefault();
+
+            var formVals = {};
+            var aclData = {};
+
+            _.each(arguments[0], function(component, i) {
+                var aclKey = component.config.aclKey;
+                aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
+                formVals[aclKey] = component.config.default.join();
+            });
+            
+            
+            
+            var username = $('input[id=updateUsername]').val();
+            var password = $('input[id=updatePassword]').val();
+            var confirmPassword = $('input[id=updateConfirmPassword]').val();
+            var realm = $('input[id=updateRealm]').val();
+            var aclApp = aclData.app;
+            var app = formVals.app;
+            var applyAcl = true;
+
+            if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
+                return renderModal("no-change",
+                                "No Change Detected",
+                                "<p>Nothing to see here.<p>",
+                                "Close")
+            }
+
+            // If ACL's haven't changed, don't apply
+            if(JSON.stringify(formVals) === JSON.stringify(aclData)) {
+                applyAcl = false;
+            }
+
+            // Add realm to formVals for refrence in REST url's
+            formVals.realm = arguments[1].realm;
+
+            if(aclData.sharing === "user" && password) {
+                return renderModal("sharing-scope-error",
+                                   "Sharing Error",
+                                   "<p>Set sharing to App or Global before changing password.<p>",
+                                   "Close")
+            }
+            
+            if(password != confirmPassword) {
+                renderModal("password-mismatch",
+                            "Password Mismatch",
+                            "<p>Passwords do not match. Please re-enter.<p>",
+                            "Close",
+                            renderUpdateUserForm,
+                            [arguments[1]]); 
+            } else {
+                var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
+
+                // Success message for final modal display
+                var message = [];
+                var chainStart = null;
+
+                if(applyAcl) {
+                    // App not a valid key for updating Splunk ACL's, remove it before posting
+                    delete aclData.app;
+
+                    chainStart = $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclData,
+                        success: function() {
+                            message.push("<p>Successfully applied ACL's</p>");
+                        },
+                        error: function(e) {
+                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
+                        }
+                    })
+                } else {
+                    chainStart = genericPromise();
+                }
+
+                chainStart
+                .then (function() {
+                    if(password) {
+                        return $.ajax({
+                            type: "POST",
+                            url: passwordUrl,
+                            data: {"password": password},
+                            success: function() {
+                                message.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
+                            },
+                            error: function(e) {
+                                message.push("<p>Failed to update password for user " + username + ". " + e.responseText);
+                            }
+                        })
+                    }
+                })
+                .then(function() {
+                    if(formVals.app != aclApp) {
+                        console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
+                        return $.ajax({
+                            type: "POST",
+                            url: moveUrl,
+                            data: {"app": aclApp, "user": "nobody"},
+                            success: function() {
+                                message.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
+                            },
+                            error: function(e) {
+                                message.push("<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>");
+                            }
+                        })
+                    }
+                })
+                .done(function() {
+                    renderModal("user-updated",
+                                "User Updated",
+                                message.join('\n'),
+                                "Close",
+                                refreshWindow)                        
+                });
+            }
+        }
+
+        var divId = "#" + row.username;
+
+        var htmlForm = '<form id="' + row.username + '-update-form"> \
+                        <div class="form-group"> \
+                            <label for="username">Username</label> \
+                            <input type="username" class="form-control" id="updateUsername" placeholder="Enter username"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="password">Password</label> \
+                            <input type="password" class="form-control" id="updatePassword" placeholder="Password"> \
+                        </div> \
+                        <div> \
+                            <label for="confirmPassword">Confirm Password</label> \
+                            <input type="password" class="form-control" id="updateConfirmPassword" placeholder="Confirm Password"> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="realm">Realm</label> \
+                            <input type="realm" class="form-control" id="updateRealm" placeholder="Realm"> \
+                            <br></br>\
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="owner" id="owner">Owner</label> \
+                            <div id="owner-dropdown-inline"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="readUsers" id="read-users">Read Users</label> \
+                            <div id="read-user-multi-inline"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="writeUsers" id="write-users">Write Users</label> \
+                            <div id="write-user-multi-inline"></div> \
+                        </div> \
+                        <div class="form-group" id="app-scope"> \
+                            <label for="appScope">App Scope</label> \
+                            <div id="app-scope-dropdown-inline"></div> \
+                        </div> \
+                        <div class="form-group"> \
+                            <label for="sharing" id="sharing">Sharing</label> \
+                            <div id="sharing-dropdown-inline"></div> \
+                         </div> \
+                        <div id="create-credential-submit"> \
+                          <button id="create-submit-inline" class="btn btn-primary">Submit</button> \
+                        </div> \
+                        </form>'
+
+        $(divId).append(htmlForm);
+        //$('#rest-password-table').bootstrapTable('expandRow', rowIndex);
+
+        // if(!isFormOpen()) {
+        //     $('#create-update-form').collapse('show');
+        //     $('#main-create').text("Close");
+        //     window.sessionStorage.setItem("formOpen", "true");
+        // } else {
+        //     $('#create-update-form').collapse('hide');
+        //     setTimeout(function() {
+        //         $('#create-update-form').collapse('show');
+        //         $('#main-create').text("Close");
+        //         window.sessionStorage.setItem("formOpen", "true");
+        //     }, 700) 
+        // }
+
+        // Set form username and realm
+        $('input[id=updateUsername]').val(row.username);
+        $('input[id=updateRealm]').val(row.realm);
+
+        var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
+                       "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                       "el": "app-scope-dropdown-inline",
+                       "type": "dropdown",
+                       "default": [row.app],
+                       "aclKey": "app",
+                       "parentEl": "app-scope"}),
+                       new splunkJSInput({"id": "read-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "read-user-multi-inline",
+                        "type": "multi-dropdown",
+                        "default": row.acl_read.split(','),
+                        "aclKey": "perms.read",
+                        "parentEl": "read-users"}),
+                       new splunkJSInput({"id": "write-user-multi",
+                        "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
+                        "el": "write-user-multi-inline",
+                        "type": "multi-dropdown",
+                        "parentEl": "write-users",
+                        "aclKey": "perms.write",
+                        "default": row.acl_write.split(',')}),
+                       new splunkJSInput({"id": "sharing-dropdown",
+                        "choices": [{"label":"global", "value": "global"},
+                                    {"label":"app", "value": "app"},
+                                    {"label":"user", "value": "user"}],
+                        "el": "sharing-dropdown-inline",
+                        "type": "dropdown",
+                        "parentEl": "sharing",
+                        "aclKey": "sharing",
+                        "default": [row.acl_sharing]}),
+                       new splunkJSInput({"id": "owner-dropdown",
+                        "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
+                        "el": "owner-dropdown-inline",
+                        "type": "dropdown",
+                        "default": [row.owner],
+                        "aclKey": "owner",
+                        "parentEl": "owner"})];
+
+        // Remove component if it exists
+        _.each(inputs, function(input, i) {
+            input.updateRemove();
+        });
+
+        // Fire searches and render splunkJS form components to modal
+        $.when(execMultiSearch(inputs)).done(function(components) {
+           // $('#open-close-button')[0].scrollIntoView(true);
+            _.each(components, function(component, i) {
+                component.waitForElAndRender();
+            });
+
+            clearOnClickAndRegister('#create-submit-inline', updateUser, [inputs, row]);
+        });
+    }
+
     function renderUpdateUserForm(row) {
         var updateUser = function updateUser () {
             event.preventDefault();
@@ -822,7 +1119,7 @@ function ($,
                 var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
 
                 // Success message for final modal display
-                var successMessage = [];
+                var message = [];
                 var chainStart = null;
 
                 if(applyAcl) {
@@ -834,14 +1131,10 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            successMessage.push("<p>Successfully applied ACL's</p>");
+                            message.push("<p>Successfully applied ACL's</p>");
                         },
                         error: function(e) {
-                            console.log(e);
-                            renderModal("acl-update-fail",
-                                    "Failed To Apply ACL",
-                                    "<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>",
-                                    "Close");
+                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
                         }
                     })
                 } else {
@@ -856,15 +1149,10 @@ function ($,
                             url: passwordUrl,
                             data: {"password": password},
                             success: function() {
-                                successMessage.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
+                                message.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
                             },
                             error: function(e) {
-                                console.log(e);
-                                renderModal("password-updated",
-                                            "Password Updated",
-                                            "<p>Failed to update password for user " + username + ". " + e.responseText,
-                                            "Close",
-                                            refreshWindow);
+                                message.push("<p>Failed to update password for user " + username + ". " + e.responseText);
                             }
                         })
                     }
@@ -877,14 +1165,10 @@ function ($,
                             url: moveUrl,
                             data: {"app": aclApp, "user": "nobody"},
                             success: function() {
-                                successMessage.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
+                                message.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
                             },
                             error: function(e) {
-                                console.log(e);
-                                renderModal("acl-update-fail",
-                                        "Failed To Move",
-                                        "<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>",
-                                        "Close");
+                                message.push("<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>");
                             }
                         })
                     }
@@ -892,7 +1176,7 @@ function ($,
                 .done(function() {
                     renderModal("user-updated",
                                 "User Updated",
-                                successMessage.join('\n'),
+                                message.join('\n'),
                                 "Close",
                                 refreshWindow)                        
                 });
