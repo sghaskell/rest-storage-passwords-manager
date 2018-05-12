@@ -310,7 +310,7 @@ function ($,
                             <div id="sharing-dropdown"></div> \
                          </div> \
                         <div id="create-credential-submit"> \
-                          <button id="create-submit" class="btn btn-primary">Submit</button> \
+                          <button id="create-submit" class="btn btn-primary">Create</button> \
                         </div> \
                         </form> \
                       </div> \
@@ -323,7 +323,7 @@ function ($,
                            </ul>';
         var header = '  <div> \
                             <div id="toolbar"> \
-                                <button id="remove" type="button" class="btn icon-x btn-primary" disabled> Delete</button> \
+                            <button id="remove" type="button" class="btn icon-x btn-primary" disabled> Delete</button> \
                             </div> \
                         <table id="rest-password-table" \
                              class="table table-striped table-hover" \
@@ -480,11 +480,11 @@ function ($,
                 type: "DELETE",
                 url: deleteUrl,
                 success: function() {
-                    message.push("<p>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></p>");
+                    message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b>");
                     dfd.resolve(message);
                 },
                 error: function(e) {
-                    message.push("<p>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</p>");
+                    message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</div>");
                     dfd.resolve(message);
                 }
             })
@@ -518,7 +518,7 @@ function ($,
 
         var deleteUser = renderModal("user-delete-confirm",
                                      "Confirm Delete Action",
-                                     "<p>You're about to remove the users <b>" + users.join(', ') + "</b> - Press ok to continue</p>",
+                                     "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>You're about to remove the users <b>" + users.join(', ') + "</b> - Press ok to continue</div>",
                                      "Ok",
                                      removeUsers,
                                      [rows]);
@@ -550,7 +550,7 @@ function ($,
 
         var deleteUser = renderModal("user-delete-confirm",
                                      "Confirm Delete Action",
-                                     "<p>You're about to remove the user " + row.username + ":" + row.realm + " - Press ok to continue</p>",
+                                     "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>You're about to remove the user <b>" + row.username + ":" + row.realm + "</b> - Press ok to continue</div>",
                                      "Ok",
                                      removeUser);
     }
@@ -728,10 +728,10 @@ function ($,
                     url: createUrl,
                     data: createData,
                     success: function() {
-                        message.push("<p>Successfully created user <b>" + realm + ":" + username + "</b></p>");
+                        message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully created user <b>" + realm + ":" + username + "</b></div>");
                     },
                     error: function(e) {
-                        message.push("<p>Failed to create user " + username + ":" + realm + "</p><br><p>" + e.responseText + "</p>");
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user " + username + ":" + realm + "</p><br><p>" + e.responseText + "</div>");
                     }
                 })
                 .then(function() {
@@ -743,10 +743,10 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            message.push("<p>Successfully applied ACL's</p>")
+                            message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully applied ACL's</div>")
                         },
                         error: function(e) {
-                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL</p><br><p>" + e.responseText + "</div>");
                         }
                     })                
                 })
@@ -890,10 +890,10 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            message.push("<p>Successfully applied ACL's</p>");
+                            message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully applied ACL's</div>");
                         },
                         error: function(e) {
-                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL</p><br><p>" + e.responseText + "</div>");
                         }
                     })
                 } else {
@@ -908,10 +908,10 @@ function ($,
                             url: passwordUrl,
                             data: {"password": password},
                             success: function() {
-                                message.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
+                                message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<p>Failed to update password for user " + username + ". " + e.responseText);
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user " + username + ". " + e.responseText + "</div>");
                             }
                         })
                     }
@@ -924,10 +924,10 @@ function ($,
                             url: moveUrl,
                             data: {"app": aclApp, "user": "nobody"},
                             success: function() {
-                                message.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
+                                message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>");
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</div>");
                             }
                         })
                     }
@@ -983,7 +983,7 @@ function ($,
                             <div id="sharing-dropdown-inline"></div> \
                          </div> \
                         <div id="create-credential-submit"> \
-                          <button id="create-submit-inline" class="btn btn-primary">Submit</button> \
+                          <button id="create-submit-inline" class="btn btn-primary">Update</button> \
                         </div> \
                         </form>'
 
@@ -1131,10 +1131,10 @@ function ($,
                         url: aclUrl,
                         data: aclData,
                         success: function() {
-                            message.push("<p>Successfully applied ACL's</p>");
+                            message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully applied ACL's</div>");
                         },
                         error: function(e) {
-                            message.push("<p>Failed to apply ACL</p><br><p>" + e.responseText + "</p>");
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL</p><br><p>" + e.responseText + "</div>");
                         }
                     })
                 } else {
@@ -1149,10 +1149,10 @@ function ($,
                             url: passwordUrl,
                             data: {"password": password},
                             success: function() {
-                                message.push("<p>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></p>");
+                                message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<p>Failed to update password for user " + username + ". " + e.responseText);
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user " + username + ". " + e.responseText + "</div>");
                             }
                         })
                     }
@@ -1165,10 +1165,10 @@ function ($,
                             url: moveUrl,
                             data: {"app": aclApp, "user": "nobody"},
                             success: function() {
-                                message.push("<p>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></p>");
+                                message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<p>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</p>");
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</div>");
                             }
                         })
                     }
