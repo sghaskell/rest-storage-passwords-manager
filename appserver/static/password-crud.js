@@ -210,6 +210,7 @@ function ($,
     /* Run Search */
     function runSearch() {
         window.sessionStorage.setItem("formOpen", "false");
+        window.sessionStorage.setItem("curTableIndex", "");
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
 
@@ -334,8 +335,8 @@ function ($,
                              data-id-field="id" \
                              data-pagination="true" \
                              data-sortable="true" \
-                             data-page-size="5" \
-                             data-page-list="[5,10,ALL]" \
+                             data-page-size="10" \
+                             data-page-list="[10,20,50,ALL]" \
                              data-id-field="id" \
                              data-toggle="table" \
                              data-smart-display="true" \
@@ -434,6 +435,17 @@ function ($,
             },
             onExpandRow: function(index, row, $detail) {
                 $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
+                
+                // Logic to collapse previous row when new row expanded
+                var activeIndex = window.sessionStorage.getItem("curTableIndex");
+
+                if(activeIndex) {
+                    $('#rest-password-table').bootstrapTable('collapseRow', activeIndex);
+                    window.sessionStorage.setItem("curTableIndex", index);
+                } else {
+                    window.sessionStorage.setItem("curTableIndex", index);
+                }
+                
                 renderUpdateUserInTable(row);
             }
 
