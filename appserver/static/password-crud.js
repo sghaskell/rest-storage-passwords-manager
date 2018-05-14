@@ -323,7 +323,7 @@ function ($,
                            </ul>';
         var header = '  <div> \
                             <div id="toolbar"> \
-                            <button id="remove" type="button" class="btn icon-x btn-primary" disabled> Delete</button> \
+                            <button id="remove" type="button" class="btn icon-x btn-danger" disabled> Delete</button> \
                             </div> \
                         <table id="rest-password-table" \
                              class="table table-striped table-hover" \
@@ -332,10 +332,10 @@ function ($,
                              data-sort-name="username" \
                              data-show-pagination-switch="true" \
                              data-id-field="id" \
-                             data-pagination="false" \
+                             data-pagination="true" \
                              data-sortable="true" \
-                             data-page-size="15" \
-                             data-page-list="[10, 25, 50, 100, ALL]" \
+                             data-page-size="5" \
+                             data-page-list="[5,10,ALL]" \
                              data-id-field="id" \
                              data-toggle="table" \
                              data-smart-display="true" \
