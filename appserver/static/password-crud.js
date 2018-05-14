@@ -210,7 +210,6 @@ function ($,
     /* Run Search */
     function runSearch() {
         window.sessionStorage.setItem("formOpen", "false");
-        window.sessionStorage.setItem("curTableIndex", "");
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
 
@@ -437,15 +436,12 @@ function ($,
                 $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
                 
                 // Logic to collapse previous row when new row expanded
-                var activeIndex = window.sessionStorage.getItem("curTableIndex");
+                $('#rest-password-table').find('.detail-view').each(function () {
+                    if (!$(this).is($detail.parent())) {
+                      $(this).prev().find('.detail-icon').click()
+                  }
+                })
 
-                if(activeIndex && (activeIndex != index)) {
-                    $('#rest-password-table').bootstrapTable('collapseRow', activeIndex);
-                    window.sessionStorage.setItem("curTableIndex", index);
-                } else {
-                    window.sessionStorage.setItem("curTableIndex", index);
-                }
-                
                 renderUpdateUserInTable(row);
             }
 
