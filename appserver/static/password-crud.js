@@ -439,7 +439,7 @@ function ($,
                 // Logic to collapse previous row when new row expanded
                 var activeIndex = window.sessionStorage.getItem("curTableIndex");
 
-                if(activeIndex) {
+                if(activeIndex && (activeIndex != index)) {
                     $('#rest-password-table').bootstrapTable('collapseRow', activeIndex);
                     window.sessionStorage.setItem("curTableIndex", index);
                 } else {
