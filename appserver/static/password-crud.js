@@ -156,7 +156,7 @@ function ($,
         var myModal = new Modal(id, {
                     title: title,
                     destroyOnHide: true,
-                    type: 'wide'
+                    type: 'normal'
         }); 
     
         myModal.body.append($(body));
