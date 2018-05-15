@@ -54,8 +54,6 @@ function ($,
 
     // Wrapper to execute multiple searches in order and resolve when they've all finished
     function all(array){
-        console.log("Array");
-        console.log(array);
         var deferred = $.Deferred();
         var fulfilled = 0, length = array.length;
         var results = [];
@@ -80,10 +78,8 @@ function ($,
     function isFormOpen() {
         var formOpen = window.sessionStorage.getItem("formOpen");
         if(_.isNull(formOpen) || _.isUndefined(formOpen) || formOpen === "false") {
-            console.log("Form not open - returning false");
             return false;
         } else {
-            console.log("Form is open - returning true");
             return true;
         }
     }
@@ -95,7 +91,6 @@ function ($,
         var promises = [];
 
         _.each(components, function(component, i) {
-            console.log(component);
             promises.push(function() {
                 return execSearch(component);
             });    
@@ -189,7 +184,7 @@ function ($,
     }
 
     function clearOnClickAndRegister(el, callback, callbackArgs=null) {
-        //console.log($._data($(el).get(0), "events"));
+        // Register click callback
         if(_.isUndefined($._data($(el).get(0), "events"))) {
             $(el).on('click', function (event) {
                 event.preventDefault();
@@ -198,8 +193,8 @@ function ($,
             return;    
         }
 
+        // Unregister click callback
         if(_.isObject($._data($(el).get(0), "events")) && _.has($._data($(el).get(0), "events"), "click")) {
-            console.log("Unregistering click callback");
             $(el).off('click');
             $(el).on('click', function () {
                 anonCallback(callback, callbackArgs);
@@ -207,6 +202,7 @@ function ($,
         }
     }
 
+    // Return selected rows from bootstrap-table
     function getIdSelections() {
         return $.map($('#rest-password-table').bootstrapTable('getSelections'), function (row) {
             return row
@@ -256,7 +252,6 @@ function ($,
             document.getElementById("password-table").innerHTML = "";
 
             if(properties.content.resultCount == 0) {
-                console.log("No Results");
                 var noData = null;
                 createTable(passwordTableDiv, contextMenuDiv, noData);
             }
@@ -268,6 +263,7 @@ function ($,
         });
     }
 
+    // Render credential table and wire up context menu
     function createTable(tableDiv, contextMenuDiv, data) {
         var html = '<p> Click <b>Create</b> to add a user or right click on a row to create, update or delete.</p> \
                     <div id="open-close-button"> \
@@ -392,14 +388,6 @@ function ($,
         $(tableDiv).append(html);
         $(contextMenuDiv).append(contextMenu);
         $('#main-create').on('click', function () { 
-            // var formOpen = window.sessionStorage.getItem("formOpen");
-            // if(_.isUndefined(formOpen)) {
-            //     formOpen = false;
-            // }
-
-            // console.log("form open:" + formOpen);
-
-            //if(formOpen == "true") {
             if(!isFormOpen()) {
                 $('#main-create').text("Close");
                 window.sessionStorage.setItem("formOpen", "true");
@@ -407,18 +395,16 @@ function ($,
                 // Clear form values
                 $('input[id=createUsername]').val("");
                 $('input[id=createRealm]').val("");        
-                //console.log(window.sessionStorage.getItem("formOpen"));
             } else {
                 $('#main-create').text("Create");
                 window.sessionStorage.setItem("formOpen", "false");
-                //console.log(window.sessionStorage.getItem("formOpen"));
             }
             
             anonCallback(renderCreateUserForm, ["",""])
         });
 
+        // Current row index in table
         var curIndex = null;
-        var curEl = null;
 
         $('#rest-password-table').bootstrapTable({
             contextMenu: '#example1-context-menu',
@@ -430,10 +416,8 @@ function ($,
                 }                
             },
             onContextMenuRow: function(row, $el){ 
-                //console.log($el.data().index);
+                // Set the current index when context menu triggered
                 curIndex = $el.data().index;
-                curEl = $el;
-                //$el.html('<table></table>').find('table').append('<div id="' + row.username + '"></div>');
             },
             onExpandRow: function(index, row, $detail) {
                 $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
@@ -450,7 +434,6 @@ function ($,
 
         });
         
-
         // Toggle remove button on or off depending whether rows are checked
         $('#rest-password-table').on('check.bs.table uncheck.bs.table ' +
                 'check-all.bs.table uncheck-all.bs.table', function () {
@@ -473,8 +456,10 @@ function ($,
         }, 500);
     }
 
+    // Delete credentials
     function deleteMultiCredential(rows) {
 
+        // Delete a single credential
         var deleteCred = function (row) {
             var dfd = $.Deferred();
             var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
@@ -501,16 +486,17 @@ function ($,
         }
 
         var removeUsers = function () {
-            // push individual searches
+            // promise array
             var promises = [];
             
             _.each(rows, function(row, i) {
+                // Push each row to be deleted onto promises array
                 promises.push(function() {
                     return deleteCred(row);
                 });    
             });
 
-            // 
+            // Execute deletes and display message
             $.when(all(promises)).then(function(success) {
                 renderModal("user-deleted",
                             "User Deleted",
@@ -520,10 +506,12 @@ function ($,
             });
         }
 
+        // Get the usernames from all rows
         var users = $.map(rows, function(row) {
             return row.username;
         })
 
+        // Render delete confirmation modal and regester delete callback action
         var deleteUser = renderModal("user-delete-confirm",
                                      "Confirm Delete Action",
                                      "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>You're about to remove the users <b>" + users.join(', ') + "</b> - Press ok to continue</div>",
@@ -532,6 +520,7 @@ function ($,
                                      [rows]);
     }
 
+    // SplunkJS Input object and methods
     function splunkJSInput(config) {
         var config = this.config = config;
         var htmlForm = '<div id="' + this.config.username + '" class="collapse multi-collapse"> \
@@ -582,32 +571,31 @@ function ($,
                     </div>'
         var that = this;
 
+        // Remove component and add div back
         this.remove = function() {
             var el = "#" + this.config.parentEl;
             var splunkJsComponent = mvc.Components.get(this.config.id);
             if(splunkJsComponent) {
-                console.log("Removing component " + this.config.id);
                 splunkJsComponent.remove();
                 $(el).append('<div id="' + this.config.el + '"></div>');    
             }
         }
 
+        // Remove component from inline update form. Don't add the div back since it's dynamic
         this.updateRemove = function() {
             var el = "#" + this.config.parentEl;
             var splunkJsComponent = mvc.Components.get(this.config.id);
             if(splunkJsComponent) {
-                console.log("Removing component " + this.config.id);
                 splunkJsComponent.remove();
-                //$(el).append('<div id="' + this.config.el + '"></div>');    
             }
         }
 
+        // Wait for div to be available in DOM before rendering
         this.waitForElAndRender = function() {        
             var el = "#" + this.config.el;
 
             if ($(el).length) {
                 var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;    
-                console.log("Rendering " + this.config.id);
     
                 if(this.config.type == "dropdown") {
                     this.config.instance = new DropdownView({
@@ -639,12 +627,13 @@ function ($,
             }
         }
 
+        // Get values from bootstrap table
         this.getVals = function() {
             return this.config.instance.val();
         }
     }
 
-
+    // Used to render create form
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
             var aclData = {};
@@ -691,12 +680,8 @@ function ($,
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
 
-                 
-
                 // Success message for final modal display
                 var message = [];
-
-                console.log(aclData);
 
                 $.ajax({
                     type: "POST",
@@ -795,6 +780,7 @@ function ($,
         }, 300);
     }
 
+    // Render form under row in bootstrap-table
     function renderUpdateUserInTable(row) {
         var updateUser = function updateUser () {
             var formVals = {};
@@ -805,8 +791,6 @@ function ($,
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
                 formVals[aclKey] = component.config.default.join();
             });
-            
-            
             
             var username = $('input[id=updateUsername]').val();
             var password = $('input[id=updatePassword]').val();
@@ -831,7 +815,6 @@ function ($,
             // Add realm to formVals for refrence in REST url's
             formVals.realm = arguments[1].realm;
 
-            
             if(aclData.sharing == "user" && password) {
                 return renderModal("sharing-scope-error",
                                    "Sharing Error",
@@ -890,7 +873,6 @@ function ($,
                 })
                 .then(function() {
                     if(formVals.app != aclApp) {
-                        console.log("Form vals app: " + formVals.app + " Acl data app: " + aclApp);
                         return $.ajax({
                             type: "POST",
                             url: moveUrl,
@@ -1020,7 +1002,6 @@ function ($,
     }
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
-            console.log(row);
             showPassword(row);
         }
     };
