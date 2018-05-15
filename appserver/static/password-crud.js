@@ -265,8 +265,7 @@ function ($,
 
     // Render credential table and wire up context menu
     function createTable(tableDiv, contextMenuDiv, data) {
-        var html = '<p> Click <b>Create</b> to add a user or right click on a row to create, update or delete.</p> \
-                    <div id="open-close-button"> \
+        var html = '<div id="open-close-button"> \
                       <p><button id="main-create" class="btn btn-primary" data-toggle="collapse" href="#create-update-form">Create</button></p> \
                     </div> \
                     <div id="create-update-form" class="collapse multi-collapse"> \
