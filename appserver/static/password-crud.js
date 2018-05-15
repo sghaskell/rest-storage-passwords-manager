@@ -25,10 +25,17 @@ function ($,
           Dropdown) {
 
     function showPassword(row) {
-        renderModal("show-password",
-                    "Clear Password",
-                    "<p>" + row.clear_password + "</p>",
+        if(row.acl_sharing == "user") {
+            return renderModal("show-password",
+                    "Password",
+                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to view password</div>",
                     "Close");
+        } else {
+            return renderModal("show-password",
+            "Password",
+            "<h3>" + row.clear_password + "</h3>",
+            "Close");
+        }
     }
 
     function anonCallback(callback=function(){}, callbackArgs=null) {
@@ -482,18 +489,23 @@ function ($,
             var dfd = $.Deferred();
             var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
             var message = [];
-            $.ajax({
-                type: "DELETE",
-                url: deleteUrl,
-                success: function() {
-                    message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>");
-                    dfd.resolve(message);
-                },
-                error: function(e) {
-                    message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</div>");
-                    dfd.resolve(message);
-                }
-            })
+            if(row.acl_sharing == "user") {
+                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + "</b> - <b>Sharing</b> permisisons must be <b>app</b> or <b>global</b> to delete credential</div>");
+                dfd.resolve(message);
+            } else {
+                $.ajax({
+                    type: "DELETE",
+                    url: deleteUrl,
+                    success: function() {
+                        message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>");
+                        dfd.resolve(message);
+                    },
+                    error: function(e) {
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</div>");
+                        dfd.resolve(message);
+                    }
+                })
+            }
 
             return dfd.promise();                                
         }
