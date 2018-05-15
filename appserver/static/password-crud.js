@@ -543,14 +543,14 @@ function ($,
                 success: function() {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<p>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></p>",
+                                "<div class=\"alert alert-error\"><i class=\"icon-info\"></i>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></div>",
                                 "Close",
                                 refreshWindow) 
                 },
                 error: function(e) {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<p>Failed to delete user <b>" + row.username + " - " + e.responseText + "</b></p>",
+                                "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + " - " + e.responseText + "</b></div>",
                                 "Close")
                 }
             });
@@ -695,7 +695,7 @@ function ($,
             if(username == "") {
                 return renderModal("missing-username",
                                     "Missing Username",
-                                    "<p>Please enter a username</b>",
+                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><p>Please enter a username</b></div>",
                                     "Close",
                                     renderCreateUserForm);
             }
