@@ -685,10 +685,10 @@ function ($,
             if(password != confirmPassword) {
                 return renderModal("password-mismatch",
                                     "Password Mismatch",
-                                    "<p>Passwords do not match</b>",
-                                    "Close",
-                                    renderCreateUserForm,
-                                    [username, realm]);
+                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
+                                    "Close");
+                                    //renderCreateUserForm,
+                                    //[username, realm]);
             } else {
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
@@ -845,7 +845,7 @@ function ($,
             if(password != confirmPassword) {
                 renderModal("password-mismatch",
                             "Password Mismatch",
-                            "<p>Passwords do not match. Please re-enter.<p>",
+                            "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                             "Close");
             } else {
                 var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
