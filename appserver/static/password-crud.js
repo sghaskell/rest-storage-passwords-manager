@@ -917,27 +917,27 @@ function ($,
                             <br></br>\
                         </div> \
                         <div class="form-group"> \
-                            <label for="owner" id="owner">Owner</label> \
+                            <label for="owner" id="owner-inline">Owner</label> \
                             <div id="owner-dropdown-inline"></div> \
                         </div> \
                         <div class="form-group"> \
-                            <label for="readUsers" id="read-users">Read Users</label> \
+                            <label for="readUsers" id="read-users-inline">Read Users</label> \
                             <div id="read-user-multi-inline"></div> \
                         </div> \
                         <div class="form-group"> \
-                            <label for="writeUsers" id="write-users">Write Users</label> \
+                            <label for="writeUsers" id="write-users-inline">Write Users</label> \
                             <div id="write-user-multi-inline"></div> \
                         </div> \
-                        <div class="form-group" id="app-scope"> \
+                        <div class="form-group" id="app-scope-inline"> \
                             <label for="appScope">App Scope</label> \
                             <div id="app-scope-dropdown-inline"></div> \
                         </div> \
                         <div class="form-group"> \
-                            <label for="sharing" id="sharing">Sharing</label> \
+                            <label for="sharing" id="sharing-inline">Sharing</label> \
                             <div id="sharing-dropdown-inline"></div> \
                          </div> \
-                        <div id="create-credential-submit"> \
-                          <button id="create-submit-inline" class="btn btn-primary">Update</button> \
+                        <div id="update-credential-inline-submit"> \
+                          <button id="update-submit-inline" class="btn btn-primary">Update</button> \
                         </div> \
                         </form>'
 
@@ -947,43 +947,43 @@ function ($,
         $('input[id=updateUsername]').val(row.username);
         $('input[id=updateRealm]').val(row.realm);
 
-        var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
+        var inputs = [new splunkJSInput({"id": "app-scope-dropdown-inline",
                        "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
                        "el": "app-scope-dropdown-inline",
                        "type": "dropdown",
                        "default": [row.app],
                        "aclKey": "app",
-                       "parentEl": "app-scope"}),
-                       new splunkJSInput({"id": "read-user-multi",
+                       "parentEl": "app-scope-inline"}),
+                       new splunkJSInput({"id": "read-user-multi-inline",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "read-user-multi-inline",
                         "type": "multi-dropdown",
                         "default": row.acl_read.split(','),
                         "aclKey": "perms.read",
-                        "parentEl": "read-users"}),
-                       new splunkJSInput({"id": "write-user-multi",
+                        "parentEl": "read-users-inline"}),
+                       new splunkJSInput({"id": "write-user-multi-inline",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
                         "el": "write-user-multi-inline",
                         "type": "multi-dropdown",
-                        "parentEl": "write-users",
+                        "parentEl": "write-users-inline",
                         "aclKey": "perms.write",
                         "default": row.acl_write.split(',')}),
-                       new splunkJSInput({"id": "sharing-dropdown",
+                       new splunkJSInput({"id": "sharing-dropdown-inline",
                         "choices": [{"label":"global", "value": "global"},
                                     {"label":"app", "value": "app"},
                                     {"label":"user", "value": "user"}],
                         "el": "sharing-dropdown-inline",
                         "type": "dropdown",
-                        "parentEl": "sharing",
+                        "parentEl": "sharing-inline",
                         "aclKey": "sharing",
                         "default": [row.acl_sharing]}),
-                       new splunkJSInput({"id": "owner-dropdown",
+                       new splunkJSInput({"id": "owner-dropdown-inline",
                         "searchString": "| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | table label, value",
                         "el": "owner-dropdown-inline",
                         "type": "dropdown",
                         "default": [row.owner],
                         "aclKey": "owner",
-                        "parentEl": "owner"})];
+                        "parentEl": "owner-inline"})];
 
         // Remove component if it exists
         _.each(inputs, function(input, i) {
@@ -997,7 +997,7 @@ function ($,
                 component.waitForElAndRender();
             });
 
-            clearOnClickAndRegister('#create-submit-inline', updateUser, [inputs, row]);
+            clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
         });
     }
     window.operateEvents = {
