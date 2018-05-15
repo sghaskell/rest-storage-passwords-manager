@@ -207,15 +207,12 @@ function ($,
     }
     
 
-    /* Run Search */
-    function runSearch() {
+    // Run search to populate and call create table
+    function populateTable() {
         window.sessionStorage.setItem("formOpen", "false");
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
 
-        // | rest /servicesNS/-/-/authentication/users | table title | rename title as user
-        // | rest /servicesNS/-/-/apps/local | table title, label | rename title as app_name, label as app_description
-        
         var search1 = new SearchManager({
                 "id": "search1",
                 "cancelOnUnload": true,
@@ -423,7 +420,8 @@ function ($,
                     //renderUpdateUserForm(row);
                     $('#rest-password-table').bootstrapTable('expandRow', curIndex);                    
                 } else if($el.data("item") == "delete"){
-                    deleteCredential(row, tableDiv);
+                    //deleteCredential(row, tableDiv);
+                    deleteMultiCredential([row]);        
                 }                
             },
             onContextMenuRow: function(row, $el){ 
@@ -533,8 +531,7 @@ function ($,
     }
 
     function deleteCredential(row) {
-        var username=Splunk.util.getConfigValue("USERNAME");      
-        var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + username + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
+        var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
 
         var removeUser = function () {
             $.ajax({
@@ -543,7 +540,7 @@ function ($,
                 success: function() {
                     renderModal("user-deleted",
                                 "User Deleted",
-                                "<div class=\"alert alert-error\"><i class=\"icon-info\"></i>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></div>",
+                                "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></div>",
                                 "Close",
                                 refreshWindow) 
                 },
@@ -1269,6 +1266,7 @@ function ($,
         }
     };
 
-    runSearch();
+    // Kick it all off
+    populateTable();
 
 });
