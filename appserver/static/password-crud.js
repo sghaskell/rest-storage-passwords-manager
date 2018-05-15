@@ -189,10 +189,10 @@ function ($,
     }
 
     function clearOnClickAndRegister(el, callback, callbackArgs=null) {
-        console.log($._data($(el).get(0), "events"));
-        //console.log($._data($(el).get(0), "events").click);
+        //console.log($._data($(el).get(0), "events"));
         if(_.isUndefined($._data($(el).get(0), "events"))) {
-            $(el).on('click', function () {
+            $(el).on('click', function (event) {
+                event.preventDefault();
                 anonCallback(callback, callbackArgs);
             });
             return;    
@@ -647,8 +647,6 @@ function ($,
 
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
-            event.preventDefault();
-        
             var aclData = {};
 
             _.each(arguments[2], function(component, i) {
@@ -799,8 +797,6 @@ function ($,
 
     function renderUpdateUserInTable(row) {
         var updateUser = function updateUser () {
-            event.preventDefault();
-
             var formVals = {};
             var aclData = {};
 
