@@ -143,7 +143,7 @@ function ($,
         var myModal = new Modal(id, {
                     title: title,
                     destroyOnHide: true,
-                    type: 'wide'
+                    type: 'normal'
         }); 
     
         myModal.body.append($(body));
@@ -488,7 +488,7 @@ function ($,
                 type: "DELETE",
                 url: deleteUrl,
                 success: function() {
-                    message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b>");
+                    message.push("<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>");
                     dfd.resolve(message);
                 },
                 error: function(e) {
