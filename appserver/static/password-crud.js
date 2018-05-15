@@ -831,10 +831,11 @@ function ($,
             // Add realm to formVals for refrence in REST url's
             formVals.realm = arguments[1].realm;
 
-            if(aclData.sharing === "user" && password) {
+            
+            if(aclData.sharing == "user" && password) {
                 return renderModal("sharing-scope-error",
                                    "Sharing Error",
-                                   "<p>Set sharing to App or Global before changing password.<p>",
+                                   "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to reset password</div>",
                                    "Close")
             }
             
