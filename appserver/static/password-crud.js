@@ -530,36 +530,6 @@ function ($,
                                      [rows]);
     }
 
-    function deleteCredential(row) {
-        var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
-
-        var removeUser = function () {
-            $.ajax({
-                type: "DELETE",
-                url: deleteUrl,
-                success: function() {
-                    renderModal("user-deleted",
-                                "User Deleted",
-                                "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Successfully deleted credential <b>" + row.username + ":" + row.realm + "</b></div>",
-                                "Close",
-                                refreshWindow) 
-                },
-                error: function(e) {
-                    renderModal("user-deleted",
-                                "User Deleted",
-                                "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + " - " + e.responseText + "</b></div>",
-                                "Close")
-                }
-            });
-        }
-
-        var deleteUser = renderModal("user-delete-confirm",
-                                     "Confirm Delete Action",
-                                     "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>You're about to remove the user <b>" + row.username + ":" + row.realm + "</b> - Press ok to continue</div>",
-                                     "Ok",
-                                     removeUser);
-    }
-
     function splunkJSInput(config) {
         var config = this.config = config;
         var htmlForm = '<div id="' + this.config.username + '" class="collapse multi-collapse"> \
