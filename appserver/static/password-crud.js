@@ -1095,7 +1095,7 @@ function ($,
             if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
                 return renderModal("no-change",
                                 "No Change Detected",
-                                "<p>Nothing to see here.<p>",
+                                "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Nothing to see here</div>",
                                 "Close")
             }
 
