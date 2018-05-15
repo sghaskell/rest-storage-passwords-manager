@@ -15,6 +15,9 @@ Simply click the create button to reveal the credential creation form.
 
 ![Alt text](docs/credential-create.png?raw=true)
 
+![Alt text](docs/create-form.png?raw=true)
+
+
 Once created, the dashboard will be refreshed automatically. You can right click on a table entry to reveal a context menu that allows you to update or delete the credential. You can alternately click the detail view (plus icon) in the table to update the credential. Select any individual credential or multi-select using the checkbox in the header column and press the delte button. You can also click the eye icon to view the plain text password.
 
 #### Password Storage
