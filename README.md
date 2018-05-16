@@ -13,51 +13,51 @@ The Credential Management dashboard provides a CRUD interface to create, update 
 #### Create Credential
 Simply click the create button to reveal the credential creation form.
 
-![Alt text](docs/credential-create.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/credential-create.png?raw=true)
 
 Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create. If you set sharing to `user` you will not be able to update the password without changing the sharing scope back to `app` or `global`. This is a limitation with Splunk's REST API, not the app. 
 
-![Alt text](docs/create-form.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/create-form.png?raw=true)
 
-![Alt text](docs/create-success-modal.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/create-success-modal.png?raw=true)
 
 Once created, the dashboard will be refreshed automatically. 
 
-![Alt text](docs/table.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/table.png?raw=true)
 
 #### Update Credential
 
 Right click on a table entry to reveal a context menu that allows you to update the credential. 
 
-![Alt text](docs/context-update.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/context-update.png?raw=true)
 
 Alternately, you can click the detail view (plus icon) in the table to update the credential.
 
-![Alt text](docs/detail-view.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/detail-view.png?raw=true)
 
 The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/passwords REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.
 
-![Alt text](docs/inline-update.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/inline-update.png?raw=true)
 
 #### Delete Credential
 
 Right click on a table entry to reveal a context menu that allows you to delete the credential. 
 
-![Alt text](docs/context-delete.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/context-delete.png?raw=true)
 
 Alternately, select any individual credential or select all using the checkbox in the header column and press the delte button.
 
-![Alt text](docs/multi-delete.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/multi-delete.png?raw=true)
 
-![Alt text](docs/multi-delete-confirm.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/multi-delete-confirm.png?raw=true)
 
 #### Reveal Clear Password
 
 Click the eye icon to view the plain text password.
 
-![Alt text](docs/show-password.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/show-password.png?raw=true)
 
-![Alt text](docs/clear-password-modal.png?raw=true)
+![Alt text](appserver/static/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true)
 
 ## Bugs & Feature Enhancements
 
