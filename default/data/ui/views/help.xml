@@ -1,0 +1,47 @@
+<dashboard>
+  <label>Help</label>
+  <row>
+    <html><h1 id="splunkreststoragepasswordsmanager">Splunk REST storage/passwords Manager</h1>
+<h2 id="about">About</h2>
+<p>The password manager app provides a Javascript CRUD interface to the <a href="http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswords">Splunk storage/passwords REST endpoint</a>. </p>
+<h2 id="dependencies">Dependencies</h2>
+<p>To store passwords the user must have the <code>admin_all_objects</code> capability enabled within an assigned role. To read passwords a user must have <code>list_storage_passwords</code> capabilty enabled within an assigned role.</p>
+<h2 id="usage">Usage</h2>
+<p>The Credential Management dashboard provides a CRUD interface to create, update and delete credentials to be used within Splunk apps. </p>
+<h4 id="createcredential">Create Credential</h4>
+<p>Simply click the create button to reveal the credential creation form.</p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/credential-create.png?raw=true" alt="Alt text" /></p>
+<p>Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create. If you set sharing to <code>user</code> you will not be able to update the password without changing the sharing scope back to <code>app</code> or <code>global</code>. This is a limitation with Splunk's REST API, not the app. </p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/create-form.png?raw=true" alt="Alt text" /></p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/create-success-modal.png?raw=true" alt="Alt text" /></p>
+<p>Once created, the dashboard will be refreshed automatically. </p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/table.png?raw=true" alt="Alt text" /></p>
+<h4 id="updatecredential">Update Credential</h4>
+<p>Right click on a table entry to reveal a context menu that allows you to update the credential. </p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/context-update.png?raw=true" alt="Alt text" /></p>
+<p>Alternately, you can click the detail view (plus icon) in the table to update the credential.</p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/detail-view.png?raw=true" alt="Alt text" /></p>
+<p>The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/passwords REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.</p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/inline-update.png?raw=true" alt="Alt text" /></p>
+<h4 id="deletecredential">Delete Credential</h4>
+<p>Right click on a table entry to reveal a context menu that allows you to delete the credential. </p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/context-delete.png?raw=true" alt="Alt text" /></p>
+<p>Alternately, select any individual credential or select all using the checkbox in the header column and press the delte button.</p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/multi-delete.png?raw=true" alt="Alt text" /></p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/multi-delete-confirm.png?raw=true" alt="Alt text" /></p>
+<h4 id="revealclearpassword">Reveal Clear Password</h4>
+<p>Click the eye icon to view the plain text password.</p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/show-password.png?raw=true" alt="Alt text" /></p>
+<p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true" alt="Alt text" /></p>
+<h2 id="usingstoredpasswords">Using Stored Passwords</h2>
+<p>Please see this <a href="http://www.georgestarcher.com/splunk-stored-encrypted-credentials/">awesome blog post</a> on using your newly stored credentials. When all else fails, dig into <a href="http://dev.splunk.com/search/?q=storage%2Fpasswords">dev.splunk.com</a> for more details.</p>
+<h2 id="support">Support</h2>
+<h3 id="featurerequests">Feature Requests</h3>
+<p>Please <a href="https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement">submit feature requests through Github</a> using the <code>enhancement</code> label so they can be tracked and discussed.</p>
+<h3 id="bugs">Bugs</h3>
+<p>Please <a href="https://github.com/sghaskell/rest-storage-passwords-manager/labels/bug">submit bugs through Github</a> using the <code>bug</code> label so they can be tracked and discussed.</p>
+<h6 id="forallotherinquiries">For all other inquiries</h6>
+<p>Scott Haskell (<a href="mailto:shaskell@splunk.com">shaskell@splunk.com</a>)</p>
+<h6 id="codehostedatgithubhttpsgithubcomsghaskellreststoragepasswordsmanager"><a href="https://github.com/sghaskell/rest-storage-passwords-manager">Code hosted at Github</a></h6></html>    
+  </row>
+</dashboard>
