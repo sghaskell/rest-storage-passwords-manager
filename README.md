@@ -1,4 +1,4 @@
-# Password Manager
+# Splunk REST storage/password Manager
 
 ## About
 
