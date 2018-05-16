@@ -35,7 +35,7 @@ Alternately, you can click the detail view (plus icon) in the table to update th
 
 ![Alt text](docs/detail-view.png?raw=true)
 
-The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/password REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.
+The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/passwords REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.
 
 ![Alt text](docs/inline-update.png?raw=true)
 
