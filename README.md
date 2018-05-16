@@ -59,6 +59,9 @@ Click the eye icon to view the plain text password.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true)
 
+## Using Stored Passwords
+Please see this [awesome blog post](http://www.georgestarcher.com/splunk-stored-encrypted-credentials/) on using your newly stored credentials. When all else fails, dig into [dev.splunk.com](http://dev.splunk.com/search/?q=storage%2Fpasswords&l=en&submit=Search) for more details.
+
 #Support
 ### Feature Requests
 Please [submit feature requests through Github](https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement) using the ``enhancement`` label so they can be tracked and discussed.
