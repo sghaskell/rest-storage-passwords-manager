@@ -720,7 +720,7 @@ function ($,
         }
 
         var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
-                       "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                       "searchString": "| rest /servicesNS/-/-/apps/local | search disabled=0 | rename title as value | table label, value",
                        "el": "app-scope-dropdown",
                        "type": "dropdown",
                        "default": utils.getCurrentApp(),
@@ -947,7 +947,7 @@ function ($,
         $('input[id=updateRealm]').val(row.realm);
 
         var inputs = [new splunkJSInput({"id": "app-scope-dropdown-inline",
-                       "searchString": "| rest /servicesNS/-/-/apps/local | rename title as value | table label, value",
+                       "searchString": "| rest /servicesNS/-/-/apps/local | search disabled=0 | rename title as value | table label, value",
                        "el": "app-scope-dropdown-inline",
                        "type": "dropdown",
                        "default": [row.app],
