@@ -27,25 +27,36 @@ Once created, the dashboard will be refreshed automatically.
 
 #### Update Credential
 
-You can right click on a table entry to reveal a context menu that allows you to update or delete the credential. 
+Right click on a table entry to reveal a context menu that allows you to update the credential. 
 
-![Alt text](docs/context-menu.png?raw=true)
+![Alt text](docs/context-update.png?raw=true)
 
 Alternately, you can You can alternately click the detail view (plus icon) in the table to update the credential.
 
 ![Alt text](docs/detail-view.png?raw=true)
 
+The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/password REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.
 
- Select any individual credential or multi-select using the checkbox in the header column and press the delte button. You can also click the eye icon to view the plain text password.
+![Alt text](docs/inline-update.png?raw=true)
 
 #### Delete Credential
 
+Right click on a table entry to reveal a context menu that allows you to update the credential. 
 
-#### Password Storage
-Use the provided dashboard to store passwords within the Password Manager app context only. At this time, the dashboard does not allow you to specify what app context you'd like to store the credentials in. If you'd like to store passwords within another app context, simply `cp -R $SPLUNK_HOME/etc/apps/password-manager/appserver/static $SPLUNK_HOME/etc/apps/<some_other_app>/appserver` and clone the Credential Management dashboard within that app.
+![Alt text](docs/context-delete.png?raw=true)
 
-#### Password Management
-Any app that has global permissions set will expose their passwords within the Credential Management dashboard of the Password Management app. You can list, update and delete any of those passwords within the Password Manager app.
+Alternatively, select any individual credential or multi-select using the checkbox in the header column and press the delte button.
 
-## To-Do
-Allow the user to pick the app context they'd like to store the password in from within the Password Manager app.
+![Alt text](docs/multi-delete.png?raw=true)
+
+![Alt text](docs/multi-delete-confirm.png?raw=true)
+
+#### Reveal Clear Password
+
+Click the eye icon to view the plain text password.
+
+![Alt text](docs/clear-password-modal.png?raw=true)
+
+## Bugs & Feature Enhancements
+
+Use the GitHub issues to file bugs and feature enhancements for the app.
