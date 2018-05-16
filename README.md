@@ -55,6 +55,8 @@ Alternatively, select any individual credential or select all using the checkbox
 
 Click the eye icon to view the plain text password.
 
+![Alt text](docs/show-password.png?raw=true)
+
 ![Alt text](docs/clear-password-modal.png?raw=true)
 
 ## Bugs & Feature Enhancements
