@@ -912,7 +912,7 @@ function ($,
                         </div> \
                         <div class="form-group"> \
                             <label for="realm">Realm</label> \
-                            <input type="realm" class="form-control" id="updateRealm" placeholder="Realm"> \
+                            <input type="realm" class="form-control" id="updateRealm" placeholder="Realm" disabled> \
                             <br></br>\
                         </div> \
                         <div class="form-group"> \
