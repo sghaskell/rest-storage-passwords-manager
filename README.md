@@ -45,7 +45,7 @@ Right click on a table entry to reveal a context menu that allows you to delete 
 
 ![Alt text](docs/context-delete.png?raw=true)
 
-Alternatively, select any individual credential or multi-select using the checkbox in the header column and press the delte button.
+Alternatively, select any individual credential or select all using the checkbox in the header column and press the delte button.
 
 ![Alt text](docs/multi-delete.png?raw=true)
 
