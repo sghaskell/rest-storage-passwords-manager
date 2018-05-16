@@ -606,8 +606,6 @@ function ($,
     
                 // Create search manager if it doesn't exist
                 if(!splunkJsComponentSearch) {
-                    console.log("Creating search manager " + this.config.id);
-                    console.log(this);
                     this.config.searchInstance = new SearchManager({
                         id: this.config.id + "-search",
                         search: this.config.searchString 
