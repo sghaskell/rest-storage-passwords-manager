@@ -1,4 +1,4 @@
 <nav search_view="credential_management" color="#65A637">
   <view name="credential_management" />
-  <view name="search" />
+  <view name="help" />
 </nav>
