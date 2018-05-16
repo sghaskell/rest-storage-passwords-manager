@@ -59,6 +59,13 @@ Click the eye icon to view the plain text password.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true)
 
-## Bugs & Feature Enhancements
+#Support
+### Feature Requests
+Please [submit feature requests through Github](https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement) using the ``enhancement`` label so they can be tracked and discussed.
 
-Use the GitHub issues to file bugs and feature enhancements for the app.
+### Bugs
+Please [submit bugs through Github](https://github.com/sghaskell/rest-storage-passwords-manager/labels/bug) using the ``bug`` label so they can be tracked and discussed.
+
+###### For all other inquiries
+Scott Haskell ([shaskell@splunk.com](mailto:shaskell@splunk.com))
+###### [Code hosted at Github](https://github.com/sghaskell/rest-storage-passwords-manager)
