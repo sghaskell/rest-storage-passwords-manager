@@ -1,6 +1,7 @@
 <dashboard>
   <label>Help</label>
   <row>
+
     <html><h1 id="splunkreststoragepasswordsmanager">Splunk REST storage/passwords Manager</h1>
 <h2 id="about">About</h2>
 <p>The password manager app provides a Javascript CRUD interface to the <a href="http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswords">Splunk storage/passwords REST endpoint</a>. </p>
@@ -33,7 +34,9 @@
 <p>Click the eye icon to view the plain text password.</p>
 <p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/show-password.png?raw=true" alt="Alt text" /></p>
 <p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true" alt="Alt text" /></p>
-<h1 id="support">Support</h1>
+<h2 id="usingstoredpasswords">Using Stored Passwords</h2>
+<p>Please see this <a href="http://www.georgestarcher.com/splunk-stored-encrypted-credentials/">awesome blog post</a> on using your newly stored credentials. When all else fails, dig into <a href="http://dev.splunk.com/search/?q=storage%2Fpasswords&l=en&submit=Search">dev.splunk.com</a> for more details.</p>
+<h2 id="support">Support</h2>
 <h3 id="featurerequests">Feature Requests</h3>
 <p>Please <a href="https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement">submit feature requests through Github</a> using the <code>enhancement</code> label so they can be tracked and discussed.</p>
 <h3 id="bugs">Bugs</h3>
