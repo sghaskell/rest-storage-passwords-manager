@@ -41,7 +41,7 @@ The update form will be rendered under the selected row in the table. You can ch
 
 #### Delete Credential
 
-Right click on a table entry to reveal a context menu that allows you to update the credential. 
+Right click on a table entry to reveal a context menu that allows you to delete the credential. 
 
 ![Alt text](docs/context-delete.png?raw=true)
 
