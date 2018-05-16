@@ -31,7 +31,7 @@ Right click on a table entry to reveal a context menu that allows you to update 
 
 ![Alt text](docs/context-update.png?raw=true)
 
-Alternately, you can You can alternately click the detail view (plus icon) in the table to update the credential.
+Alternately, you can click the detail view (plus icon) in the table to update the credential.
 
 ![Alt text](docs/detail-view.png?raw=true)
 
