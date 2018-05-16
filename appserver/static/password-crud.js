@@ -574,6 +574,7 @@ function ($,
         this.remove = function() {
             var el = "#" + this.config.parentEl;
             var splunkJsComponent = mvc.Components.get(this.config.id);
+
             if(splunkJsComponent) {
                 splunkJsComponent.remove();
                 $(el).append('<div id="' + this.config.el + '"></div>');    
@@ -584,21 +585,39 @@ function ($,
         this.updateRemove = function() {
             var el = "#" + this.config.parentEl;
             var splunkJsComponent = mvc.Components.get(this.config.id);
+            
             if(splunkJsComponent) {
                 splunkJsComponent.remove();
             }
         }
 
-        // Wait for div to be available in DOM before rendering
-        this.waitForElAndRender = function() {        
+        this.renderComponent = function () {
+            // Remove component if it exists
+            that.remove();
+
             var el = "#" + this.config.el;
 
+            // Get search manager
+            var splunkJsComponentSearch = mvc.Components.get(this.config.id + "-search");
+
+            // Check to make sure div is there before rendering
             if ($(el).length) {
-                var choices = _.has(this.config, "data") ? this.config.data:this.config.choices;    
+                var choices = _.has(this.config, "choices") ? this.config.choices:[];    
     
+                // Create search manager if it doesn't exist
+                if(!splunkJsComponentSearch) {
+                    console.log("Creating search manager " + this.config.id);
+                    console.log(this);
+                    this.config.searchInstance = new SearchManager({
+                        id: this.config.id + "-search",
+                        search: this.config.searchString 
+                    });
+                }
+
                 if(this.config.type == "dropdown") {
                     this.config.instance = new DropdownView({
                         id: this.config.id,
+                        managerid: _.isUndefined(this.config.searchString) ? null:this.config.id + "-search",
                         choices: choices,
                         labelField: "label",
                         valueField: "value",
@@ -606,12 +625,10 @@ function ($,
                         el: $(el)
                     }).render();                       
                 } else {
-                    if(this.config.id == "read-user-multi") {
-                        choices.unshift({"label":"*", "value":"*"});
-                    }
                     this.config.instance = new MultiDropdownView({
                         id: this.config.id,
                         choices: choices,
+                        managerid: _.isUndefined(this.config.searchString) ? null:this.config.id + "-search",
                         labelField: "label",
                         valueField: "value",
                         width: 350,
@@ -621,11 +638,11 @@ function ($,
                 }
             } else {
                 setTimeout(function() {
-                    that.waitForElAndRender();
+                    that.renderComponent();
                 }, 100);
             }
         }
-
+        
         // Get values from bootstrap table
         this.getVals = function() {
             return this.config.instance.val();
@@ -650,17 +667,22 @@ function ($,
             if(username == "") {
                 return renderModal("missing-username",
                                     "Missing Username",
-                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><p>Please enter a username</b></div>",
-                                    "Close",
-                                    renderCreateUserForm);
+                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a username</div>",
+                                    "Close")
             }
 
             if(password == "") {
                 return renderModal("missing-password",
                                     "Missing Password",
-                                    "<p>Please enter a password</b>",
-                                    "Close",
-                                    renderCreateUserForm);
+                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a password</div>",
+                                    "Close")
+            }
+
+            if(username && !password) {
+                return renderModal("missing-password",
+                                    "Missing Password",
+                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a password</div>",
+                                    "Close");
             }
 
             // Create object to POST for user creation
@@ -673,8 +695,6 @@ function ($,
                                     "Password Mismatch",
                                     "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                                     "Close");
-                                    //renderCreateUserForm,
-                                    //[username, realm]);
             } else {
                 var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
@@ -731,6 +751,7 @@ function ($,
                         "el": "read-user-multi",
                         "type": "multi-dropdown",
                         "default": "*",
+                        "choices": [{"label":"*", "value":"*"}],
                         "aclKey": "perms.read",
                         "parentEl": "read-users"}),
                        new splunkJSInput({"id": "write-user-multi",
@@ -739,6 +760,7 @@ function ($,
                         "type": "multi-dropdown",
                         "parentEl": "write-users",
                         "aclKey": "perms.write",
+                        "choices": [{"label":"*", "value":"*"}],
                         "default": ["admin","power"]}),
                        new splunkJSInput({"id": "sharing-dropdown",
                         "choices": [{"label":"global", "value": "global"},
@@ -757,19 +779,13 @@ function ($,
                         "default": Splunk.util.getConfigValue("USERNAME"),
                         "parentEl": "owner"})];
 
-        // Remove component if it exists
+        // Render components
         _.each(inputs, function(input, i) {
-            input.remove();
+            input.renderComponent();
         });
 
-        // Fire searches and render splunkJS form components to modal
-        $.when(execMultiSearch(inputs)).done(function(components) {
-            _.each(components, function(component, i) {
-                component.waitForElAndRender();
-            });
-
-            clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
-        });
+        // Register createUser callback for button
+        clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
     
         setTimeout(function () {
             if(cUsername != "" || cRealm != "") {
@@ -959,6 +975,7 @@ function ($,
                         "type": "multi-dropdown",
                         "default": row.acl_read.split(','),
                         "aclKey": "perms.read",
+                        "choices": [{"label":"*", "value":"*"}],
                         "parentEl": "read-users-inline"}),
                        new splunkJSInput({"id": "write-user-multi-inline",
                         "searchString": "| rest /servicesNS/-/-/authorization/roles | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users | eval label=title | rename title as value | fields label, value] | dedup label",
@@ -966,6 +983,7 @@ function ($,
                         "type": "multi-dropdown",
                         "parentEl": "write-users-inline",
                         "aclKey": "perms.write",
+                        "choices": [{"label":"*", "value":"*"}],
                         "default": row.acl_write.split(',')}),
                        new splunkJSInput({"id": "sharing-dropdown-inline",
                         "choices": [{"label":"global", "value": "global"},
@@ -984,20 +1002,13 @@ function ($,
                         "aclKey": "owner",
                         "parentEl": "owner-inline"})];
 
-        // Remove component if it exists
+        // Render component
         _.each(inputs, function(input, i) {
-            input.updateRemove();
+            input.renderComponent();
         });
 
-        // Fire searches and render splunkJS form components to modal
-        $.when(execMultiSearch(inputs)).done(function(components) {
-           // $('#open-close-button')[0].scrollIntoView(true);
-            _.each(components, function(component, i) {
-                component.waitForElAndRender();
-            });
-
-            clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
-        });
+        // Register updateUser callback for button
+        clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
     }
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
