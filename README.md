@@ -19,7 +19,7 @@ Fill out the form specifying a username, password and optionally a realm. The re
 
 ![Alt text](docs/create-form.png?raw=true)
 
-![Alt text](docs/create-success.png?raw=true)
+![Alt text](docs/create-success-modal.png?raw=true)
 
 Once created, the dashboard will be refreshed automatically. 
 
