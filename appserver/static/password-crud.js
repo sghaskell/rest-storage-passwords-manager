@@ -475,7 +475,7 @@ function ($,
                         dfd.resolve(message);
                     },
                     error: function(e) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user<b> " + row.username + "</b> - " + e.responseText + "</div>");
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + e.responseText + "</div>");
                         dfd.resolve(message);
                     }
                 })
@@ -708,7 +708,7 @@ function ($,
                         message.push("<div><i class=\"icon-check-circle\"></i> Successfully created user <b>" + realm + ":" + username + "</b></div>");
                     },
                     error: function(e) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user " + username + ":" + realm + "</p><br><p>" + e.responseText + "</div>");
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user <b>" + username + ":" + realm + "</b> - " + e.responseText + "</div>");
                     }
                 })
                 .then(function() {
@@ -723,7 +723,7 @@ function ($,
                             message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
                         },
                         error: function(e) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL</p><br><p>" + e.responseText + "</div>");
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + e.responseText + "</div>");
                         }
                     })                
                 })
@@ -868,7 +868,7 @@ function ($,
                             message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>");
                         },
                         error: function(e) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL</p><br><p>" + e.responseText + "</div>");
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + e.responseText + "</div>");
                         }
                     })
                 } else {
@@ -886,7 +886,7 @@ function ($,
                                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user " + username + ". " + e.responseText + "</div>");
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + e.responseText + "</div>");
                             }
                         })
                     }
@@ -901,7 +901,7 @@ function ($,
                                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
                             },
                             error: function(e) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from " + formVals.app + " to " + aclApp + "</p><p>" + e.responseText + "</div>");
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b> - " + e.responseText + "</div>");
                             }
                         })
                     }
