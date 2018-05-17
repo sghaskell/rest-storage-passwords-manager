@@ -733,6 +733,13 @@ function ($,
                                 message.join('\n'),
                                 "Close",
                                 refreshWindow)
+                })
+                .fail(function() {
+                    renderModal("user-updated",
+                                "User Updated",
+                                message.join('\n'),
+                                "Close",
+                                refreshWindow)
                 });
             }
         }
@@ -905,6 +912,13 @@ function ($,
                                 message.join('\n'),
                                 "Close",
                                 refreshWindow)                        
+                })
+                .fail(function() {
+                    renderModal("user-updated",
+                                "User Updated",
+                                message.join('\n'),
+                                "Close",
+                                refreshWindow)
                 });
             }
         }
