@@ -738,8 +738,7 @@ function ($,
                     renderModal("user-updated",
                                 "User Updated",
                                 message.join('\n'),
-                                "Close",
-                                refreshWindow)
+                                "Close")
                 });
             }
         }
@@ -917,8 +916,7 @@ function ($,
                     renderModal("user-updated",
                                 "User Updated",
                                 message.join('\n'),
-                                "Close",
-                                refreshWindow)
+                                "Close")
                 });
             }
         }
