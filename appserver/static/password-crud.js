@@ -463,19 +463,27 @@ function ($,
             var dfd = $.Deferred();
             var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
             var message = [];
+            var payload = {"body": undefined,
+                           "responseCode": undefined}
             if(row.acl_sharing == "user") {
-                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + "</b> - <b>Sharing</b> permisisons must be <b>app</b> or <b>global</b> to delete credential</div>");
+                payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + "</b> - <b>Sharing</b> permisisons must be <b>app</b> or <b>global</b> to delete credential</div>";
+                payload.responseCode = -1;
+                message.push(payload);
                 dfd.resolve(message);
             } else {
                 $.ajax({
                     type: "DELETE",
                     url: deleteUrl,
-                    success: function() {
-                        message.push("<div><i class=\"icon-check-circle\"></i> Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>");
+                    success: function(data, textStatus, xhr) {
+                        payload.body = "<div><i class=\"icon-check-circle\"></i> Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>";
+                        payload.responseCode = xhr.status;
+                        message.push(payload);
                         dfd.resolve(message);
                     },
-                    error: function(e) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + e.responseText + "</div>");
+                    error: function(xhr, textStatus, error) {
+                        payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + xhr.responseText + "</div>";
+                        payload.responseCode = xhr.status;
+                        message.push(payload);
                         dfd.resolve(message);
                     }
                 })
@@ -496,12 +504,32 @@ function ($,
             });
 
             // Execute deletes and display message
-            $.when(all(promises)).then(function(success) {
-                renderModal("user-deleted",
-                            "User Deleted",
-                            success.join("\n"),
-                            "Close",
-                            refreshWindow)                 
+            $.when(all(promises)).then(function(messages) {
+                var status = "";
+                var failCount = 0;
+                var deleteCount = messages.length;
+                var prefix = "Credential";
+                var modalMessage = $.map(messages, function(i) {
+                    var payload = i[0];
+                    if(parseInt(payload.responseCode) != 200) {
+                        failCount += 1;
+                    }
+                    return payload.body;
+                })
+
+                if(failCount == deleteCount) {
+                    status = prefix + " Delete Failed";
+                } else if (failCount > 0 && failCount < deleteCount) {
+                    status = prefix + " Delete Partially Succeeded"
+                } else {
+                    status = prefix + " Deleted";
+                }
+
+                renderModal("user-delete",
+                             status,
+                             modalMessage.join("\n"),
+                             "Close",
+                             refreshWindow)                 
             });
         }
 
@@ -651,10 +679,12 @@ function ($,
     function renderCreateUserForm(cUsername = false, cRealm = false) {
         var createUser = function createUser() {
             var aclData = {};
+            var formVals = {};
 
             _.each(arguments[2], function(component, i) {
                 var aclKey = component.config.aclKey;
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
+                formVals[aclKey] = _.isArray(component.config.default) ? component.config.default.join():component.config.default;
             });
 
             var username = $('input[id=createUsername]').val();
@@ -694,8 +724,8 @@ function ($,
                                     "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                                     "Close");
             } else {
-                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/storage/passwords";
-                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
+                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords";
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
 
                 // Success message for final modal display
                 var message = [];
@@ -728,18 +758,17 @@ function ($,
                     })                
                 })
                 .done(function () {
-                    renderModal("user-created",
+                    renderModal("user-create",
                                 "User Created",
                                 message.join('\n'),
                                 "Close",
                                 refreshWindow)
                 })
                 .fail(function() {
-                    renderModal("user-updated",
-                                "User Updated",
+                    renderModal("user-create-fail",
+                                "User Create Failed",
                                 message.join('\n'),
-                                "Close",
-                                refreshWindow)
+                                "Close")
                 });
             }
         }
@@ -809,7 +838,7 @@ function ($,
             _.each(arguments[0], function(component, i) {
                 var aclKey = component.config.aclKey;
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
-                formVals[aclKey] = component.config.default.join();
+                formVals[aclKey] = _.isArray(component.config.default) ? component.config.default.join():component.config.default;
             });
             
             var username = $('input[id=updateUsername]').val();
@@ -914,11 +943,10 @@ function ($,
                                 refreshWindow)                        
                 })
                 .fail(function() {
-                    renderModal("user-updated",
-                                "User Updated",
+                    renderModal("user-update-failed",
+                                "User Update Failed",
                                 message.join('\n'),
-                                "Close",
-                                refreshWindow)
+                                "Close")
                 });
             }
         }
