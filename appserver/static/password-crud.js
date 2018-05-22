@@ -25,18 +25,62 @@ function ($,
           Dropdown) {
 
     function showPassword(row) {
-        if(row.acl_sharing == "user") {
-            return renderModal("show-password",
-                    "Password",
-                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to view password</div>",
-                    "Close");
-        } else {
-            return renderModal("show-password",
-            "Password",
-            "<h3>" + row.clear_password + "</h3>",
-            "Close");
+        var dfd = $.Deferred();
+        
+        var splunkJsComponent = mvc.Components.getInstance("passwordSearch");
+
+        if(splunkJsComponent) {
+            splunkJsComponent.dispose();
         }
-    }
+
+        var passwordSearch = new SearchManager({
+            "id": "passwordSearch",
+            "cancelOnUnload": true,
+            "status_buckets": 0,
+            "earliest_time": "-24h@h",
+            "latest_time": "now",
+            "sample_ratio": 1,
+            "search": "| rest /servicesNS/-/-/storage/passwords \
+                | search title=" + row.realm + ":" + row.username + ": \
+                | table clear_password",
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "preview": true,
+            "tokenDependencies": {
+            },
+            "runWhenTimeIsUndefined": false
+        }, {tokens: true, tokenNamespace: "submitted"});
+
+        var mainSearch = mvc.Components.getInstance("passwordSearch");
+        var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
+
+        mainSearch.on('search:done', function(properties) {
+            if(properties.content.resultCount == 0) {
+                // return renderModal("sharing-scope-error",
+                //                    "Sharing Error",
+                //                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to view password</div>",
+                //                    "Close")
+                return renderModal("sharing-scope-error",
+                                    "Not Found",
+                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>No password found</div>",
+                                    "Close")
+            }
+        });
+
+        myResults.on("data", function() {
+            var data = myResults.data().results;
+            // return renderModal("show-password",
+            //                    "Password",
+            //                    "<h3>" + data[0].clear_password + "</h3>",
+            //                    "Close");
+            dfd.resolve(renderModal("show-password",
+                               "Password",
+                               "<h3>" + data[0].clear_password + "</h3>",
+                               "Close"));
+        });
+
+        return dfd.promise();
+    } 
 
     function anonCallback(callback=function(){}, callbackArgs=null) {
         if(callbackArgs) {
@@ -217,29 +261,25 @@ function ($,
         var passwordTableDiv = '#password-table';
 
         var search1 = new SearchManager({
-                "id": "search1",
-                "cancelOnUnload": true,
-                "status_buckets": 0,
-                "earliest_time": "-24h@h",
-                "latest_time": "now",
-                "sample_ratio": 1,
-                "search": "| rest /servicesNS/-/-/storage/passwords \
-                | table username, password, realm, clear_password, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing \
-                | rename eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
-                | append [| rest /servicesNS/-/-/configs/conf-passwords \
-                    | rex field=title \"credential:(?<realm>.*?):(?<username>.*?):\" \
-                    | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm \
-                    | rename eai:userName as user, eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
-                    | eval owner=if(owner=user, owner, user) \
-                    | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing] \
-                | dedup username, realm",
-                "app": utils.getCurrentApp(),
-                "auto_cancel": 90,
-                "preview": true,
-                "tokenDependencies": {
-                },
-                "runWhenTimeIsUndefined": false
-            }, {tokens: true, tokenNamespace: "submitted"});
+                    "id": "search1",
+                    "cancelOnUnload": true,
+                    "status_buckets": 0,
+                    "earliest_time": "-24h@h",
+                    "latest_time": "now",
+                    "sample_ratio": 1,
+                    "search": "| rest /servicesNS/-/-/configs/conf-passwords \
+                        | rex field=title \"credential:(?<realm>.*?):(?<username>.*?):\" \
+                        | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm \
+                        | rename eai:userName as user, eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
+                        | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing \
+                        | fillnull value=\"\"",
+                    "app": utils.getCurrentApp(),
+                    "auto_cancel": 90,
+                    "preview": true,
+                    "tokenDependencies": {
+                    },
+                    "runWhenTimeIsUndefined": false
+                }, {tokens: true, tokenNamespace: "submitted"});
 
         var mainSearch = splunkjs.mvc.Components.getInstance("search1");
         var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
@@ -718,14 +758,16 @@ function ($,
                               "password": password,
                               "realm": realm};
 
+
             if(password != confirmPassword) {
                 return renderModal("password-mismatch",
                                     "Password Mismatch",
                                     "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                                     "Close");
             } else {
-                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords";
-                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
+                var currentUser = Splunk.util.getConfigValue("USERNAME");
+                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + aclData.app + "/storage/passwords";
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
 
                 // Success message for final modal display
                 var message = [];
@@ -734,28 +776,44 @@ function ($,
                     type: "POST",
                     url: createUrl,
                     data: createData,
-                    success: function() {
+                    success: function(data, textStatus, xhr) {
                         message.push("<div><i class=\"icon-check-circle\"></i> Successfully created user <b>" + realm + ":" + username + "</b></div>");
                     },
-                    error: function(e) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user <b>" + username + ":" + realm + "</b> - " + e.responseText + "</div>");
+                    error: function(xhr, textStatus, error) {
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user <b>" + username + ":" + realm + "</b> - " + xhr.responseText + "</div>");
                     }
                 })
                 .then(function() {
                     // App not a valid key for updating Splunk ACL's, remove it before posting
                     delete aclData.app;
 
+                    // Need to set sharing to app level before applying ACL's otherwise read/write perms don't apply
+                    // ACL's will get re-applied back to user sharing context in next chain ACL apply
+                    if(aclData.sharing == "user") {
+                        var aclDataCopy = _.clone(aclData);
+                        aclDataCopy.sharing = "app";
+                        console.log(aclDataCopy);
+                        
+                        return $.ajax({
+                            type: "POST",
+                            url: aclUrl,
+                            data: aclDataCopy
+                        })
+                    }
+                })
+                .then(function () {
+                    console.log(aclData);
                     return $.ajax({
                         type: "POST",
                         url: aclUrl,
                         data: aclData,
-                        success: function() {
+                        success: function(data, textStatus, xhr) {
                             message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
                         },
-                        error: function(e) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + e.responseText + "</div>");
+                        error: function(xhr, textStatus, error) {
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
                         }
-                    })                
+                    })
                 })
                 .done(function () {
                     renderModal("user-create",
@@ -768,7 +826,8 @@ function ($,
                     renderModal("user-create-fail",
                                 "User Create Failed",
                                 message.join('\n'),
-                                "Close")
+                                "Close",
+                                refreshWindow)
                 });
             }
         }
@@ -864,12 +923,12 @@ function ($,
             // Add realm to formVals for refrence in REST url's
             formVals.realm = arguments[1].realm;
 
-            if(aclData.sharing == "user" && password) {
-                return renderModal("sharing-scope-error",
-                                   "Sharing Error",
-                                   "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to reset password</div>",
-                                   "Close")
-            }
+            // if(aclData.sharing == "user" && password) {
+            //     return renderModal("sharing-scope-error",
+            //                        "Sharing Error",
+            //                        "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to reset password</div>",
+            //                        "Close")
+            // }
             
             if(password != confirmPassword) {
                 renderModal("password-mismatch",
@@ -877,61 +936,116 @@ function ($,
                             "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                             "Close");
             } else {
-                var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
+                //var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
+                var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
                 var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
+                var newAclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                //var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
+                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
 
                 // Success message for final modal display
                 var message = [];
                 var chainStart = null;
-
-                if(applyAcl) {
-                    // App not a valid key for updating Splunk ACL's, remove it before posting
-                    delete aclData.app;
-
-                    chainStart = $.ajax({
-                        type: "POST",
-                        url: aclUrl,
-                        data: aclData,
-                        success: function() {
-                            message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>");
-                        },
-                        error: function(e) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + e.responseText + "</div>");
-                        }
-                    })
-                } else {
-                    chainStart = genericPromise();
-                }
+                var chainStart = genericPromise();
 
                 chainStart
+                .then(function() {
+                    //if(applyAcl && aclData.sharing == "user") {
+                        // App not a valid key for updating Splunk ACL's, remove it before posting
+                        delete aclData.app;
+    
+                        var aclDataCopy = _.clone(aclData);
+                        aclDataCopy.sharing = "app";
+                        console.log("First ACL post");
+                        console.log(aclDataCopy);
+                        console.log(aclUrl);
+                        
+                        return $.ajax({
+                            type: "POST",
+                            url: aclUrl,
+                            data: aclDataCopy
+                        })
+                    //}
+                })
                 .then (function() {
                     if(password) {
+                        console.log("Password change");
+                        console.log(passwordUrl);
                         return $.ajax({
                             type: "POST",
                             url: passwordUrl,
                             data: {"password": password},
-                            success: function() {
+                            success: function(data, textStatus, xhr) {
                                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></div>");
                             },
-                            error: function(e) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + e.responseText + "</div>");
+                            error: function(xhr, textStatus, error) {
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + xhr.responseText + "</div>");
+                            }
+                        })
+                    }
+                })                
+                // .then (function () {
+                //     //if(applyAcl) {
+                //         // App not a valid key for updating Splunk ACL's, remove it before posting
+                //         delete aclData.app;
+                //         console.log("Second ACL post");
+                //         console.log(aclData);
+                //         //console.log(aclUrl);
+                //         console.log(newAclUrl);
+                //         return $.ajax({
+                //             type: "POST",
+                //             //url: aclUrl,
+                //             url: newAclUrl,
+                //             data: aclData,
+                //             success: function(data, textStatus, xhr) {
+                //                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
+                //             },
+                //             error: function(xhr, textStatus, error) {
+                //                 message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
+                //             }
+                //         })
+                //     //}
+                // })         
+                .then(function() {
+                    if(formVals.app != aclApp) {
+                        console.log("Move App");
+                        console.log(moveUrl);
+                        return $.ajax({
+                            type: "POST",
+                            url: moveUrl,
+                            //data: {"app": aclApp, "user": "nobody"},
+                            data: {"app": aclApp, "user": aclData.owner},
+                            success: function(data, textStatus, xhr) {
+                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
+                            },
+                            error: function(xhr, textStatus, error) {
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b> - " + xhr.responseText + "</div>");
                             }
                         })
                     }
                 })
                 .then(function() {
-                    if(formVals.app != aclApp) {
+                    if(applyAcl) {
+                        // App not a valid key for updating Splunk ACL's, remove it before posting
+                        //delete aclData.app;
+    
+                        // var aclDataCopy = _.clone(aclData);
+                        // aclDataCopy.sharing = "app";
+                        // console.log(aclDataCopy);
+                        //var newAclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                        console.log("Third ACL post");
+                        console.log(aclData);
+                        console.log(newAclUrl);
                         return $.ajax({
                             type: "POST",
-                            url: moveUrl,
-                            data: {"app": aclApp, "user": "nobody"},
-                            success: function() {
-                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
+                            url: newAclUrl,
+                            success: function(data, textStatus, xhr) {
+                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
                             },
-                            error: function(e) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b> - " + e.responseText + "</div>");
-                            }
+                            error: function(xhr, textStatus, error) {
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
+                            },
+                            data: aclData
                         })
                     }
                 })
@@ -946,7 +1060,8 @@ function ($,
                     renderModal("user-update-failed",
                                 "User Update Failed",
                                 message.join('\n'),
-                                "Close")
+                                "Close",
+                                refreshWindow)
                 });
             }
         }
@@ -1050,9 +1165,38 @@ function ($,
         // Register updateUser callback for button
         clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
     }
+    
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
-            showPassword(row);
+            var aclData = {"perms.read": row.acl_read,
+            "perms.write": row.acl_write,
+            "sharing": row.acl_sharing,
+            "owner": row.owner}
+
+            // Change sharing to app, show password, change back to user
+            if(row.acl_sharing == "user") {
+                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/configs/conf-passwords/credential%3A" + row.realm + "%3A" + row.username + "%3A/acl";
+                var aclDataCopy = _.clone(aclData);
+                aclDataCopy.sharing = "app";
+
+                $.ajax({
+                    type: "POST",
+                    url: aclUrl,
+                    data: aclDataCopy,
+                })
+                .then(function() {
+                    return showPassword(row);
+                })
+                .done(function() {
+                    $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclData,
+                    })
+                })
+            } else {
+                showPassword(row);
+            }
         }
     };
 
