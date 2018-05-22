@@ -269,9 +269,10 @@ function ($,
                     "sample_ratio": 1,
                     "search": "| rest /servicesNS/-/-/configs/conf-passwords \
                         | rex field=title \"credential:(?<realm>.*?):(?<username>.*?):\" \
-                        | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm \
+                        | eval uri_base=\"/en-US/splunkd/__raw\" | rex field=id \"(?<rest_uri>/servicesNS.*?$)\" | eval rest_uri = uri_base + rest_uri \
+                        | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm, rest_uri \
                         | rename eai:userName as user, eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
-                        | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing \
+                        | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing, rest_uri \
                         | fillnull value=\"\"",
                     "app": utils.getCurrentApp(),
                     "auto_cancel": 90,
@@ -396,6 +397,7 @@ function ($,
                             <th data-field="acl_read" data-sortable="true" data-align="center"><div><h3>Read</h3></div></th> \
                             <th data-field="acl_write" data-sortable="true" data-align="center"><div><h3>Write</h3></div></th> \
                             <th data-field="acl_sharing" data-sortable="true" data-align="center"><div><h3>Sharing</h3></div></th> \
+                            <th data-field="rest_uri" data-visible="false" data-align="center"><div><h3>REST URI</h3></div></th> \
                         </tr> \
                       </thead> \
                       <tbody>';
@@ -418,6 +420,7 @@ function ($,
                          <td>' + row.acl_read + '</td>\
                          <td>' + row.acl_write + '</td>\
                          <td>' + row.acl_sharing + '</td>\
+                         <td>' + row.rest_uri + '</td>\
                        </tr>';
         });
         
@@ -938,7 +941,8 @@ function ($,
             } else {
                 //var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
                 var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
-                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                //var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                var aclUrl = row.rest_uri + "/acl";
                 var newAclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
                 //var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
                 var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
@@ -1175,7 +1179,8 @@ function ($,
 
             // Change sharing to app, show password, change back to user
             if(row.acl_sharing == "user") {
-                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/configs/conf-passwords/credential%3A" + row.realm + "%3A" + row.username + "%3A/acl";
+                //var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/configs/conf-passwords/credential%3A" + row.realm + "%3A" + row.username + "%3A/acl";
+                var aclUrl = row.rest_uri + "/acl";
                 var aclDataCopy = _.clone(aclData);
                 aclDataCopy.sharing = "app";
 
