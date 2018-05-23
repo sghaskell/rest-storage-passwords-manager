@@ -925,13 +925,6 @@ function ($,
 
             // Add realm to formVals for refrence in REST url's
             formVals.realm = arguments[1].realm;
-
-            // if(aclData.sharing == "user" && password) {
-            //     return renderModal("sharing-scope-error",
-            //                        "Sharing Error",
-            //                        "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to reset password</div>",
-            //                        "Close")
-            // }
             
             if(password != confirmPassword) {
                 renderModal("password-mismatch",
@@ -939,13 +932,7 @@ function ($,
                             "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
                             "Close");
             } else {
-                //var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
-                var passwordUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
-                //var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
                 var aclUrl = row.rest_uri + "/acl";
-                var newAclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-                //var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + formVals.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
-                var moveUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
 
                 // Success message for final modal display
                 var message = [];
@@ -954,25 +941,23 @@ function ($,
 
                 chainStart
                 .then(function() {
-                    //if(applyAcl && aclData.sharing == "user") {
-                        // App not a valid key for updating Splunk ACL's, remove it before posting
-                        delete aclData.app;
-    
-                        var aclDataCopy = _.clone(aclData);
-                        aclDataCopy.sharing = "app";
-                        console.log("First ACL post");
-                        console.log(aclDataCopy);
-                        console.log(aclUrl);
-                        
-                        return $.ajax({
-                            type: "POST",
-                            url: aclUrl,
-                            data: aclDataCopy
-                        })
-                    //}
+                    delete aclData.app;
+
+                    var aclDataCopy = _.clone(aclData);
+                    aclDataCopy.sharing = "app";
+                    console.log("First ACL post");
+                    console.log(aclDataCopy);
+                    console.log(aclUrl);
+                    
+                    return $.ajax({
+                        type: "POST",
+                        url: aclUrl,
+                        data: aclDataCopy
+                    })
                 })
                 .then (function() {
                     if(password) {
+                        var passwordUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
                         console.log("Password change");
                         console.log(passwordUrl);
                         return $.ajax({
@@ -988,32 +973,12 @@ function ($,
                         })
                     }
                 })                
-                // .then (function () {
-                //     //if(applyAcl) {
-                //         // App not a valid key for updating Splunk ACL's, remove it before posting
-                //         delete aclData.app;
-                //         console.log("Second ACL post");
-                //         console.log(aclData);
-                //         //console.log(aclUrl);
-                //         console.log(newAclUrl);
-                //         return $.ajax({
-                //             type: "POST",
-                //             //url: aclUrl,
-                //             url: newAclUrl,
-                //             data: aclData,
-                //             success: function(data, textStatus, xhr) {
-                //                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
-                //             },
-                //             error: function(xhr, textStatus, error) {
-                //                 message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
-                //             }
-                //         })
-                //     //}
-                // })         
                 .then(function() {
                     if(formVals.app != aclApp) {
+                        var moveUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
                         console.log("Move App");
                         console.log(moveUrl);
+                
                         return $.ajax({
                             type: "POST",
                             url: moveUrl,
@@ -1030,19 +995,20 @@ function ($,
                 })
                 .then(function() {
                     if(applyAcl) {
-                        // App not a valid key for updating Splunk ACL's, remove it before posting
-                        //delete aclData.app;
-    
-                        // var aclDataCopy = _.clone(aclData);
-                        // aclDataCopy.sharing = "app";
-                        // console.log(aclDataCopy);
-                        //var newAclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                        if(aclData.sharing == "user" || formVals.sharing == "user") {
+                             aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                        } else {
+                            aclUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
+                        }
+
                         console.log("Third ACL post");
                         console.log(aclData);
-                        console.log(newAclUrl);
+                        //console.log(newAclUrl);
+                        console.log(aclUrl);
                         return $.ajax({
                             type: "POST",
-                            url: newAclUrl,
+                            //url: newAclUrl,
+                            url: aclUrl,
                             success: function(data, textStatus, xhr) {
                                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
                             },
