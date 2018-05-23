@@ -50,3 +50,12 @@
     font-size: 20px;
     color: #5cc05c;
 }
+
+[class*=" icon-visible"]:before, [class^=icon-visible]:before {
+    font-family: Splunk Icons;
+    font-style: normal;
+    font-weight: 400;
+    text-decoration: inherit;
+    line-height: inherit;
+    font-size: 22px;
+}
