@@ -988,8 +988,7 @@ function ($,
                         return $.ajax({
                             type: "POST",
                             url: moveUrl,
-                            //data: {"app": aclApp, "user": "nobody"},
-                            data: {"app": aclApp, "user": aclData.owner},
+                            data: {"app": aclApp, "user": "nobody"},
                             success: function(data, textStatus, xhr) {
                                 message.push("<div><i class=\"icon-check-circle\"></i> Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
                             },
