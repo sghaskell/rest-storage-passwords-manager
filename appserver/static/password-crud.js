@@ -58,27 +58,19 @@ function ($,
 
         mainSearch.on('search:done', function(properties) {
             if(properties.content.resultCount == 0) {
-                // return renderModal("sharing-scope-error",
-                //                    "Sharing Error",
-                //                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i><b>Sharing permisisons</b> must be <b>app</b> or <b>global</b> to view password</div>",
-                //                    "Close")
-                return renderModal("sharing-scope-error",
+                return renderModal("password-not-found",
                                     "Not Found",
-                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>No password found</div>",
+                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>No password found. Verify <b>list_storage_passwords</b> capability role is enabled.</div>",
                                     "Close")
             }
         });
 
         myResults.on("data", function() {
             var data = myResults.data().results;
-            // return renderModal("show-password",
-            //                    "Password",
-            //                    "<h3>" + data[0].clear_password + "</h3>",
-            //                    "Close");
             dfd.resolve(renderModal("show-password",
-                               "Password",
-                               "<h3>" + data[0].clear_password + "</h3>",
-                               "Close"));
+                                    "Password",
+                                    "<h3>" + data[0].clear_password + "</h3>",
+                                    "Close"));
         });
 
         return dfd.promise();
@@ -1140,6 +1132,12 @@ function ($,
                     type: "POST",
                     url: aclUrl,
                     data: aclDataCopy,
+                    error: function(xhr, textStatus, error) {
+                        return renderModal("fail-password-view",
+                                           "Cannot View Password",
+                                           "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to view password - " + xhr.responseText + "</div>",
+                                           "Close");
+                    }
                 })
                 .then(function() {
                     return showPassword(row);
@@ -1149,6 +1147,12 @@ function ($,
                         type: "POST",
                         url: aclUrl,
                         data: aclData,
+                        error: function(xhr, textStatus, error) {
+                            return renderModal("fail-password-view",
+                                               "Cannot View Password",
+                                               "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to view password - " + xhr.responseText + "</div>",
+                                               "Close");
+                        }
                     })
                 })
             } else {
