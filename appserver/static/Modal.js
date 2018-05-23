@@ -6,6 +6,27 @@ var _createClass = function () { function defineProperties(target, props) { for 
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
+function _setModalMaxHeight(element) {
+    this.$element     = $(element);  
+    this.$content     = this.$element.find('.modal-content');
+    var borderWidth   = this.$content.outerHeight() - this.$content.innerHeight();
+    var dialogMargin  = $(window).width() < 768 ? 20 : 60;
+    var contentHeight = $(window).height() - (dialogMargin + borderWidth);
+    var headerHeight  = this.$element.find('.modal-header').outerHeight() || 0;
+    var footerHeight  = this.$element.find('.modal-footer').outerHeight() || 0;
+    var maxHeight     = contentHeight - (headerHeight + footerHeight);
+  
+    this.$content.css({
+        'overflow': 'hidden'
+    });
+    
+    this.$element
+      .find('.modal-body').css({
+        'max-height': maxHeight,
+        'overflow-y': 'auto'
+    });
+  }
+
 define(['underscore'], function (_) {
     return function () {
         /**
@@ -25,10 +46,7 @@ define(['underscore'], function (_) {
 
             _classCallCheck(this, Modal);
 
-            var modalOptions = _.extend({ show: false,
-                                          backdrop: 'static',
-                                          keyboard: false
-                                        }, options);
+            var modalOptions = _.extend({ show: false}, options);
 
             // if "id" is the element that triggers the modal display, extract the actual id from it; otherwise use it as-is
             var modalId = id != null && (typeof id === 'undefined' ? 'undefined' : _typeof(id)) === 'object' && id.jquery != null ? id.attr('data-target').slice(1) : id;
@@ -63,6 +81,17 @@ define(['underscore'], function (_) {
                     return _this.$el.remove();
                 });
             }
+
+            this.$el.on('show.bs.modal', function() {
+                $(this).show();
+                _setModalMaxHeight(this);
+            });
+
+            $(window).resize(function() {
+                if ($('.modal.in').length != 0) {
+                  _setModalMaxHeight($('.modal.in'));
+                }
+            });
 
             this.$el.modal(modalOptions);
         }
