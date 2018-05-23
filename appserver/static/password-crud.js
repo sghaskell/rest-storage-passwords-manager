@@ -24,6 +24,8 @@ function ($,
           Modal,
           Dropdown) {
 
+    
+
     function showPassword(row) {
         var dfd = $.Deferred();
         
@@ -82,6 +84,8 @@ function ($,
         return dfd.promise();
     } 
 
+           
+
     function anonCallback(callback=function(){}, callbackArgs=null) {
         if(callbackArgs) {
             callback.apply(this, callbackArgs);
@@ -119,6 +123,7 @@ function ($,
         return deferred.promise();
     };
 
+    // Helper to figure out if the create form is open
     function isFormOpen() {
         var formOpen = window.sessionStorage.getItem("formOpen");
         if(_.isNull(formOpen) || _.isUndefined(formOpen) || formOpen === "false") {
@@ -128,83 +133,25 @@ function ($,
         }
     }
 
-    function execMultiSearch(components) {
-        var dfd = $.Deferred();
-
-        // push individual searches
-        var promises = [];
-
-        _.each(components, function(component, i) {
-            promises.push(function() {
-                return execSearch(component);
-            });    
-        });
-
-        // 
-        $.when(all(promises)).then(function(components) {
-            dfd.resolve(components);
-        });
-        
-        return dfd.promise();
+    // Callback to refresh window and hide create-user
+    function refreshWindow() {
+        setTimeout(function () {
+            location.reload()
+            $('#create-user').show();
+        }, 500);
     }
-
-    function execSearch(component) {
-        var dfd = $.Deferred();
-        if(!component.config.searchString) {
-            dfd.resolve(component);
-        }
-
-        var searchId = "generic-search-" + component.config.id;
-        var componentExists = mvc.Components.getInstance(searchId);
-        
-        if(!componentExists) {
-            var genericSearch = new SearchManager({
-                id: searchId,
-                search: component.config.searchString,
-                cache: false
-            });
-        }
-
-        var mainSearch = splunkjs.mvc.Components.getInstance(searchId);
-        var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
-
-        mainSearch.on('search:done', function(properties) {
-
-            if(properties.content.resultCount == 0) {
-                component.config.data = [];
-                dfd.resolve(component);
-            }
-        });
-
-        myResults.on("data", function() {
-            var data = myResults.data().results;
-            component.config.data = data;
-            dfd.resolve(component);
-        });
-
-        return dfd.promise();
-    }
-
-    function renderCreateModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
-        var myModal = new Modal(id, {
-                    title: title,
-                    destroyOnHide: true,
-                    type: 'normal'
-        }); 
     
-        myModal.body.append($(body));
-    
-        return myModal;
-    }
-
     function renderModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
-
+        // Create the modal
         var myModal = new Modal(id, {
                     title: title,
+                    backdrop: 'static',
+                    keyboard: false,
                     destroyOnHide: true,
-                    type: 'normal'
+                    type: 'wide'
         }); 
     
+        // Add content
         myModal.body.append($(body));
     
         // Add cancel button for update/delete action
@@ -216,6 +163,7 @@ function ($,
             .addClass('btn btn-secondary').text("Cancel")).on('click', function(){});
         }
 
+        // Add footer
         myModal.footer.append($('<button>').attr({
             type: 'button',
             'data-dismiss': 'modal'
@@ -224,9 +172,11 @@ function ($,
                 anonCallback(callback, callbackArgs); 
         }))
 
-        myModal.show(); // Launch it!  
+        // Launch it!  
+        myModal.show(); 
     }
 
+    // Clear click listener and register with new callback
     function clearOnClickAndRegister(el, callback, callbackArgs=null) {
         // Register click callback
         if(_.isUndefined($._data($(el).get(0), "events"))) {
@@ -256,6 +206,7 @@ function ($,
 
     // Run search to populate and call create table
     function populateTable() {
+        // Initialize
         window.sessionStorage.setItem("formOpen", "false");
         var contextMenuDiv = '#context-menu';
         var passwordTableDiv = '#password-table';
@@ -427,10 +378,16 @@ function ($,
         tdHtml += "</tbody></table></div>";
         html += tdHtml;
         
+        // Render table
         $(tableDiv).append(html);
+
+        // Rendeer context menu div
         $(contextMenuDiv).append(contextMenu);
+
+        // Register click listener on create button
         $('#main-create').on('click', function () { 
             if(!isFormOpen()) {
+                // Change text to close
                 $('#main-create').text("Close");
                 window.sessionStorage.setItem("formOpen", "true");
 
@@ -442,15 +399,18 @@ function ($,
                 window.sessionStorage.setItem("formOpen", "false");
             }
             
+            // Rnder the create user form
             anonCallback(renderCreateUserForm, ["",""])
         });
 
         // Current row index in table
         var curIndex = null;
 
+        // Create bootstrap-table
         $('#rest-password-table').bootstrapTable({
             contextMenu: '#example1-context-menu',
-            onContextMenuItem: function(row, $el){   
+            onContextMenuItem: function(row, $el){
+                // Actions for right click on row
                 if($el.data("item") == "update"){
                     $('#rest-password-table').bootstrapTable('expandRow', curIndex);                    
                 } else if($el.data("item") == "delete"){
@@ -462,6 +422,7 @@ function ($,
                 curIndex = $el.data().index;
             },
             onExpandRow: function(index, row, $detail) {
+                // Add a new table row below current element
                 $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
                 
                 // Logic to collapse previous row when new row expanded
@@ -471,6 +432,7 @@ function ($,
                   }
                 })
 
+                // Render the update form
                 renderUpdateUserInTable(row);
             }
 
@@ -488,14 +450,6 @@ function ($,
             deleteMultiCredential(rows);
             $('#remove').prop('disabled', true);
         });
-    }
-
-    // Callback to refresh window and hide create-user
-    function refreshWindow() {
-        setTimeout(function () {
-            location.reload()
-            $('#create-user').show();
-        }, 500);
     }
 
     // Delete credentials
@@ -517,7 +471,13 @@ function ($,
             $.ajax({
                 type: "POST",
                 url: aclUrl,
-                data: aclData
+                data: aclData,
+                error: function(xhr, textStatus, error) {
+                    payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + xhr.responseText + "</div>";
+                    payload.responseCode = xhr.status;
+                    message.push(payload);
+                    dfd.resolve(message);
+                }
             })
             .then(function() {
                 $.ajax({
@@ -596,9 +556,14 @@ function ($,
                                      [rows]);
     }
 
-    // SplunkJS Input object and methods
+     /**
+         * SplunkJS Input object and methods
+         * @param {object}      config      Config object holding component specific definitions
+         */
     function splunkJSInput(config) {
         var config = this.config = config;
+
+        // Form to render for updating user
         var htmlForm = '<div id="' + this.config.username + '" class="collapse multi-collapse"> \
                       <div id="createCredential"> \
                        <form id="createCredential"> \
@@ -645,6 +610,8 @@ function ($,
                         </form> \
                       </div> \
                     </div>'
+
+        // Save context 
         var that = this;
 
         // Remove component and add div back
@@ -668,6 +635,7 @@ function ($,
             }
         }
 
+        // Render the component in the form
         this.renderComponent = function () {
             // Remove component if it exists
             that.remove();
@@ -801,17 +769,18 @@ function ($,
                     if(aclData.sharing == "user") {
                         var aclDataCopy = _.clone(aclData);
                         aclDataCopy.sharing = "app";
-                        console.log(aclDataCopy);
                         
                         return $.ajax({
                             type: "POST",
                             url: aclUrl,
-                            data: aclDataCopy
+                            data: aclDataCopy,
+                            error: function(xhr, textStatus, error) {
+                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
+                            }
                         })
                     }
                 })
                 .then(function () {
-                    console.log(aclData);
                     return $.ajax({
                         type: "POST",
                         url: aclUrl,
@@ -903,31 +872,52 @@ function ($,
             var formVals = {};
             var aclData = {};
 
+            // Process SplunkJS form components
             _.each(arguments[0], function(component, i) {
                 var aclKey = component.config.aclKey;
+                // Save submitted values
                 aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
+
+                // Save initial form values
                 formVals[aclKey] = _.isArray(component.config.default) ? component.config.default.join():component.config.default;
             });
             
+            // Grab input values
             var username = $('input[id=updateUsername]').val();
             var password = $('input[id=updatePassword]').val();
             var confirmPassword = $('input[id=updateConfirmPassword]').val();
             var realm = $('input[id=updateRealm]').val();
+
+            // Save app info since we delete when posting
             var aclApp = aclData.app;
             var app = formVals.app;
+
+            // App is not a valid field when posting to /acl. Remove from object.
+            delete aclData.app;
+
+            // Initialze to apply ACL's
             var applyAcl = true;
 
-            if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
-                return renderModal("no-change",
-                                "No Change Detected",
-                                "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Nothing to see here</div>",
-                                "Close")
+            // Make sure both password fields are set
+            if(!password && confirmPassword) {
+                return renderModal("password-mismatch",
+                                   "Password Error",
+                                   "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Please set password and confirm password fields</div>",
+                                   "Close");
             }
 
-            // If ACL's haven't changed, don't apply
-            if(JSON.stringify(formVals) === JSON.stringify(aclData)) {
-                applyAcl = false;
+            // No change when form data and submitted values are the same and password is blank
+            if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
+                return renderModal("no-change",
+                                   "No Change Detected",
+                                   "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Nothing to see here</div>",
+                                   "Close")
             }
+
+            // // If ACL's haven't changed, don't apply
+            // if(JSON.stringify(formVals) === JSON.stringify(aclData)) {
+            //     applyAcl = false;
+            // }
 
             // Add realm to formVals for refrence in REST url's
             formVals.realm = arguments[1].realm;
@@ -942,30 +932,30 @@ function ($,
 
                 // Success message for final modal display
                 var message = [];
-                var chainStart = null;
-                var chainStart = genericPromise();
 
-                chainStart
-                .then(function() {
-                    delete aclData.app;
+                // Copy acl data to new object
+                var aclDataCopy = _.clone(aclData);
 
-                    var aclDataCopy = _.clone(aclData);
-                    aclDataCopy.sharing = "app";
-                    console.log("First ACL post");
-                    console.log(aclDataCopy);
-                    console.log(aclUrl);
-                    
-                    return $.ajax({
-                        type: "POST",
-                        url: aclUrl,
-                        data: aclDataCopy
-                    })
+                // Set sharing to app for consistent behavior through app and password changes
+                // When sharing is set to app, eai:userName is always 'nobody' and this gives a predictable
+                // URI to change password and move configs between apps.
+                // We'll set sharing back to the form value after password change and movement between apps.
+                aclDataCopy.sharing = "app";
+                
+                // Apply ACL's
+                $.ajax({
+                    type: "POST",
+                    url: aclUrl,
+                    data: aclDataCopy,
+                    error: function(xhr, textStatus, error) {
+                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + xhr.responseText + "</div>");
+                    }
                 })
                 .then (function() {
+                    // Change the password
                     if(password) {
                         var passwordUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
-                        console.log("Password change");
-                        console.log(passwordUrl);
+
                         return $.ajax({
                             type: "POST",
                             url: passwordUrl,
@@ -980,11 +970,10 @@ function ($,
                     }
                 })                
                 .then(function() {
+                    // Move app context
                     if(formVals.app != aclApp) {
                         var moveUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
-                        console.log("Move App");
-                        console.log(moveUrl);
-                
+                                        
                         return $.ajax({
                             type: "POST",
                             url: moveUrl,
@@ -999,30 +988,21 @@ function ($,
                     }
                 })
                 .then(function() {
-                    if(applyAcl) {
-                        if(aclData.sharing == "user" || formVals.sharing == "user") {
-                             aclUrl = "/en-US/splunkd/__raw/servicesNS/" + aclData.owner + "/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-                        } else {
-                            aclUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-                        }
+                    // Apply ACL's back to submitted values
+                    aclUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
 
-                        console.log("Second ACL post");
-                        console.log(aclData);
-                        //console.log(newAclUrl);
-                        console.log(aclUrl);
-                        return $.ajax({
-                            type: "POST",
-                            //url: newAclUrl,
-                            url: aclUrl,
-                            success: function(data, textStatus, xhr) {
-                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
-                            },
-                            error: function(xhr, textStatus, error) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
-                            },
-                            data: aclData
-                        })
-                    }
+                    return $.ajax({
+                        type: "POST",
+                        //url: newAclUrl,
+                        url: aclUrl,
+                        data: aclData,
+                        success: function(data, textStatus, xhr) {
+                            message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
+                        },
+                        error: function(xhr, textStatus, error) {
+                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
+                        }
+                    })
                 })
                 .done(function() {
                     renderModal("user-updated",
@@ -1140,13 +1120,14 @@ function ($,
         // Register updateUser callback for button
         clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
     }
-    
+
+    // listener used to show password when clicking the eye icon in the table
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
             var aclData = {"perms.read": row.acl_read,
-                           "perms.write": row.acl_write,
-                           "sharing": row.acl_sharing,
-                           "owner": row.owner}
+                            "perms.write": row.acl_write,
+                            "sharing": row.acl_sharing,
+                            "owner": row.owner}
 
             // Change sharing to app, show password, change back to user
             if(row.acl_sharing == "user") {
@@ -1174,7 +1155,7 @@ function ($,
                 showPassword(row);
             }
         }
-    };
+    }; 
 
     // Kick it all off
     populateTable();
