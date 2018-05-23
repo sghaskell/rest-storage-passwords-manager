@@ -508,12 +508,18 @@ function ($,
             var message = [];
             var payload = {"body": undefined,
                            "responseCode": undefined}
-            if(row.acl_sharing == "user") {
-                payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b>" + row.username + "</b> - <b>Sharing</b> permisisons must be <b>app</b> or <b>global</b> to delete credential</div>";
-                payload.responseCode = -1;
-                message.push(payload);
-                dfd.resolve(message);
-            } else {
+            var aclUrl = row.rest_uri + "/acl";
+            var aclData = {"perms.read": row.acl_read,
+                           "perms.write": row.acl_write,
+                           "sharing": row.acl_sharing == "user" ? "app":row.acl_sharing,
+                           "owner": row.owner}
+
+            $.ajax({
+                type: "POST",
+                url: aclUrl,
+                data: aclData
+            })
+            .then(function() {
                 $.ajax({
                     type: "DELETE",
                     url: deleteUrl,
@@ -530,7 +536,7 @@ function ($,
                         dfd.resolve(message);
                     }
                 })
-            }
+            })
 
             return dfd.promise();                                
         }
@@ -1001,7 +1007,7 @@ function ($,
                             aclUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
                         }
 
-                        console.log("Third ACL post");
+                        console.log("Second ACL post");
                         console.log(aclData);
                         //console.log(newAclUrl);
                         console.log(aclUrl);
@@ -1139,9 +1145,9 @@ function ($,
     window.operateEvents = {
         'click .show': function (e, value, row, index) {
             var aclData = {"perms.read": row.acl_read,
-            "perms.write": row.acl_write,
-            "sharing": row.acl_sharing,
-            "owner": row.owner}
+                           "perms.write": row.acl_write,
+                           "sharing": row.acl_sharing,
+                           "owner": row.owner}
 
             // Change sharing to app, show password, change back to user
             if(row.acl_sharing == "user") {
