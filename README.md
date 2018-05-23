@@ -15,7 +15,7 @@ Simply click the create button to reveal the credential creation form.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/credential-create.png?raw=true)
 
-Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create. If you set sharing to `user` you will not be able to update the password without changing the sharing scope back to `app` or `global`. This is a limitation with Splunk's REST API, not the app. 
+Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/create-form.png?raw=true)
 
