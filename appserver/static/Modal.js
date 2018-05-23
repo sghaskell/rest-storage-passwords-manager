@@ -46,10 +46,7 @@ define(['underscore'], function (_) {
 
             _classCallCheck(this, Modal);
 
-            var modalOptions = _.extend({ show: false,
-                                          backdrop: 'static',
-                                          keyboard: false
-                                        }, options);
+            var modalOptions = _.extend({ show: false}, options);
 
             // if "id" is the element that triggers the modal display, extract the actual id from it; otherwise use it as-is
             var modalId = id != null && (typeof id === 'undefined' ? 'undefined' : _typeof(id)) === 'object' && id.jquery != null ? id.attr('data-target').slice(1) : id;
