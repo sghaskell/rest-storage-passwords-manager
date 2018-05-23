@@ -11,7 +11,7 @@
 <h4 id="createcredential">Create Credential</h4>
 <p>Simply click the create button to reveal the credential creation form.</p>
 <p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/credential-create.png?raw=true" alt="Alt text" /></p>
-<p>Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create. If you set sharing to <code>user</code> you will not be able to update the password without changing the sharing scope back to <code>app</code> or <code>global</code>. This is a limitation with Splunk's REST API, not the app. </p>
+<p>Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create.</p>
 <p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/create-form.png?raw=true" alt="Alt text" /></p>
 <p><img src="/static/app/rest-storage-passwords-manager/img/credential_management-tour:enterprise/create-success-modal.png?raw=true" alt="Alt text" /></p>
 <p>Once created, the dashboard will be refreshed automatically. </p>
