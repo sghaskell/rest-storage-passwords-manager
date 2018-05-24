@@ -2,7 +2,7 @@
 
 ## About
 
-The password manager app provides a Javascript CRUD interface to the [Splunk storage/passwords REST endpoint](http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswords). 
+An intuitive, full-featured, Javascript CRUD interface to the [Splunk storage/passwords REST endpoint](http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswordsstorage/passwords). If you're an app developer looking to securely store passwords for API's, Custom Alert Actions, Modular Inputs or to access any resource that requires a password, this is your tool! Create, update, delete, view passwords, change permissions, sharing and app scope. Ditch your curl commands and upgrade to this simple to use interface.
 
 ## Dependencies
 To store passwords the user must have the `admin_all_objects` capability enabled within an assigned role. To read passwords a user must have `list_storage_passwords` capabilty enabled within an assigned role.
@@ -31,7 +31,7 @@ Right click on a table entry to reveal a context menu that allows you to update 
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/context-update.png?raw=true)
 
-Alternately, you can click the detail view (plus icon) in the table to update the credential.
+Alternatively, you can click the detail view (plus icon) in the table to update the credential.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/detail-view.png?raw=true)
 
@@ -45,7 +45,7 @@ Right click on a table entry to reveal a context menu that allows you to delete 
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/context-delete.png?raw=true)
 
-Alternately, select any individual credential or select all using the checkbox in the header column and press the delte button.
+Alternatively, select any individual credential or select all using the checkbox in the header column and press the delte button.
 
 ![Alt text](appserver/static/img/credential_management-tour:enterprise/multi-delete.png?raw=true)
 
