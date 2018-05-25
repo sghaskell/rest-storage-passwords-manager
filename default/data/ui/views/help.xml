@@ -1,7 +1,7 @@
 <dashboard>
   <label>Help</label>
   <row>
-    <html><h1 id="splunkreststoragepasswordsmanager">Splunk REST storage/passwords Manager</h1>
+    <html><h1 id="splunkreststoragepasswordsmanager">Splunk REST storage/passwords Manager for Splunk</h1>
 <h2 id="about">About</h2>
 <p>The password manager app provides a Javascript CRUD interface to the <a href="http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswords">Splunk storage/passwords REST endpoint</a>. </p>
 <h2 id="dependencies">Dependencies</h2>
