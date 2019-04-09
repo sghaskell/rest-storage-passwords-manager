@@ -1013,7 +1013,8 @@ function ($,
             }
         }
 
-        var divId = "#" + row.username;
+        //var divId = "#" + row.username;
+        var divId = "div[id='" + row.username + "']";
 
         var htmlForm = '<form id="' + row.username + '-update-form"> \
                         <div class="form-group"> \
