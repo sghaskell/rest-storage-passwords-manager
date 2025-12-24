@@ -1,0 +1,13 @@
+[default]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[views/credential_management]
+access = read : [ * ]
+export = none
+owner = nobody
+
+[views/help]
+access = read : [ * ]
+export = none
+owner = nobody

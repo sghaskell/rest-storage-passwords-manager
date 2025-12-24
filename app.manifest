@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "2.0.0",
+  "info": {
+    "title": "REST storage/passwords Manager for Splunk",
+    "id": {
+      "group": null,
+      "name": "rest-storage-passwords-manager",
+      "version": "1.0.9"
+    },
+    "author": [
+      {
+        "name": "Scott Haskell",
+        "email": null,
+        "company": null
+      }
+    ],
+    "license": {
+      "name": "Apache-2.0",
+      "text": "LICENSE.txt",
+      "uri": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+    },
+    "releaseNotes": {
+      "name": "App Release Notes",
+      "text": "README.md",
+      "uri": "https://github.com/sghaskell/rest-storage-passwords-manager"
+    },
+    "description": "An intuitive, full-featured, Javascript CRUD interface to the storage/passwords REST endpoint."
+  },
+  "dependencies": {},
+  "supportedDeployments": ["*"],
+  "targetWorkloads": ["*"]      
+
+}
