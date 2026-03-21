@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [2.0.0] - 2026-03-20
+
+### Breaking Changes
+- Removed Bootstrap 3 table plugin, dropdown, and context menu — no third-party JS dependencies remain
+- Removed UI tour (images were outdated and no longer reflected the modernized UI)
+
+### Added
+- **Live filter bar** — type to filter credentials by username, realm, or app; updates instantly
+- **Empty state message** — friendly prompt when no credentials exist or no filter results match
+- **Animated loading spinner** — visual feedback while credentials load
+- **App scope warning** — amber hint when creating credentials in the current app, explaining they will be lost if the app is uninstalled
+- **Pagination** — credentials table paginates at 10 rows; Previous/Next controls shown when needed
+- **Accordion row expansion** — click any row to expand an inline update form; no page reload required
+- **409 conflict handling** — clear error when attempting to create a duplicate credential
+- **Select All / Reset buttons** on role pickers — Reset always restores least-privilege defaults (`admin`, `power`)
+- **Live selection counter** on multi-select role pickers
+
+### Changed
+- Replaced deprecated `splunkjs/mvc` components (SearchManager, DropdownView, MultiDropdownView) with native `fetch` + `async/await` + DOM methods
+- Replaced jQuery `$.Deferred` chains with `async/await`
+- Replaced `innerHTML` string injection (XSS vectors) with safe DOM methods
+- **ACL controls** — Read Users and Write Users pickers now show roles only (+ `*`); Owner picker shows users only; matches what the `storage/passwords` REST endpoint actually accepts
+- **Default permissions** changed from `* (all)` to `admin, power` (least privilege)
+- `* (all)` wildcard is now mutually exclusive with named role selections
+- Realm field is disabled in the update form — the REST endpoint does not allow realm changes after creation
+- Version bumped to 2.0.0
+
+### Fixed
+- Reset button now correctly restores default selections in both create and edit workflows
+- `+ New Credential` button label correctly restored after form close
+- Username and realm inputs are trimmed of leading/trailing whitespace before submission
+- AppInspect `--included-tags cloud` failures resolved: removed `[triggers]` stanza from `app.conf`, added global write ACL to `metadata/default.meta`
+
+### Removed
+- `appserver/static/bootstrap-table.js`
+- `appserver/static/bootstrap-table-contextmenu.js`
+- `appserver/static/bootstrap-dropdown.js`
+- `appserver/static/bootstrap-table.css`
+- `appserver/static/bootstrap-dropdown.css`
+- `appserver/static/bootstrap-btn-danger.css`
+- `appserver/static/Modal.js`
+- `default/ui-tour.conf`
+- `appserver/static/img/credential_management-tour_enterprise/` (14 PNG files)
+
+### Documentation
+- README rewritten for 2.0.0 — removed broken image references, stale context menu instructions, and outdated Bootstrap credits
+- Help view (`help.xml`) rewritten to reflect current UI and updated instructions
+- Added security note: `list_storage_passwords` grants visibility into credentials across all apps where the user has read access — grant carefully
+
+## [1.0.9] - prior release
+
+Initial public release with Bootstrap 3 table, jQuery, and `splunkjs/mvc` components.
