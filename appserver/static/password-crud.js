@@ -520,7 +520,8 @@ async function buildCredentialForm(defaults = {}) {
     form.appendChild(fieldGroup('Password',        inputPassword('formPassword')));
     form.appendChild(fieldGroup('Confirm Password',inputPassword('formConfirmPassword')));
     form.appendChild(fieldGroup('Realm',           inputText('formRealm',        defaults.realm       || '', false)));
-    form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,  defaults.app            || getCurrentApp())));
+    form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,  defaults.app            || getCurrentApp()),
+        'Credentials are stored in this app\'s local directory and will be lost if it is uninstalled. Choose a long-lived app (e.g. search) if they need to survive reinstalls.'));
     form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      users, defaults.owner          || currentUser())));
     form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['*'])));
     form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'])));
@@ -647,13 +648,18 @@ function escHtml(str) {
 }
 
 // ─── DOM form helpers ──────────────────────────────────────────────────────────
-function fieldGroup(label, input) {
+function fieldGroup(label, input, hint) {
     const div = el('div', { class: 'form-group' });
     const lbl = el('label');
     lbl.textContent = label;
     if (input.id) lbl.setAttribute('for', input.id);
     div.appendChild(lbl);
     div.appendChild(input);
+    if (hint) {
+        const hintEl = el('span', { class: 'help-block' });
+        hintEl.textContent = hint;
+        div.appendChild(hintEl);
+    }
     return div;
 }
 
