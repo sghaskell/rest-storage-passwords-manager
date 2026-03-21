@@ -1,1168 +1,845 @@
+/**
+ * password-crud.js  –  Modernized for Splunk 9.2+ / Cloud
+ *
+ * WHAT CHANGED vs. the original:
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 1. REMOVED  splunkjs/mvc and all SplunkJS MVC components (SearchManager,
+ *    DropdownView, MultiDropdownView).  These are deprecated in 9.x and absent
+ *    in many Cloud builds.  All data fetching now goes directly to splunkd
+ *    via fetch() calls to splunkd/__raw.
+ *
+ * 2. REMOVED  the | rest SPL pattern for populating the table and showing
+ *    passwords.  Routing credential data through the search pipeline exposes
+ *    clear-text values in search artifacts (job cache, summaries).  Direct
+ *    REST calls never touch the search tier.
+ *
+ * 3. REPLACED  jQuery $.ajax chains with async/await + fetch().  The old
+ *    $.Deferred / $.when / .then chains are hard to follow and have no error
+ *    propagation path.  Native Promises surface errors cleanly.
+ *
+ * 4. REPLACED  string-concatenated HTML with DOM helpers that escape values
+ *    before insertion, eliminating the XSS vectors present in the original
+ *    (raw row.username / row.realm injected into innerHTML).
+ *
+ * 5. REPLACED  window.sessionStorage for "is form open" state with a simple
+ *    module-scoped boolean.  sessionStorage is shared across tabs and causes
+ *    confusing state bleed.
+ *
+ * 6. REPLACED  location.reload() with a lightweight table refresh that only
+ *    re-fetches credentials, keeping the rest of the page intact.
+ *
+ * 7. REMOVED  bundled Bootstrap dropdown/table JS.  The table is now rendered
+ *    with native Splunk CSS classes so no third-party bundle is needed.
+ *
+ * 8. KEPT     require(['splunkjs/mvc/simplexml/ready!']) as the sole bootstrap
+ *    hook.  This is used purely as a lifecycle trigger — it fires reliably
+ *    after all classic dashboard panels have finished rendering.  No other
+ *    splunkjs/mvc components are used anywhere in this file.
+ *
+ * FIXES applied post-initial-release:
+ *   - Removed splunk_server=local from fetchCredentials() — not a valid
+ *     parameter for the storage/passwords REST handler (was SPL-only)
+ *   - CSRF token (X-Splunk-Form-Key) added to all mutating requests; cookie
+ *     name includes the port on some installs, so matched with startsWith
+ *   - ACL operations now use the configs/conf-passwords path instead of
+ *     storage/passwords/.../acl which returns 404; buildAclPath() centralises
+ *     this and replaces all ${row.rest_uri}/acl references
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
 'use strict';
 
-require(['jquery',
-        'underscore',
-        'splunkjs/mvc',
-        'splunkjs/mvc/utils',
-        'splunkjs/mvc/tokenutils',
-        'splunkjs/mvc/messages',
-        'splunkjs/mvc/searchmanager',
-        'splunkjs/mvc/multidropdownview',
-        'splunkjs/mvc/dropdownview',        
-        '/static/app/rest-storage-passwords-manager/Modal.js',
-        'splunkjs/mvc/simpleform/input/dropdown',
-        'splunkjs/mvc/simplexml/ready!'],
-function ($,
-          _,
-          mvc,
-          utils,
-          TokenUtils,
-          Messages,
-          SearchManager,
-          MultiDropdownView,
-          DropdownView,
-          Modal,
-          Dropdown) {
+// ─── Module-level state ───────────────────────────────────────────────────────
+// CHANGED: was window.sessionStorage – see note 5 above.
+let isCreateFormOpen = false;
+let allCredentials   = [];   // cached after each fetch; reused by paginator
+let filterText       = '';   // persists across renderTable calls; cleared on full refresh
+let currentPage      = 1;    // resets to 1 on every full table refresh
+const PAGE_SIZE      = 10;   // rows per page; paginator hidden when total ≤ this
 
-    
+// ─── Current username helper ──────────────────────────────────────────────────
+function currentUser() {
+    return Splunk.util.getConfigValue('USERNAME');
+}
 
-    function showPassword(row) {
-        var dfd = $.Deferred();
-        
-        var splunkJsComponent = mvc.Components.getInstance("passwordSearch");
-
-        if(splunkJsComponent) {
-            splunkJsComponent.dispose();
-        }
-
-        var passwordSearch = new SearchManager({
-            "id": "passwordSearch",
-            "cancelOnUnload": true,
-            "status_buckets": 0,
-            "earliest_time": "-24h@h",
-            "latest_time": "now",
-            "sample_ratio": 1,
-            "search": "| rest /servicesNS/-/-/storage/passwords splunk_server=local \
-                | search title=" + row.realm + ":" + row.username + ": \
-                | table clear_password",
-            "app": utils.getCurrentApp(),
-            "auto_cancel": 90,
-            "preview": true,
-            "tokenDependencies": {
-            },
-            "runWhenTimeIsUndefined": false
-        }, {tokens: true, tokenNamespace: "submitted"});
-
-        var mainSearch = mvc.Components.getInstance("passwordSearch");
-        var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
-
-        mainSearch.on('search:done', function(properties) {
-            if(properties.content.resultCount == 0) {
-                return renderModal("password-not-found",
-                                    "Not Found",
-                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>No password found. Verify <b>list_storage_passwords</b> capability role is enabled.</div>",
-                                    "Close")
-            }
-        });
-
-        myResults.on("data", function() {
-            var data = myResults.data().results;
-            dfd.resolve(renderModal("show-password",
-                                    "Password",
-                                    "<h3>" + data[0].clear_password + "</h3>",
-                                    "Close"));
-        });
-
-        return dfd.promise();
-    } 
-
-           
-
-    function anonCallback(callback=function(){}, callbackArgs=null) {
-        if(callbackArgs) {
-            callback.apply(this, callbackArgs);
-        } else { 
-            callback();
-        }
+// ─── Safe DOM element helper (XSS guard) ──────────────────────────────────────
+// Values set via textContent/setAttribute — never interpreted as markup.
+function el(tag, textOrAttrs, children) {
+    const node = document.createElement(tag);
+    if (typeof textOrAttrs === 'string') {
+        node.textContent = textOrAttrs;
+    } else if (textOrAttrs && typeof textOrAttrs === 'object') {
+        Object.entries(textOrAttrs).forEach(([k, v]) => node.setAttribute(k, v));
     }
+    (children || []).forEach(c => c && node.appendChild(c));
+    return node;
+}
 
-    function genericPromise() {
-        var dfd = $.Deferred();
-        dfd.resolve();
-        return dfd.promise();
-    }
+// ─── splunkd REST helper ───────────────────────────────────────────────────────
+// CHANGED: replaces $.ajax chains with fetch() + async/await.
+async function splunkdFetch(method, path, data) {
+    const url = `/en-US/splunkd/__raw${path}`;
 
-    // Wrapper to execute multiple searches in order and resolve when they've all finished
-    function all(array){
-        var deferred = $.Deferred();
-        var fulfilled = 0, length = array.length;
-        var results = [];
-    
-        if (length === 0) {
-            deferred.resolve(results);
-        } else {
-            _.each(array, function(promise, i){
-                $.when(promise()).then(function(value) {
-                    results[i] = value;
-                    fulfilled++;
-                    if(fulfilled === length){
-                        deferred.resolve(results);
-                    }
-                });
-            });
-        }
-    
-        return deferred.promise();
+    // Read Splunk CSRF token — cookie name includes port on some installs
+    // e.g. splunkweb_csrf_token_8000 vs splunkweb_csrf_token
+    const csrfToken = document.cookie.split('; ')
+        .find(row => row.startsWith('splunkweb_csrf_token'))
+        ?.split('=')[1];
+
+    const opts = {
+        method,
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
     };
 
-    // Helper to figure out if the create form is open
-    function isFormOpen() {
-        var formOpen = window.sessionStorage.getItem("formOpen");
-        if(_.isNull(formOpen) || _.isUndefined(formOpen) || formOpen === "false") {
-            return false;
+    if (csrfToken) {
+        opts.headers['X-Splunk-Form-Key'] = csrfToken;
+    }
+
+    if (data) {
+        opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        opts.body = new URLSearchParams(data).toString();
+    }
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        // Splunk returns XML error responses — extract the <msg> text if present,
+        // otherwise fall back to the raw status text.
+        const xmlMsg = text.match(/<msg[^>]*>([^<]+)<\/msg>/)?.[1]?.trim();
+        const err = new Error(xmlMsg || `${res.status} ${res.statusText}`);
+        err.status = res.status;
+        throw err;
+    }
+    return res;
+}
+const splunkdGET    = (path)       => splunkdFetch('GET',    path);
+const splunkdPOST   = (path, data) => splunkdFetch('POST',   path, data);
+const splunkdDELETE = (path)       => splunkdFetch('DELETE', path);
+
+// ─── Data fetchers ─────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all credentials visible to the current user.
+ * NOTE: splunk_server=local is intentionally omitted — it is only a valid
+ * parameter for the SPL | rest command, not the REST API handler directly.
+ */
+async function fetchCredentials() {
+    const res  = await splunkdGET('/servicesNS/-/-/storage/passwords?output_mode=json&count=0');
+    const json = await res.json();
+    return (json.entry || []).map(e => ({
+        username:    e.content.username,
+        realm:       e.content.realm       || '',
+        app:         e.acl.app,
+        owner:       e.acl.owner,
+        acl_read:    (e.acl.perms && e.acl.perms.read  || []).join(','),
+        acl_write:   (e.acl.perms && e.acl.perms.write || []).join(','),
+        acl_sharing: e.acl.sharing,
+        rest_uri:    e.links.edit || e.links.alternate,
+    }));
+}
+
+/**
+ * Fetch the clear-text password for a single credential.
+ * Direct REST GET — never touches the search tier or job cache.
+ */
+async function fetchClearPassword(realm, username) {
+    const key  = encodeURIComponent(`${realm}:${username}:`);
+    const res  = await splunkdGET(`/servicesNS/-/-/storage/passwords/${key}?output_mode=json`);
+    const json = await res.json();
+    return json.entry?.[0]?.content?.clear_password ?? null;
+}
+
+/** Fetch apps list for the app-scope dropdown. */
+async function fetchApps() {
+    const res  = await splunkdGET('/servicesNS/-/-/apps/local?output_mode=json&count=0&search=disabled%3D0');
+    const json = await res.json();
+    return (json.entry || []).map(e => ({ label: e.content.label || e.name, value: e.name }));
+}
+
+/** Fetch roles for Read/Write ACL pickers. Prepends * (all roles) as first option. */
+async function fetchRoles() {
+    const res  = await splunkdGET('/servicesNS/-/-/authorization/roles?output_mode=json&count=0');
+    const json = await res.json();
+    return [
+        { label: '* (all)', value: '*' },
+        ...(json.entry || []).map(e => ({ label: e.name, value: e.name }))
+    ];
+}
+
+/** Fetch users for the Owner picker. */
+async function fetchUsers() {
+    const res  = await splunkdGET('/servicesNS/-/-/authentication/users?output_mode=json&count=0');
+    const json = await res.json();
+    return (json.entry || []).map(e => ({ label: e.name, value: e.name }));
+}
+
+// ─── Modal helper ─────────────────────────────────────────────────────────────
+// Uses Splunk-native modal CSS classes — no Bootstrap bundle needed.
+function showModal({ id, title, bodyHtml, confirmLabel = 'Close', onConfirm, showCancel = false }) {
+    document.getElementById(id)?.remove();
+
+    const modal = el('div', { id, class: 'modal hide fade mlts-modal', tabindex: '-1' });
+    modal.innerHTML = `
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">×</span>
+              </button>
+              <h3 class="modal-title"></h3>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+              ${showCancel ? '<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>' : ''}
+              <button type="button" class="btn btn-primary confirm-btn"></button>
+            </div>
+          </div>
+        </div>`;
+
+    modal.querySelector('.modal-title').textContent = title;
+    modal.querySelector('.modal-body').innerHTML    = bodyHtml;
+    modal.querySelector('.confirm-btn').textContent = confirmLabel;
+
+    modal.querySelector('.confirm-btn').addEventListener('click', () => {
+        $(modal).modal('hide');
+        onConfirm?.();
+    });
+    modal.addEventListener('hidden.bs.modal', () => modal.remove());
+
+    document.body.appendChild(modal);
+    $(modal).modal({ backdrop: 'static', keyboard: false });
+    $(modal).modal('show');
+}
+
+// ─── Table renderer ───────────────────────────────────────────────────────────
+function renderTable(credentials, container) {
+    // Cache the full list so the paginator can re-render without a re-fetch.
+    // When called from refreshTable/init, credentials is the full array.
+    // When called from goToPage, credentials is already allCredentials.
+    if (credentials !== allCredentials) allCredentials = credentials;
+
+    // Apply client-side filter (username, realm, app — case-insensitive substring).
+    const lc = filterText.toLowerCase();
+    const visible = lc
+        ? allCredentials.filter(r =>
+            [r.username, r.realm, r.app].some(f => (f || '').toLowerCase().includes(lc)))
+        : allCredentials;
+
+    const totalPages = Math.ceil(visible.length / PAGE_SIZE);
+    // Clamp currentPage in case a delete or filter shrank the last page away.
+    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+    if (totalPages === 0) currentPage = 1;
+
+    const pageSlice = visible.slice(
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE
+    );
+
+    container.innerHTML = '';
+
+    // Filter input — value is preserved via the module-level filterText variable.
+    const filterInput = el('input', { type: 'search', class: 'form-control cred-filter',
+        placeholder: 'Filter by username, realm, or app…' });
+    filterInput.value = filterText;
+    filterInput.addEventListener('input', e => {
+        filterText = e.target.value;
+        currentPage = 1;
+        renderTable(allCredentials, container);
+        const restored = container.querySelector('.cred-filter');
+        if (restored) { restored.focus(); const len = restored.value.length; restored.setSelectionRange(len, len); }
+    });
+
+    const toolbar = el('div', { class: 'credential-toolbar' }, [
+        filterInput,
+        (() => {
+            const btn = el('button', { id: 'btn-delete-selected', class: 'btn btn-danger', disabled: 'true' });
+            btn.innerHTML = '<i class="icon-x"></i> Delete';
+            btn.addEventListener('click', () => {
+                const selected = getSelectedRows();
+                if (selected.length) deleteCredentials(selected);
+            });
+            return btn;
+        })(),
+        (() => {
+            const btn = el('button', { id: 'btn-create', class: 'btn btn-primary' });
+            btn.textContent = '+ New Credential';
+            btn.addEventListener('click', () => toggleCreateForm());
+            return btn;
+        })()
+    ]);
+    container.appendChild(toolbar);
+
+    const createFormWrap = el('div', { id: 'create-form-wrap', style: 'display:none' });
+    container.appendChild(createFormWrap);
+
+    const table = el('table', { id: 'cred-table', class: 'table table-chrome table-striped table-hover' });
+    const thead = el('thead');
+    const headerRow = el('tr');
+    ['', 'Username', 'Realm', 'App', 'Owner', 'Sharing', 'Read', 'Write', 'Password', ''].forEach(h => {
+        headerRow.appendChild(el('th', h));
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = el('tbody');
+    if (visible.length === 0) {
+        const emptyTd = el('td', { colspan: '10', class: 'cred-empty-state' });
+        emptyTd.innerHTML = lc
+            ? 'No credentials match your filter.'
+            : 'No credentials found. Click <strong>+ New Credential</strong> to get started.';
+        const emptyRow = el('tr');
+        emptyRow.appendChild(emptyTd);
+        tbody.appendChild(emptyRow);
+    } else {
+        pageSlice.forEach(row => tbody.appendChild(buildRow(row)));
+    }
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    table.addEventListener('change', () => {
+        const btn = document.getElementById('btn-delete-selected');
+        btn.disabled = getSelectedRows().length === 0;
+    });
+
+    if (totalPages > 1) {
+        container.appendChild(renderPaginator(totalPages, container));
+    }
+}
+
+// ─── Paginator ────────────────────────────────────────────────────────────────
+function renderPaginator(totalPages, container) {
+    const wrap = el('div', { class: 'cred-paginator' });
+
+    const prevBtn = el('button', { class: 'btn btn-default btn-sm' });
+    prevBtn.textContent = '‹ Prev';
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.addEventListener('click', () => { currentPage--; renderTable(allCredentials, container); });
+
+    const label = el('span', { class: 'cred-page-label' });
+    label.textContent = `Page ${currentPage} of ${totalPages}`;
+
+    const nextBtn = el('button', { class: 'btn btn-default btn-sm' });
+    nextBtn.textContent = 'Next ›';
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.addEventListener('click', () => { currentPage++; renderTable(allCredentials, container); });
+
+    wrap.appendChild(prevBtn);
+    wrap.appendChild(label);
+    wrap.appendChild(nextBtn);
+    return wrap;
+}
+
+// Build a single <tr> — values via textContent, never innerHTML.
+// Clicking anywhere on the row (except checkbox / eye button) expands the
+// inline update form; clicking again collapses it.
+function buildRow(row) {
+    const tr = el('tr', { class: 'cred-row' });
+    tr.dataset.row = JSON.stringify(row);
+
+    // Row click → toggle inline update form (ignore clicks on input/button)
+    tr.addEventListener('click', e => {
+        if (e.target.closest('input, button')) return;
+        toggleInlineUpdateForm(tr, row);
+    });
+
+    const checkTd = el('td');
+    checkTd.appendChild(el('input', { type: 'checkbox', class: 'cred-checkbox' }));
+    tr.appendChild(checkTd);
+
+    [row.username, row.realm, row.app, row.owner, row.acl_sharing, row.acl_read, row.acl_write].forEach(val => {
+        tr.appendChild(el('td', String(val ?? '')));
+    });
+
+    const pwdTd = el('td');
+    const eyeBtn = el('button', { class: 'btn btn-link btn-show-pwd', title: 'Show password' });
+    eyeBtn.innerHTML = '<i class="icon-visible"></i>';
+    eyeBtn.addEventListener('click', () => handleShowPassword(row));
+    pwdTd.appendChild(eyeBtn);
+    tr.appendChild(pwdTd);
+
+    // Chevron indicates row is expandable; rotates 90° when open
+    const chevronTd = el('td', { style: 'text-align:center; vertical-align:middle; width:32px;' });
+    const chevron = el('i', { class: 'icon-chevron-right cred-chevron' });
+    chevronTd.appendChild(chevron);
+    tr.appendChild(chevronTd);
+
+    return tr;
+}
+
+// ─── Selection helpers ─────────────────────────────────────────────────────────
+function getSelectedRows() {
+    return Array.from(document.querySelectorAll('#cred-table .cred-checkbox:checked'))
+        .map(cb => JSON.parse(cb.closest('tr').dataset.row));
+}
+
+// ─── Show password ─────────────────────────────────────────────────────────────
+async function handleShowPassword(row) {
+    try {
+        // PRESERVED: temporary sharing bump required for user-scoped credentials
+        if (row.acl_sharing === 'user') {
+            await setSharing(row, 'app');
+        }
+        const pwd = await fetchClearPassword(row.realm, row.username);
+        if (row.acl_sharing === 'user') {
+            await setSharing(row, 'user');
+        }
+        if (!pwd) {
+            return showModal({
+                id: 'modal-pwd-not-found',
+                title: 'Not Found',
+                bodyHtml: '<div class="alert alert-warning"><i class="icon-alert"></i> No password found. Verify <b>list_storage_passwords</b> capability is enabled.</div>'
+            });
+        }
+        showModal({
+            id: 'modal-show-pwd',
+            title: `Password for ${row.realm}:${row.username}`,
+            bodyHtml: `<h3 class="credential-cleartext"></h3>`
+        });
+        document.querySelector('#modal-show-pwd .credential-cleartext').textContent = pwd;
+    } catch (err) {
+        showModal({ id: 'modal-pwd-err', title: 'Error', bodyHtml: `<div class="alert alert-error">${escHtml(err.message)}</div>` });
+    }
+}
+
+// ─── ACL path helper ──────────────────────────────────────────────────────────
+// FIX: storage/passwords/{stanza}/acl returns 404.  ACL updates for storage
+// passwords must go through configs/conf-passwords using the credential stanza
+// name.  All ${row.rest_uri}/acl references replaced with buildAclPath(row).
+function buildAclPath(row) {
+    return `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/acl`;
+}
+
+// ─── Sharing toggle helper ─────────────────────────────────────────────────────
+async function setSharing(row, sharing) {
+    await splunkdPOST(buildAclPath(row), {
+        'perms.read':  row.acl_read,
+        'perms.write': row.acl_write,
+        sharing,
+        owner: row.owner
+    });
+}
+
+// ─── Create credential ─────────────────────────────────────────────────────────
+async function handleCreateCredential(formData) {
+    const { username, password, confirmPassword, realm, owner, app, sharing, read, write } = formData;
+
+    if (!username) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Username is required.</div>' });
+    if (!password) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Password is required.</div>' });
+    if (password !== confirmPassword) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-warning">Passwords do not match.</div>' });
+    if (!read)  return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Read Users role (or * for all).</div>' });
+    if (!write) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Write Users role (or * for all).</div>' });
+
+    const messages = [];
+    try {
+        await splunkdPOST(`/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/storage/passwords`, {
+            name: username, password, realm
+        });
+        messages.push(`<div><i class="icon-check-circle"></i> Created <b>${escHtml(realm)}:${escHtml(username)}</b></div>`);
+
+        const aclPath = `/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/configs/conf-passwords/credential%3A${encodeURIComponent(realm)}%3A${encodeURIComponent(username)}%3A/acl`;
+        // PRESERVED: two-step ACL pattern required by splunkd when sharing='user'
+        if (sharing === 'user') {
+            await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing: 'app', owner });
+        }
+        await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing, owner });
+        messages.push(`<div><i class="icon-check-circle"></i> ACLs applied</div>`);
+
+        showModal({ id: 'modal-created', title: 'Credential Created', bodyHtml: messages.join(''), onConfirm: () => refreshTable() });
+    } catch (err) {
+        if (err.status === 409) {
+            messages.push(`<div class="alert alert-warning"><i class="icon-alert"></i> A credential already exists for <b>${escHtml(realm)}:${escHtml(username)}</b>. Click the row in the table to expand the update form and change the password.</div>`);
         } else {
-            return true;
+            messages.push(`<div class="alert alert-error"><i class="icon-alert"></i> ${escHtml(err.message)}</div>`);
         }
+        showModal({ id: 'modal-create-fail', title: 'Create Failed', bodyHtml: messages.join(''), onConfirm: () => refreshTable() });
+    }
+}
+
+// ─── Update credential ─────────────────────────────────────────────────────────
+async function handleUpdateCredential(row, formData) {
+    const { password, confirmPassword, app: newApp, sharing, owner, read, write } = formData;
+
+    if (password && password !== confirmPassword) {
+        return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-warning">Passwords do not match.</div>' });
+    }
+    if (!read)  return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Read Users role (or * for all).</div>' });
+    if (!write) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Write Users role (or * for all).</div>' });
+
+    const messages = [];
+    try {
+        // PRESERVED: set sharing=app first for predictable splunkd URI behaviour
+        await splunkdPOST(buildAclPath(row), { 'perms.read': read, 'perms.write': write, sharing: 'app', owner });
+
+        if (password) {
+            await splunkdPOST(
+                `/servicesNS/nobody/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.realm)}:${encodeURIComponent(row.username)}:`,
+                { password }
+            );
+            messages.push(`<div><i class="icon-check-circle"></i> Password updated for <b>${escHtml(row.realm)}:${escHtml(row.username)}</b></div>`);
+        }
+
+        if (row.app !== newApp) {
+            await splunkdPOST(
+                `/servicesNS/nobody/${encodeURIComponent(row.app)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/move`,
+                { app: newApp, user: 'nobody' }
+            );
+            messages.push(`<div><i class="icon-check-circle"></i> Moved from <b>${escHtml(row.app)}</b> to <b>${escHtml(newApp)}</b></div>`);
+        }
+
+        await splunkdPOST(
+            `/servicesNS/nobody/${encodeURIComponent(newApp)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/acl`,
+            { 'perms.read': read, 'perms.write': write, sharing, owner }
+        );
+        messages.push(`<div><i class="icon-check-circle"></i> ACLs applied</div>`);
+
+        showModal({ id: 'modal-updated', title: 'Credential Updated', bodyHtml: messages.join(''), onConfirm: () => refreshTable() });
+    } catch (err) {
+        messages.push(`<div class="alert alert-error"><i class="icon-alert"></i> ${escHtml(err.message)}</div>`);
+        showModal({ id: 'modal-update-fail', title: 'Update Failed', bodyHtml: messages.join(''), onConfirm: () => refreshTable() });
+    }
+}
+
+// ─── Delete credentials ────────────────────────────────────────────────────────
+function deleteCredentials(rows) {
+    const names = rows.map(r => `${r.realm}:${r.username}`).join(', ');
+    showModal({
+        id: 'modal-delete-confirm',
+        title: 'Confirm Delete',
+        bodyHtml: `<div class="alert alert-error"><i class="icon-alert"></i> You are about to remove <b>${escHtml(names)}</b>. Press OK to continue.</div>`,
+        confirmLabel: 'OK',
+        showCancel: true,
+        onConfirm: () => executeDelete(rows)
+    });
+}
+
+async function executeDelete(rows) {
+    const results = await Promise.allSettled(rows.map(async row => {
+        // PRESERVED: ACL bump before DELETE for predictable URI
+        await splunkdPOST(buildAclPath(row), {
+            'perms.read':  row.acl_read,
+            'perms.write': row.acl_write,
+            sharing: row.acl_sharing === 'user' ? 'app' : row.acl_sharing,
+            owner:   row.owner
+        });
+        await splunkdDELETE(
+            `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.realm)}:${encodeURIComponent(row.username)}:`
+        );
+        return row;
+    }));
+
+    const messages = results.map(r =>
+        r.status === 'fulfilled'
+            ? `<div><i class="icon-check-circle"></i> Deleted <b>${escHtml(r.value.realm)}:${escHtml(r.value.username)}</b></div>`
+            : `<div class="alert alert-error"><i class="icon-alert"></i> ${escHtml(r.reason?.message ?? 'Unknown error')}</div>`
+    );
+
+    showModal({
+        id: 'modal-delete-result',
+        title: results.some(r => r.status === 'rejected') ? 'Delete Partially Failed' : 'Credentials Deleted',
+        bodyHtml: messages.join(''),
+        onConfirm: () => refreshTable()
+    });
+}
+
+// ─── Form builders ─────────────────────────────────────────────────────────────
+async function buildCredentialForm(defaults = {}) {
+    const [apps, roles, users] = await Promise.all([fetchApps(), fetchRoles(), fetchUsers()]);
+
+    const form = el('form', { class: 'credential-form' });
+    form.addEventListener('submit', e => e.preventDefault());
+
+    form.appendChild(fieldGroup('Username',        inputText('formUsername',     defaults.username    || '', false)));
+    form.appendChild(fieldGroup('Password',        inputPassword('formPassword')));
+    form.appendChild(fieldGroup('Confirm Password',inputPassword('formConfirmPassword')));
+    form.appendChild(fieldGroup('Realm',           inputText('formRealm',        defaults.realm       || '', false)));
+    form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,  defaults.app            || getCurrentApp()),
+        'Credentials are stored in this app\'s local directory and will be lost if it is uninstalled. Choose a long-lived app (e.g. search) if they need to survive reinstalls.',
+        'hint-warning'));
+    form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      users, defaults.owner          || currentUser())));
+    form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['admin', 'power'], ['admin', 'power'])));
+    form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'], ['admin', 'power'])));
+    form.appendChild(fieldGroup('Sharing',         buildSelect('formSharing', [
+        { label: 'global', value: 'global' },
+        { label: 'app',    value: 'app'    },
+        { label: 'user',   value: 'user'   }
+    ], defaults.acl_sharing || 'app')));
+
+    // Show the App Scope warning only when the selected app is this app.
+    const appSelect  = form.querySelector('#formApp');
+    const appHint    = appSelect?.closest('.form-group')?.querySelector('.hint-warning');
+    if (appSelect && appHint) {
+        const refresh = () => {
+            appHint.style.display = appSelect.value === getCurrentApp() ? '' : 'none';
+        };
+        appSelect.addEventListener('change', refresh);
+        refresh();
     }
 
-    // Callback to refresh window and hide create-user
-    function refreshWindow() {
-        setTimeout(function () {
-            location.reload()
-            $('#create-user').show();
-        }, 500);
+    return form;
+}
+
+function getFormData(form) {
+    const g  = id => form.querySelector(`#${id}`)?.value ?? '';
+    const gm = id => Array.from(form.querySelector(`#${id}`)?.selectedOptions ?? [])
+        .map(o => o.value).join(',');
+    return {
+        username:        g('formUsername').trim(),
+        password:        g('formPassword'),
+        confirmPassword: g('formConfirmPassword'),
+        realm:           g('formRealm').trim(),
+        app:             g('formApp'),
+        owner:           g('formOwner'),
+        read:            gm('formRead'),
+        write:           gm('formWrite'),
+        sharing:         g('formSharing'),
+    };
+}
+
+// ─── Create form toggle ────────────────────────────────────────────────────────
+async function toggleCreateForm() {
+    const wrap = document.getElementById('create-form-wrap');
+    const btn  = document.getElementById('btn-create');
+    if (isCreateFormOpen) {
+        wrap.innerHTML = '';
+        wrap.style.display = 'none';
+        btn.textContent = '+ New Credential';
+        isCreateFormOpen = false;
+        return;
     }
-    
-    function renderModal(id, title, body, buttonText, callback=function(){}, callbackArgs=null) {
-        // Create the modal
-        var myModal = new Modal(id, {
-                    title: title,
-                    backdrop: 'static',
-                    keyboard: false,
-                    destroyOnHide: true,
-                    type: 'wide'
-        }); 
-    
-        // Add content
-        myModal.body.append($(body));
-    
-        // Add cancel button for update/delete action
-        if(id == "user-delete-confirm" || id == "update-user-form") {
-            myModal.footer.append($('<cancel>').attr({
-                type: 'button',
-                'data-dismiss': 'modal'
-            })
-            .addClass('btn btn-secondary').text("Cancel")).on('click', function(){});
-        }
+    btn.innerHTML = '<span class="cred-spinner"></span> Loading…';
+    btn.disabled = true;
+    const form = await buildCredentialForm();
+    const submitBtn = el('button', { class: 'btn btn-primary', id: 'btn-submit-create' });
+    submitBtn.textContent = 'Create';
+    submitBtn.addEventListener('click', () => handleCreateCredential(getFormData(form)));
+    form.appendChild(submitBtn);
+    wrap.appendChild(form);
+    wrap.style.display = 'block';
+    btn.textContent = 'Close';
+    btn.disabled = false;
+    isCreateFormOpen = true;
+}
 
-        // Add footer
-        myModal.footer.append($('<button>').attr({
-            type: 'button',
-            'data-dismiss': 'modal'
-        })
-        .addClass('btn btn-primary').text(buttonText).on('click', function () {
-                anonCallback(callback, callbackArgs); 
-        }))
-
-        // Launch it!  
-        myModal.show(); 
+// ─── Inline update form ────────────────────────────────────────────────────────
+async function toggleInlineUpdateForm(tr, row) {
+    const existingForm = tr.nextElementSibling;
+    if (existingForm?.classList.contains('inline-update-row')) {
+        existingForm.remove();
+        tr.classList.remove('row-expanded');
+        return;
     }
+    tr.classList.add('row-expanded');
 
-    // Clear click listener and register with new callback
-    function clearOnClickAndRegister(el, callback, callbackArgs=null) {
-        // Register click callback
-        if(_.isUndefined($._data($(el).get(0), "events"))) {
-            $(el).on('click', function (event) {
-                event.preventDefault();
-                anonCallback(callback, callbackArgs);
-            });
-            return;    
-        }
+    const formTr = el('tr', { class: 'inline-update-row' });
+    const formTd = el('td', { colspan: '10' });
+    showLoading(formTd, 'Loading form…');
+    formTr.appendChild(formTd);
+    tr.insertAdjacentElement('afterend', formTr);
 
-        // Unregister click callback
-        if(_.isObject($._data($(el).get(0), "events")) && _.has($._data($(el).get(0), "events"), "click")) {
-            $(el).off('click');
-            $(el).on('click', function () {
-                anonCallback(callback, callbackArgs);
-            });
-        }
+    const form = await buildCredentialForm(row);
+
+    // PRESERVED: realm cannot be changed via REST API after creation
+    const realmInput = form.querySelector('#formRealm');
+    if (realmInput) realmInput.disabled = true;
+
+    const submitBtn = el('button', { class: 'btn btn-primary' });
+    submitBtn.textContent = 'Update';
+    submitBtn.addEventListener('click', () => handleUpdateCredential(row, getFormData(form)));
+    form.appendChild(submitBtn);
+
+    formTd.textContent = '';
+    formTd.appendChild(form);
+}
+
+// ─── Loading indicator helper ──────────────────────────────────────────────────
+function showLoading(container, text) {
+    const p      = el('p', { class: 'cred-loading' });
+    const spinner = el('span', { class: 'cred-spinner' });
+    p.appendChild(spinner);
+    p.appendChild(document.createTextNode(text));
+    container.innerHTML = '';
+    container.appendChild(p);
+}
+
+// ─── Table refresh ─────────────────────────────────────────────────────────────
+// CHANGED: was location.reload() — now re-fetches credentials only.
+async function refreshTable() {
+    const container = document.getElementById('password-table');
+    if (!container) return;
+    showLoading(container, 'Refreshing…');
+    currentPage = 1;
+    try {
+        const creds = await fetchCredentials();
+        renderTable(creds, container);
+    } catch (err) {
+        container.innerHTML = `<div class="alert alert-error"><i class="icon-alert"></i> Failed to load credentials: ${escHtml(err.message)}</div>`;
     }
+}
 
-    // Return selected rows from bootstrap-table
-    function getIdSelections() {
-        return $.map($('#rest-password-table').bootstrapTable('getSelections'), function (row) {
-            return row
-        });
+// ─── App context helper ────────────────────────────────────────────────────────
+function getCurrentApp() {
+    const match = window.location.pathname.match(/\/app\/([^/]+)/);
+    return match ? match[1] : 'search';
+}
+
+// ─── XSS escape helper ────────────────────────────────────────────────────────
+function escHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// ─── DOM form helpers ──────────────────────────────────────────────────────────
+function fieldGroup(label, input, hint, hintClass) {
+    const div = el('div', { class: 'form-group' });
+    const lbl = el('label');
+    lbl.textContent = label;
+    if (input.id) lbl.setAttribute('for', input.id);
+    div.appendChild(lbl);
+    div.appendChild(input);
+    if (hint) {
+        const hintEl = el('span', { class: 'help-block' + (hintClass ? ' ' + hintClass : '') });
+        hintEl.textContent = hint;
+        div.appendChild(hintEl);
     }
-    
+    return div;
+}
 
-    // Run search to populate and call create table
-    function populateTable() {
-        // Initialize
-        window.sessionStorage.setItem("formOpen", "false");
-        var contextMenuDiv = '#context-menu';
-        var passwordTableDiv = '#password-table';
+function inputText(id, value, disabled) {
+    const i = el('input', { type: 'text', class: 'form-control', id });
+    i.value = value;
+    if (disabled) i.disabled = true;
+    return i;
+}
 
-        var search1 = new SearchManager({
-                    "id": "search1",
-                    "cancelOnUnload": true,
-                    "status_buckets": 0,
-                    "earliest_time": "-24h@h",
-                    "latest_time": "now",
-                    "sample_ratio": 1,
-                    "search": "| rest /servicesNS/-/-/configs/conf-passwords splunk_server=local \
-                        | rex field=title \"credential:(?<realm>.*?):(?<username>.*?):\" \
-                        | eval uri_base=\"/en-US/splunkd/__raw\" | rex field=id \"(?<rest_uri>/servicesNS.*?$)\" | eval rest_uri = uri_base + rest_uri \
-                        | fields username, eai:userName, password, realm, eai:acl.app, eai:acl.owner, eai:acl.perms.read, eai:acl.perms.write, eai:acl.sharing, realm, rest_uri \
-                        | rename eai:userName as user, eai:acl.app as app, eai:acl.owner as owner, eai:acl.perms.read as acl_read, eai:acl.perms.write as acl_write, eai:acl.sharing as acl_sharing \
-                        | table username, password, realm, app, owner, acl_read, acl_write, acl_sharing, rest_uri \
-                        | fillnull value=\"\"",
-                    "app": utils.getCurrentApp(),
-                    "auto_cancel": 90,
-                    "preview": true,
-                    "tokenDependencies": {
-                    },
-                    "runWhenTimeIsUndefined": false
-                }, {tokens: true, tokenNamespace: "submitted"});
+function inputPassword(id) {
+    return el('input', { type: 'password', class: 'form-control', id });
+}
 
-        var mainSearch = splunkjs.mvc.Components.getInstance("search1");
-        var myResults = mainSearch.data('results', { output_mode:'json', count:0 });
+function buildSelect(id, options, selectedValue) {
+    const sel = el('select', { class: 'form-control', id });
+    options.forEach(opt => {
+        const o = el('option', { value: opt.value });
+        o.textContent = opt.label;
+        if (opt.value === selectedValue) o.selected = true;
+        sel.appendChild(o);
+    });
+    return sel;
+}
 
-        mainSearch.on('search:progress', function(properties) {
-            Messages.render("waiting", $(passwordTableDiv));
-        });
+function buildMultiSelect(id, options, selectedValues = [], resetValues = selectedValues) {
+    const wrap = el('div', { class: 'multi-select-wrap' });
 
-        mainSearch.on('search:done', function(properties) {
-            document.getElementById("password-table").innerHTML = "";
+    const counter = el('span', { class: 'multi-select-counter' });
 
-            if(properties.content.resultCount == 0) {
-                var noData = null;
-                createTable(passwordTableDiv, contextMenuDiv, noData);
-            }
-        });
+    const sel = el('select', { class: 'form-control', id, multiple: 'true', size: '5' });
+    options.forEach(opt => {
+        const o = el('option', { value: opt.value });
+        o.textContent = opt.label;
+        if (selectedValues.includes(opt.value)) o.selected = true;
+        sel.appendChild(o);
+    });
 
-        myResults.on("data", function() {
-            var data = myResults.data().results;
-            createTable(passwordTableDiv, contextMenuDiv, data);
-        });
+    const actions = el('div', { class: 'multi-select-actions' });
+    const selectAll = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
+    selectAll.textContent = 'Select All';
+    const clearBtn = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
+    clearBtn.textContent = 'Reset';
+    actions.appendChild(selectAll);
+    actions.appendChild(clearBtn);
+
+    const hint = el('span', { class: 'multi-select-hint' });
+    hint.textContent = 'Hold Ctrl / ⌘ Cmd to select multiple';
+
+    const updateCounter = () => {
+        const n = Array.from(sel.selectedOptions).length;
+        counter.textContent = `${n} selected`;
+    };
+    updateCounter();
+
+    // * (all) is mutually exclusive with individual role selections.
+    // Selecting * deselects all others; selecting any other role deselects *.
+    sel.addEventListener('change', e => {
+        const changed = e.target;  // the <option> that triggered the event
+        if (changed.value === '*' && changed.selected) {
+            Array.from(sel.options).forEach(o => { if (o.value !== '*') o.selected = false; });
+        } else if (changed.value !== '*' && changed.selected) {
+            const wildcard = Array.from(sel.options).find(o => o.value === '*');
+            if (wildcard) wildcard.selected = false;
+        }
+        updateCounter();
+    });
+
+    // "Select All" selects every named role but NOT *, keeping the meaning distinct.
+    selectAll.addEventListener('click', () => {
+        Array.from(sel.options).forEach(o => { o.selected = o.value !== '*'; });
+        updateCounter();
+    });
+    clearBtn.addEventListener('click', () => {
+        Array.from(sel.options).forEach(o => { o.selected = resetValues.includes(o.value); });
+        updateCounter();
+    });
+
+    wrap.appendChild(counter);
+    wrap.appendChild(sel);
+    wrap.appendChild(actions);
+    wrap.appendChild(hint);
+    return wrap;
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+function injectStyles() {
+    if (document.getElementById('cred-mgr-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'cred-mgr-styles';
+    style.textContent = `
+        .credential-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+        .cred-row { cursor: pointer; }
+        .cred-row:hover > td { background-color: rgba(0,0,0,0.03); }
+        .cred-row.row-expanded > td { background-color: rgba(0,102,204,0.06); border-bottom: none !important; }
+        .inline-update-row > td { background-color: rgba(0,102,204,0.03); padding: 12px 16px !important; }
+        .cred-chevron { display: inline-block; transition: transform 0.15s ease; color: #999; }
+        .row-expanded .cred-chevron { transform: rotate(90deg); color: #0066cc; }
+        #btn-delete-selected:not([disabled]) { background-color: #c23b2e; border-color: #a3261d; color: #fff; }
+        .modal-body .icon-check-circle { color: #3c763d; }
+        .modal-body .icon-alert { color: #c23b2e; }
+        .cred-paginator { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .cred-page-label { font-size: 13px; color: #555; }
+        @keyframes cred-spin { to { transform: rotate(360deg); } }
+        .cred-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #0066cc; border-radius: 50%; animation: cred-spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+        .cred-loading { color: #555; padding: 8px 0; }
+        .hint-warning { color: #8a6200 !important; }
+        .multi-select-counter { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
+        .multi-select-actions { display: flex; gap: 6px; margin-top: 4px; }
+        .multi-select-btn { padding: 0 2px !important; font-size: 12px !important; height: auto !important; }
+        .multi-select-hint { display: block; font-size: 12px; color: #999; font-style: italic; margin-top: 3px; }
+        .cred-filter { flex: 1; max-width: 320px; }
+        .cred-empty-state { text-align: center; color: #888; padding: 20px !important; font-style: italic; }
+    `;
+    document.head.appendChild(style);
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+async function init() {
+    const container = document.getElementById('password-table');
+    if (!container) return;
+    injectStyles();
+    showLoading(container, 'Loading credentials…');
+    try {
+        const creds = await fetchCredentials();
+        renderTable(creds, container);
+    } catch (err) {
+        container.innerHTML = `<div class="alert alert-error"><i class="icon-alert"></i> Failed to load credentials: ${escHtml(err.message)}</div>`;
     }
-
-    // Render credential table and wire up context menu
-    function createTable(tableDiv, contextMenuDiv, data) {
-        var html = '<div id="open-close-button"> \
-                      <p><button id="main-create" class="btn btn-primary" data-toggle="collapse" href="#create-update-form">Create</button></p> \
-                    </div> \
-                    <div id="create-update-form" class="collapse multi-collapse"> \
-                      <div id="createCredential"> \
-                       <form id="createCredential"> \
-                        <div class="form-group"> \
-                            <label for="username">Username</label> \
-                            <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="password">Password</label> \
-                            <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
-                        </div> \
-                        <div> \
-                            <label for="confirmPassword">Confirm Password</label> \
-                            <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="realm">Realm</label> \
-                            <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
-                            <br></br>\
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="owner" id="owner">Owner</label> \
-                            <div id="owner-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="readUsers" id="read-users">Read Users</label> \
-                            <div id="read-user-multi"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="writeUsers" id="write-users">Write Users</label> \
-                            <div id="write-user-multi"></div> \
-                        </div> \
-                        <div class="form-group" id="app-scope"> \
-                            <label for="appScope">App Scope</label> \
-                            <div id="app-scope-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="sharing" id="sharing">Sharing</label> \
-                            <div id="sharing-dropdown"></div> \
-                         </div> \
-                        <div id="create-credential-submit"> \
-                          <button id="create-submit" class="btn btn-primary">Create</button> \
-                        </div> \
-                        </form> \
-                      </div> \
-                    </div>';                      
-
-        var tdHtml = "";
-        var contextMenu = '<ul id="example1-context-menu" class="dropdown-menu"> \
-                             <li data-item="update"><a>Update</a></li> \
-                             <li data-item="delete"><a>Delete</a></li> \
-                           </ul>';
-        var header = '  <div> \
-                            <div id="toolbar"> \
-                            <button id="remove" type="button" class="btn icon-x btn-danger" disabled> Delete</button> \
-                            </div> \
-                        <table id="rest-password-table" \
-                             class="table table-striped table-hover" \
-                             data-toolbar="#toolbar" \
-                             data-detail-view="true" \
-                             data-sort-name="username" \
-                             data-show-pagination-switch="true" \
-                             data-id-field="id" \
-                             data-pagination="true" \
-                             data-sortable="true" \
-                             data-page-size="10" \
-                             data-page-list="[10,20,50,ALL]" \
-                             data-id-field="id" \
-                             data-toggle="table" \
-                             data-smart-display="true" \
-                             data-search="true" \
-                             data-checkbox-header="true" \
-                             data-show-footer="false" \
-                             data-select-item-name="button-select" \
-                             data-click-to-select="false"> \
-                      <thead> \
-                        <tr> \
-                            <th data-field="state" data-checkbox="true"></th> \
-                            <th data-field="id" data-visible="false" data-align="center"><div><h3>ID</h3></th> \
-                            <th data-field="username" data-sortable="true" data-align="center"><div><h3>Username</h3></th> \
-                            <th data-field="password" data-events="operateEvents" data-align="center"><div><h3>Password</h3></div></th> \
-                            <th data-field="realm" data-sortable="true" data-align="center"><div><h3><h3>Realm</h3></div></th> \
-                            <th data-field="app" data-sortable="true" data-align="center"><div><h3>App</h3></div></th> \
-                            <th data-field="clear_password" data-visible="false" data-align="center"><div><h3>Clear Password</h3></div></th> \
-                            <th data-field="owner" data-sortable="true" data-align="center"><div><h3>Owner</h3></div></th> \
-                            <th data-field="acl_read" data-sortable="true" data-align="center"><div><h3>Read</h3></div></th> \
-                            <th data-field="acl_write" data-sortable="true" data-align="center"><div><h3>Write</h3></div></th> \
-                            <th data-field="acl_sharing" data-sortable="true" data-align="center"><div><h3>Sharing</h3></div></th> \
-                            <th data-field="rest_uri" data-visible="false" data-align="center"><div><h3>REST URI</h3></div></th> \
-                        </tr> \
-                      </thead> \
-                      <tbody>';
-        html += header;
-
-        _.each(data, function(row, i) {
-            tdHtml += '<tr class="striped">\
-                         <td class="bs-checkbox"></td>\
-                         <td>' + i + '</td>\
-                         <td>' + row.username + '</td>\
-                         <td>\
-                           <a class="show" href="javascript:void(0)" title="Show Password">\
-                             <li class="icon-visible"></li>\
-                           </a>\
-                         </td>\
-                         <td>' + row.realm + '</td>\
-                         <td>' + row.app + '</td>\
-                         <td>' + row.clear_password + '</td>\
-                         <td>' + row.owner + '</td>\
-                         <td>' + row.acl_read + '</td>\
-                         <td>' + row.acl_write + '</td>\
-                         <td>' + row.acl_sharing + '</td>\
-                         <td>' + row.rest_uri + '</td>\
-                       </tr>';
-        });
-        
-        tdHtml += "</tbody></table></div>";
-        html += tdHtml;
-        
-        // Render table
-        $(tableDiv).append(html);
-
-        // Rendeer context menu div
-        $(contextMenuDiv).append(contextMenu);
-
-        // Register click listener on create button
-        $('#main-create').on('click', function () { 
-            if(!isFormOpen()) {
-                // Change text to close
-                $('#main-create').text("Close");
-                window.sessionStorage.setItem("formOpen", "true");
-
-                // Clear form values
-                $('input[id=createUsername]').val("");
-                $('input[id=createRealm]').val("");        
-            } else {
-                $('#main-create').text("Create");
-                window.sessionStorage.setItem("formOpen", "false");
-            }
-            
-            // Rnder the create user form
-            anonCallback(renderCreateUserForm, ["",""])
-        });
-
-        // Current row index in table
-        var curIndex = null;
-
-        // Create bootstrap-table
-        $('#rest-password-table').bootstrapTable({
-            contextMenu: '#example1-context-menu',
-            onContextMenuItem: function(row, $el){
-                // Actions for right click on row
-                if($el.data("item") == "update"){
-                    $('#rest-password-table').bootstrapTable('expandRow', curIndex);                    
-                } else if($el.data("item") == "delete"){
-                    deleteMultiCredential([row]);        
-                }                
-            },
-            onContextMenuRow: function(row, $el){ 
-                // Set the current index when context menu triggered
-                curIndex = $el.data().index;
-            },
-            onExpandRow: function(index, row, $detail) {
-                // Add a new table row below current element
-                $detail.html('<table></table>').find('table').append('<tr><td><div id="' + row.username + '"></div></td></tr>');
-                
-                // Logic to collapse previous row when new row expanded
-                $('#rest-password-table').find('.detail-view').each(function () {
-                    if (!$(this).is($detail.parent())) {
-                      $(this).prev().find('.detail-icon').click()
-                  }
-                })
-
-                // Render the update form
-                renderUpdateUserInTable(row);
-            }
-
-        });
-        
-        // Toggle remove button on or off depending whether rows are checked
-        $('#rest-password-table').on('check.bs.table uncheck.bs.table ' +
-                'check-all.bs.table uncheck-all.bs.table', function () {
-            $('#remove').prop('disabled', !$('#rest-password-table').bootstrapTable('getSelections').length);
-        });
-
-        // Wire remove button to delete credentials
-        $('#remove').click(function () {
-            var rows = getIdSelections();
-            deleteMultiCredential(rows);
-            $('#remove').prop('disabled', true);
-        });
-    }
-
-    // Delete credentials
-    function deleteMultiCredential(rows) {
-
-        // Delete a single credential
-        var deleteCred = function (row) {
-            var dfd = $.Deferred();
-            var deleteUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/storage/passwords/" + row.realm + ":" + row.username +":";
-            var message = [];
-            var payload = {"body": undefined,
-                           "responseCode": undefined}
-            var aclUrl = row.rest_uri + "/acl";
-            var aclData = {"perms.read": row.acl_read,
-                           "perms.write": row.acl_write,
-                           "sharing": row.acl_sharing == "user" ? "app":row.acl_sharing,
-                           "owner": row.owner}
-
-            $.ajax({
-                type: "POST",
-                url: aclUrl,
-                data: aclData,
-                error: function(xhr, textStatus, error) {
-                    payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + xhr.responseText + "</div>";
-                    payload.responseCode = xhr.status;
-                    message.push(payload);
-                    dfd.resolve(message);
-                }
-            })
-            .then(function() {
-                $.ajax({
-                    type: "DELETE",
-                    url: deleteUrl,
-                    success: function(data, textStatus, xhr) {
-                        payload.body = "<div><i class=\"icon-check-circle\"></i> Successfully deleted credential - <b>" + row.realm + ":" + row.username + "</b></div>";
-                        payload.responseCode = xhr.status;
-                        message.push(payload);
-                        dfd.resolve(message);
-                    },
-                    error: function(xhr, textStatus, error) {
-                        payload.body = "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to delete user <b> " + row.username + "</b> - " + xhr.responseText + "</div>";
-                        payload.responseCode = xhr.status;
-                        message.push(payload);
-                        dfd.resolve(message);
-                    }
-                })
-            })
-
-            return dfd.promise();                                
-        }
-
-        var removeUsers = function () {
-            // promise array
-            var promises = [];
-            
-            _.each(rows, function(row, i) {
-                // Push each row to be deleted onto promises array
-                promises.push(function() {
-                    return deleteCred(row);
-                });    
-            });
-
-            // Execute deletes and display message
-            $.when(all(promises)).then(function(messages) {
-                var status = "";
-                var failCount = 0;
-                var deleteCount = messages.length;
-                var prefix = "Credential";
-                var modalMessage = $.map(messages, function(i) {
-                    var payload = i[0];
-                    if(parseInt(payload.responseCode) != 200) {
-                        failCount += 1;
-                    }
-                    return payload.body;
-                })
-
-                if(failCount == deleteCount) {
-                    status = prefix + " Delete Failed";
-                } else if (failCount > 0 && failCount < deleteCount) {
-                    status = prefix + " Delete Partially Succeeded"
-                } else {
-                    status = prefix + " Deleted";
-                }
-
-                renderModal("user-delete",
-                             status,
-                             modalMessage.join("\n"),
-                             "Close",
-                             refreshWindow)                 
-            });
-        }
-
-        // Get the usernames from all rows
-        var users = $.map(rows, function(row) {
-            return row.username;
-        })
-
-        // Render delete confirmation modal and regester delete callback action
-        var deleteUser = renderModal("user-delete-confirm",
-                                     "Confirm Delete Action",
-                                     "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>You're about to remove the users <b>" + users.join(', ') + "</b> - Press ok to continue</div>",
-                                     "Ok",
-                                     removeUsers,
-                                     [rows]);
-    }
-
-     /**
-         * SplunkJS Input object and methods
-         * @param {object}      config      Config object holding component specific definitions
-         */
-    function splunkJSInput(config) {
-        var config = this.config = config;
-
-        // Form to render for updating user
-        var htmlForm = '<div id="' + this.config.username + '" class="collapse multi-collapse"> \
-                      <div id="createCredential"> \
-                       <form id="createCredential"> \
-                        <div class="form-group"> \
-                            <label for="username">Username</label> \
-                            <input type="username" class="form-control" id="createUsername" placeholder="Enter username"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="password">Password</label> \
-                            <input type="password" class="form-control" id="createPassword" placeholder="Password"> \
-                        </div> \
-                        <div> \
-                            <label for="confirmPassword">Confirm Password</label> \
-                            <input type="password" class="form-control" id="createConfirmPassword" placeholder="Confirm Password"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="realm">Realm</label> \
-                            <input type="realm" class="form-control" id="createRealm" placeholder="Realm"> \
-                            <br></br>\
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="owner" id="owner">Owner</label> \
-                            <div id="owner-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="readUsers" id="read-users">Read Users</label> \
-                            <div id="read-user-multi"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="writeUsers" id="write-users">Write Users</label> \
-                            <div id="write-user-multi"></div> \
-                        </div> \
-                        <div class="form-group" id="app-scope"> \
-                            <label for="appScope">App Scope</label> \
-                            <div id="app-scope-dropdown"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="sharing" id="sharing">Sharing</label> \
-                            <div id="sharing-dropdown"></div> \
-                         </div> \
-                        <div id="create-credential-submit"> \
-                          <button id="create-submit" class="btn btn-primary">Submit</button> \
-                        </div> \
-                        </form> \
-                      </div> \
-                    </div>'
-
-        // Save context 
-        var that = this;
-
-        // Remove component and add div back
-        this.remove = function() {
-            var el = "#" + this.config.parentEl;
-            var splunkJsComponent = mvc.Components.get(this.config.id);
-
-            if(splunkJsComponent) {
-                splunkJsComponent.remove();
-                $(el).append('<div id="' + this.config.el + '"></div>');    
-            }
-        }
-
-        // Remove component from inline update form. Don't add the div back since it's dynamic
-        this.updateRemove = function() {
-            var el = "#" + this.config.parentEl;
-            var splunkJsComponent = mvc.Components.get(this.config.id);
-            
-            if(splunkJsComponent) {
-                splunkJsComponent.remove();
-            }
-        }
-
-        // Render the component in the form
-        this.renderComponent = function () {
-            // Remove component if it exists
-            that.remove();
-
-            var el = "#" + this.config.el;
-
-            // Get search manager
-            var splunkJsComponentSearch = mvc.Components.get(this.config.id + "-search");
-
-            // Check to make sure div is there before rendering
-            if ($(el).length) {
-                var choices = _.has(this.config, "choices") ? this.config.choices:[];    
-    
-                // Create search manager if it doesn't exist
-                if(!splunkJsComponentSearch) {
-                    this.config.searchInstance = new SearchManager({
-                        id: this.config.id + "-search",
-                        search: this.config.searchString 
-                    });
-                }
-
-                if(this.config.type == "dropdown") {
-                    this.config.instance = new DropdownView({
-                        id: this.config.id,
-                        managerid: _.isUndefined(this.config.searchString) ? null:this.config.id + "-search",
-                        choices: choices,
-                        labelField: "label",
-                        valueField: "value",
-                        default: _.has(this.config, "default") ? this.config.default:null,
-                        el: $(el)
-                    }).render();                       
-                } else {
-                    this.config.instance = new MultiDropdownView({
-                        id: this.config.id,
-                        choices: choices,
-                        managerid: _.isUndefined(this.config.searchString) ? null:this.config.id + "-search",
-                        labelField: "label",
-                        valueField: "value",
-                        width: 350,
-                        default: _.has(this.config, "default") ? this.config.default:null,
-                        el: $(el)
-                    }).render();         
-                }
-            } else {
-                setTimeout(function() {
-                    that.renderComponent();
-                }, 100);
-            }
-        }
-        
-        // Get values from bootstrap table
-        this.getVals = function() {
-            return this.config.instance.val();
-        }
-    }
-
-    // Used to render create form
-    function renderCreateUserForm(cUsername = false, cRealm = false) {
-        var createUser = function createUser() {
-            var aclData = {};
-            var formVals = {};
-
-            _.each(arguments[2], function(component, i) {
-                var aclKey = component.config.aclKey;
-                aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
-                formVals[aclKey] = _.isArray(component.config.default) ? component.config.default.join():component.config.default;
-            });
-
-            var username = $('input[id=createUsername]').val();
-            var password = $('input[id=createPassword]').val();
-            var confirmPassword = $('input[id=createConfirmPassword]').val();
-            var realm = $('input[id=createRealm]').val();
-            
-            if(username == "") {
-                return renderModal("missing-username",
-                                    "Missing Username",
-                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a username</div>",
-                                    "Close")
-            }
-
-            if(password == "") {
-                return renderModal("missing-password",
-                                    "Missing Password",
-                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a password</div>",
-                                    "Close")
-            }
-
-            if(username && !password) {
-                return renderModal("missing-password",
-                                    "Missing Password",
-                                    "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Please enter a password</div>",
-                                    "Close");
-            }
-
-            // Create object to POST for user creation
-            var createData = {"name": username,
-                              "password": password,
-                              "realm": realm};
-
-
-            if(password != confirmPassword) {
-                return renderModal("password-mismatch",
-                                    "Password Mismatch",
-                                    "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
-                                    "Close");
-            } else {
-                var currentUser = Splunk.util.getConfigValue("USERNAME");
-                var createUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + aclData.app + "/storage/passwords";
-                var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + currentUser + "/" + aclData.app + "/configs/conf-passwords/credential%3A" + realm + "%3A" + username + "%3A/acl";
-
-                // Success message for final modal display
-                var message = [];
-
-                $.ajax({
-                    type: "POST",
-                    url: createUrl,
-                    data: createData,
-                    success: function(data, textStatus, xhr) {
-                        message.push("<div><i class=\"icon-check-circle\"></i> Successfully created user <b>" + realm + ":" + username + "</b></div>");
-                    },
-                    error: function(xhr, textStatus, error) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to create user <b>" + username + ":" + realm + "</b> - " + xhr.responseText + "</div>");
-                    }
-                })
-                .then(function() {
-                    // App not a valid key for updating Splunk ACL's, remove it before posting
-                    delete aclData.app;
-
-                    // Need to set sharing to app level before applying ACL's otherwise read/write perms don't apply
-                    // ACL's will get re-applied back to user sharing context in next chain ACL apply
-                    if(aclData.sharing == "user") {
-                        var aclDataCopy = _.clone(aclData);
-                        aclDataCopy.sharing = "app";
-                        
-                        return $.ajax({
-                            type: "POST",
-                            url: aclUrl,
-                            data: aclDataCopy,
-                            error: function(xhr, textStatus, error) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
-                            }
-                        })
-                    }
-                })
-                .then(function () {
-                    return $.ajax({
-                        type: "POST",
-                        url: aclUrl,
-                        data: aclData,
-                        success: function(data, textStatus, xhr) {
-                            message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
-                        },
-                        error: function(xhr, textStatus, error) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
-                        }
-                    })
-                })
-                .done(function () {
-                    renderModal("user-create",
-                                "User Created",
-                                message.join('\n'),
-                                "Close",
-                                refreshWindow)
-                })
-                .fail(function() {
-                    renderModal("user-create-fail",
-                                "User Create Failed",
-                                message.join('\n'),
-                                "Close",
-                                refreshWindow)
-                });
-            }
-        }
-
-        var inputs = [new splunkJSInput({"id": "app-scope-dropdown",
-                       "searchString": "| rest /servicesNS/-/-/apps/local splunk_server=local | search disabled=0 | rename title as value | table label, value",
-                       "el": "app-scope-dropdown",
-                       "type": "dropdown",
-                       "default": utils.getCurrentApp(),
-                       "aclKey": "app",
-                       "parentEl": "app-scope"}),
-                       new splunkJSInput({"id": "read-user-multi",
-                        "searchString": "| rest /servicesNS/-/-/authorization/roles splunk_server=local | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | fields label, value] | dedup label",
-                        "el": "read-user-multi",
-                        "type": "multi-dropdown",
-                        "default": "*",
-                        "choices": [{"label":"*", "value":"*"}],
-                        "aclKey": "perms.read",
-                        "parentEl": "read-users"}),
-                       new splunkJSInput({"id": "write-user-multi",
-                        "searchString": "| rest /servicesNS/-/-/authorization/roles splunk_server=local | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | fields label, value] | dedup label",
-                        "el": "write-user-multi",
-                        "type": "multi-dropdown",
-                        "parentEl": "write-users",
-                        "aclKey": "perms.write",
-                        "choices": [{"label":"*", "value":"*"}],
-                        "default": ["admin","power"]}),
-                       new splunkJSInput({"id": "sharing-dropdown",
-                        "choices": [{"label":"global", "value": "global"},
-                                    {"label":"app", "value": "app"},
-                                    {"label":"user", "value": "user"}],
-                        "el": "sharing-dropdown",
-                        "type": "dropdown",
-                        "parentEl": "sharing",
-                        "aclKey": "sharing",
-                        "default": "app"}),
-                       new splunkJSInput({"id": "owner-dropdown",
-                        "searchString": "| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | table label, value",
-                        "el": "owner-dropdown",
-                        "type": "dropdown",
-                        "aclKey": "owner",
-                        "default": Splunk.util.getConfigValue("USERNAME"),
-                        "parentEl": "owner"})];
-
-        // Render components
-        _.each(inputs, function(input, i) {
-            input.renderComponent();
-        });
-
-        // Register createUser callback for button
-        clearOnClickAndRegister('#create-submit', createUser, [cUsername, cRealm, inputs]);
-    
-        setTimeout(function () {
-            if(cUsername != "" || cRealm != "") {
-                $('input[id=createUsername]').val(cUsername);
-                $('input[id=createRealm]').val(cRealm);
-            }
-        }, 300);
-    }
-
-    // Render form under row in bootstrap-table
-    function renderUpdateUserInTable(row) {
-        var updateUser = function updateUser () {
-            var formVals = {};
-            var aclData = {};
-
-            // Process SplunkJS form components
-            _.each(arguments[0], function(component, i) {
-                var aclKey = component.config.aclKey;
-                // Save submitted values
-                aclData[aclKey] = _.isArray(component.getVals()) ? component.getVals().join():component.getVals();
-
-                // Save initial form values
-                formVals[aclKey] = _.isArray(component.config.default) ? component.config.default.join():component.config.default;
-            });
-            
-            // Grab input values
-            var username = $('input[id=updateUsername]').val();
-            var password = $('input[id=updatePassword]').val();
-            var confirmPassword = $('input[id=updateConfirmPassword]').val();
-            var realm = $('input[id=updateRealm]').val();
-
-            // Save app info since we delete when posting
-            var aclApp = aclData.app;
-            var app = formVals.app;
-
-            // App is not a valid field when posting to /acl. Remove from object.
-            delete aclData.app;
-
-            // Initialze to apply ACL's
-            var applyAcl = true;
-
-            // Make sure both password fields are set
-            if(!password && confirmPassword) {
-                return renderModal("password-mismatch",
-                                   "Password Error",
-                                   "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Please set password and confirm password fields</div>",
-                                   "Close");
-            }
-
-            // No change when form data and submitted values are the same and password is blank
-            if(JSON.stringify(formVals) === JSON.stringify(aclData) && !password) {
-                return renderModal("no-change",
-                                   "No Change Detected",
-                                   "<div class=\"alert alert-info\"><i class=\"icon-alert\"></i>Nothing to see here</div>",
-                                   "Close")
-            }
-
-            // // If ACL's haven't changed, don't apply
-            // if(JSON.stringify(formVals) === JSON.stringify(aclData)) {
-            //     applyAcl = false;
-            // }
-
-            // Add realm to formVals for refrence in REST url's
-            formVals.realm = arguments[1].realm;
-            
-            if(password != confirmPassword) {
-                renderModal("password-mismatch",
-                            "Password Mismatch",
-                            "<div class=\"alert alert-warning\"><i class=\"icon-alert\"></i>Passwords do not match</div>",
-                            "Close");
-            } else {
-                var aclUrl = row.rest_uri + "/acl";
-
-                // Success message for final modal display
-                var message = [];
-
-                // Copy acl data to new object
-                var aclDataCopy = _.clone(aclData);
-
-                // Set sharing to app for consistent behavior through app and password changes
-                // When sharing is set to app, eai:userName is always 'nobody' and this gives a predictable
-                // URI to change password and move configs between apps.
-                // We'll set sharing back to the form value after password change and movement between apps.
-                aclDataCopy.sharing = "app";
-                
-                // Apply ACL's
-                $.ajax({
-                    type: "POST",
-                    url: aclUrl,
-                    data: aclDataCopy,
-                    error: function(xhr, textStatus, error) {
-                        message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + xhr.responseText + "</div>");
-                    }
-                })
-                .then (function() {
-                    // Change the password
-                    if(password) {
-                        var passwordUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/storage/passwords/" + formVals.realm + ":" + username + ":";
-
-                        return $.ajax({
-                            type: "POST",
-                            url: passwordUrl,
-                            data: {"password": password},
-                            success: function(data, textStatus, xhr) {
-                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully updated password for credential - <b>" + formVals.realm + ":" + username + "</b></div>");
-                            },
-                            error: function(xhr, textStatus, error) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to update password for user <b>" + username + "</b> - " + xhr.responseText + "</div>");
-                            }
-                        })
-                    }
-                })                
-                .then(function() {
-                    // Move app context
-                    if(formVals.app != aclApp) {
-                        var moveUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + formVals.app + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/move"; 
-                                        
-                        return $.ajax({
-                            type: "POST",
-                            url: moveUrl,
-                            data: {"app": aclApp, "user": "nobody"},
-                            success: function(data, textStatus, xhr) {
-                                message.push("<div><i class=\"icon-check-circle\"></i> Successfully moved credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b></div>");
-                            },
-                            error: function(xhr, textStatus, error) {
-                                message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to move credential from <b>" + formVals.app + "</b> to <b>" + aclApp + "</b> - " + xhr.responseText + "</div>");
-                            }
-                        })
-                    }
-                })
-                .then(function() {
-                    // Apply ACL's back to submitted values
-                    aclUrl = "/en-US/splunkd/__raw/servicesNS/nobody/" + aclApp + "/configs/conf-passwords/credential%3A" + formVals.realm + "%3A" + username + "%3A/acl";
-
-                    return $.ajax({
-                        type: "POST",
-                        //url: newAclUrl,
-                        url: aclUrl,
-                        data: aclData,
-                        success: function(data, textStatus, xhr) {
-                            message.push("<div><i class=\"icon-check-circle\"></i> Successfully applied ACL's</div>")
-                        },
-                        error: function(xhr, textStatus, error) {
-                            message.push("<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to apply ACL - " + xhr.responseText + "</div>");
-                        }
-                    })
-                })
-                .done(function() {
-                    renderModal("user-updated",
-                                "User Updated",
-                                message.join('\n'),
-                                "Close",
-                                refreshWindow)                        
-                })
-                .fail(function() {
-                    renderModal("user-update-failed",
-                                "User Update Failed",
-                                message.join('\n'),
-                                "Close",
-                                refreshWindow)
-                });
-            }
-        }
-
-        //var divId = "#" + row.username;
-        var divId = "div[id='" + row.username + "']";
-
-        var htmlForm = '<form id="' + row.username + '-update-form"> \
-                        <div class="form-group"> \
-                            <label for="username">Username</label> \
-                            <input type="username" class="form-control" id="updateUsername" placeholder="Enter username"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="password">Password</label> \
-                            <input type="password" class="form-control" id="updatePassword" placeholder="Password"> \
-                        </div> \
-                        <div> \
-                            <label for="confirmPassword">Confirm Password</label> \
-                            <input type="password" class="form-control" id="updateConfirmPassword" placeholder="Confirm Password"> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="realm">Realm</label> \
-                            <input type="realm" class="form-control" id="updateRealm" placeholder="Realm" disabled> \
-                            <br></br>\
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="owner" id="owner-inline">Owner</label> \
-                            <div id="owner-dropdown-inline"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="readUsers" id="read-users-inline">Read Users</label> \
-                            <div id="read-user-multi-inline"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="writeUsers" id="write-users-inline">Write Users</label> \
-                            <div id="write-user-multi-inline"></div> \
-                        </div> \
-                        <div class="form-group" id="app-scope-inline"> \
-                            <label for="appScope">App Scope</label> \
-                            <div id="app-scope-dropdown-inline"></div> \
-                        </div> \
-                        <div class="form-group"> \
-                            <label for="sharing" id="sharing-inline">Sharing</label> \
-                            <div id="sharing-dropdown-inline"></div> \
-                         </div> \
-                        <div id="update-credential-inline-submit"> \
-                          <button id="update-submit-inline" class="btn btn-primary">Update</button> \
-                        </div> \
-                        </form>'
-
-        $(divId).append(htmlForm);
-        
-        // Set form username and realm
-        $('input[id=updateUsername]').val(row.username);
-        $('input[id=updateRealm]').val(row.realm);
-
-        var inputs = [new splunkJSInput({"id": "app-scope-dropdown-inline",
-                       "searchString": "| rest /servicesNS/-/-/apps/local splunk_server=local | search disabled=0 | rename title as value | table label, value",
-                       "el": "app-scope-dropdown-inline",
-                       "type": "dropdown",
-                       "default": [row.app],
-                       "aclKey": "app",
-                       "parentEl": "app-scope-inline"}),
-                       new splunkJSInput({"id": "read-user-multi-inline",
-                        "searchString": "| rest /servicesNS/-/-/authorization/roles splunk_server=local | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | fields label, value] | dedup label",
-                        "el": "read-user-multi-inline",
-                        "type": "multi-dropdown",
-                        "default": row.acl_read.split(','),
-                        "aclKey": "perms.read",
-                        "choices": [{"label":"*", "value":"*"}],
-                        "parentEl": "read-users-inline"}),
-                       new splunkJSInput({"id": "write-user-multi-inline",
-                        "searchString": "| rest /servicesNS/-/-/authorization/roles splunk_server=local | eval label=title | rename title as value | fields label, value | append [| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | fields label, value] | dedup label",
-                        "el": "write-user-multi-inline",
-                        "type": "multi-dropdown",
-                        "parentEl": "write-users-inline",
-                        "aclKey": "perms.write",
-                        "choices": [{"label":"*", "value":"*"}],
-                        "default": row.acl_write.split(',')}),
-                       new splunkJSInput({"id": "sharing-dropdown-inline",
-                        "choices": [{"label":"global", "value": "global"},
-                                    {"label":"app", "value": "app"},
-                                    {"label":"user", "value": "user"}],
-                        "el": "sharing-dropdown-inline",
-                        "type": "dropdown",
-                        "parentEl": "sharing-inline",
-                        "aclKey": "sharing",
-                        "default": [row.acl_sharing]}),
-                       new splunkJSInput({"id": "owner-dropdown-inline",
-                        "searchString": "| rest /servicesNS/-/-/authentication/users splunk_server=local | eval label=title | rename title as value | table label, value",
-                        "el": "owner-dropdown-inline",
-                        "type": "dropdown",
-                        "default": [row.owner],
-                        "aclKey": "owner",
-                        "parentEl": "owner-inline"})];
-
-        // Render component
-        _.each(inputs, function(input, i) {
-            input.renderComponent();
-        });
-
-        // Register updateUser callback for button
-        clearOnClickAndRegister('#update-submit-inline', updateUser, [inputs, row]);
-    }
-
-    // listener used to show password when clicking the eye icon in the table
-    window.operateEvents = {
-        'click .show': function (e, value, row, index) {
-            var aclData = {"perms.read": row.acl_read,
-                            "perms.write": row.acl_write,
-                            "sharing": row.acl_sharing,
-                            "owner": row.owner}
-
-            // Change sharing to app, show password, change back to user
-            if(row.acl_sharing == "user") {
-                //var aclUrl = "/en-US/splunkd/__raw/servicesNS/" + row.owner + "/" + row.app + "/configs/conf-passwords/credential%3A" + row.realm + "%3A" + row.username + "%3A/acl";
-                var aclUrl = row.rest_uri + "/acl";
-                var aclDataCopy = _.clone(aclData);
-                aclDataCopy.sharing = "app";
-
-                $.ajax({
-                    type: "POST",
-                    url: aclUrl,
-                    data: aclDataCopy,
-                    error: function(xhr, textStatus, error) {
-                        return renderModal("fail-password-view",
-                                           "Cannot View Password",
-                                           "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to view password - " + xhr.responseText + "</div>",
-                                           "Close");
-                    }
-                })
-                .then(function() {
-                    return showPassword(row);
-                })
-                .done(function() {
-                    $.ajax({
-                        type: "POST",
-                        url: aclUrl,
-                        data: aclData,
-                        error: function(xhr, textStatus, error) {
-                            return renderModal("fail-password-view",
-                                               "Cannot View Password",
-                                               "<div class=\"alert alert-error\"><i class=\"icon-alert\"></i>Failed to view password - " + xhr.responseText + "</div>",
-                                               "Close");
-                        }
-                    })
-                })
-            } else {
-                showPassword(row);
-            }
-        }
-    }; 
-
-    // Kick it all off
-    populateTable();
-
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
+// Use simplexml/ready! purely as a lifecycle hook — it fires reliably after
+// all classic dashboard panels have finished rendering.  This is the only
+// reliable trigger in the classic dashboard context.
+// NOTE: No other splunkjs/mvc components are used anywhere in this file.
+require(['splunkjs/mvc/simplexml/ready!'], function() {
+    init();
 });

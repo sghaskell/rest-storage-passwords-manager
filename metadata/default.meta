@@ -1,4 +1,5 @@
 []
+access = read : [ * ], write : [ admin ]
 export = system
 
 [views/credential_management]
