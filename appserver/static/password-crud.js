@@ -142,9 +142,8 @@ async function fetchCredentials() {
  * Fetch the clear-text password for a single credential.
  * Direct REST GET — never touches the search tier or job cache.
  */
-async function fetchClearPassword(realm, username) {
-    const key  = encodeURIComponent(`${realm}:${username}:`);
-    const res  = await splunkdGET(`/servicesNS/-/-/storage/passwords/${key}?output_mode=json`);
+async function fetchClearPassword(restUri) {
+    const res  = await splunkdGET(`${restUri}?output_mode=json`);
     const json = await res.json();
     return json.entry?.[0]?.content?.clear_password ?? null;
 }
@@ -379,7 +378,7 @@ async function handleShowPassword(row) {
         if (row.acl_sharing === 'user') {
             await setSharing(row, 'app');
         }
-        const pwd = await fetchClearPassword(row.realm, row.username);
+        const pwd = await fetchClearPassword(row.rest_uri);
         if (row.acl_sharing === 'user') {
             await setSharing(row, 'user');
         }
