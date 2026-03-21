@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.2] - 2026-03-21
+
+### Added
+- Select-all checkbox in table header — checks/unchecks all visible rows; shows indeterminate state when only some rows are selected
+
 ## [2.0.1] - 2026-03-21
 
 ### Fixed
