@@ -602,7 +602,7 @@ async function toggleCreateForm() {
     if (isCreateFormOpen) {
         wrap.innerHTML = '';
         wrap.style.display = 'none';
-        btn.textContent = 'Create';
+        btn.textContent = '+ New Credential';
         isCreateFormOpen = false;
         return;
     }
