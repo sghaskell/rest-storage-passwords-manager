@@ -7,7 +7,7 @@
 <p>An intuitive, full-featured JavaScript CRUD interface to the <a href="https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTaccess#storage.2Fpasswords">Splunk storage/passwords REST endpoint</a>. Create, update, delete, and view credentials — plus manage permissions, sharing scope, and app context — all from a single dashboard.</p>
 
 <h2>Dependencies</h2>
-<p>To store passwords a user must have the <code>admin_all_objects</code> capability enabled within an assigned role. To read passwords a user must have the <code>list_storage_passwords</code> capability enabled within an assigned role.</p>
+<p>To store passwords a user must have the <code>admin_all_objects</code> capability enabled within an assigned role. To read passwords a user must have the <code>list_storage_passwords</code> capability enabled within an assigned role. Grant <code>list_storage_passwords</code> carefully — users with this capability can view credentials across any app where they have read access.</p>
 
 <h2>Usage</h2>
 <p>The <strong>Credential Management</strong> dashboard provides a CRUD interface to create, update, and delete credentials.</p>

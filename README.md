@@ -18,7 +18,7 @@ Create, update, delete, and view credentials — plus manage permissions, sharin
 
 ## Dependencies
 
-To store passwords a user must have the `admin_all_objects` capability enabled within an assigned role. To read passwords a user must have the `list_storage_passwords` capability enabled within an assigned role.
+To store passwords a user must have the `admin_all_objects` capability enabled within an assigned role. To read passwords a user must have the `list_storage_passwords` capability enabled within an assigned role. Grant `list_storage_passwords` carefully — users with this capability can view credentials across any app where they have read access.
 
 ## Usage
 
