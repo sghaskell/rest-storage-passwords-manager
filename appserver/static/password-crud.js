@@ -524,8 +524,8 @@ async function buildCredentialForm(defaults = {}) {
         'Credentials are stored in this app\'s local directory and will be lost if it is uninstalled. Choose a long-lived app (e.g. search) if they need to survive reinstalls.',
         'hint-warning'));
     form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      users, defaults.owner          || currentUser())));
-    form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['admin', 'power'])));
-    form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'])));
+    form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['admin', 'power'], ['admin', 'power'])));
+    form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'], ['admin', 'power'])));
     form.appendChild(fieldGroup('Sharing',         buildSelect('formSharing', [
         { label: 'global', value: 'global' },
         { label: 'app',    value: 'app'    },
@@ -697,7 +697,7 @@ function buildSelect(id, options, selectedValue) {
     return sel;
 }
 
-function buildMultiSelect(id, options, selectedValues = []) {
+function buildMultiSelect(id, options, selectedValues = [], resetValues = selectedValues) {
     const wrap = el('div', { class: 'multi-select-wrap' });
 
     const counter = el('span', { class: 'multi-select-counter' });
@@ -746,7 +746,7 @@ function buildMultiSelect(id, options, selectedValues = []) {
         updateCounter();
     });
     clearBtn.addEventListener('click', () => {
-        Array.from(sel.options).forEach(o => { o.selected = selectedValues.includes(o.value); });
+        Array.from(sel.options).forEach(o => { o.selected = resetValues.includes(o.value); });
         updateCounter();
     });
 
