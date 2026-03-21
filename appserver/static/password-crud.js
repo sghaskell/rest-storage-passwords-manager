@@ -842,7 +842,7 @@ function buildMultiSelect(id, options, selectedValues = [], resetValues = select
 // ─── Styles ───────────────────────────────────────────────────────────────────
 // ─── CSV parser ───────────────────────────────────────────────────────────────
 function parseCSV(text) {
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim() && !l.trimStart().startsWith('#'));
     if (lines.length < 2) return { rows: [], errors: ['File is empty or has no data rows.'] };
 
     // RFC 4180-compliant field splitter
@@ -994,9 +994,27 @@ async function handleBulkImport(rows) {
 
 // ─── CSV template download ────────────────────────────────────────────────────
 function downloadCSVTemplate() {
-    const header = 'username,password,realm,app,owner,sharing,read,write';
-    const example = `myuser,mysecret,myrealm,${getCurrentApp()},${currentUser()},app,"admin,power","admin,power"`;
-    const blob = new Blob([header + '\n' + example + '\n'], { type: 'text/csv' });
+    const lines = [
+        '# REST storage/passwords Manager — Bulk Import Template',
+        '# Required columns : username, password',
+        '# Optional columns : realm, app, owner, sharing, read, write',
+        '#',
+        '# Column notes:',
+        '#   username : the credential username (required)',
+        '#   password : the credential password (required)',
+        '#   realm    : optional descriptor, e.g. prod or dev (default: empty)',
+        `#   app      : Splunk app context to store the credential in (default: ${getCurrentApp()})`,
+        `#   owner    : a Splunk username — must be a real user, NOT * (default: ${currentUser()})`,
+        '#   sharing  : one of: global, app, user (default: app)',
+        '#   read     : comma-separated roles that can read, or * for all (default: admin,power)',
+        '#   write    : comma-separated roles that can write, or * for all (default: admin,power)',
+        '#',
+        '# Lines starting with # are ignored during import.',
+        '#',
+        'username,password,realm,app,owner,sharing,read,write',
+        `myuser,mysecret,myrealm,${getCurrentApp()},${currentUser()},app,"admin,power","admin,power"`,
+    ];
+    const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'credential-import-template.csv';
