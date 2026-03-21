@@ -714,7 +714,7 @@ function buildMultiSelect(id, options, selectedValues = []) {
     const selectAll = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
     selectAll.textContent = 'Select All';
     const clearBtn = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
-    clearBtn.textContent = 'Clear';
+    clearBtn.textContent = 'Reset';
     actions.appendChild(selectAll);
     actions.appendChild(clearBtn);
 
@@ -746,7 +746,7 @@ function buildMultiSelect(id, options, selectedValues = []) {
         updateCounter();
     });
     clearBtn.addEventListener('click', () => {
-        Array.from(sel.options).forEach(o => o.selected = false);
+        Array.from(sel.options).forEach(o => { o.selected = selectedValues.includes(o.value); });
         updateCounter();
     });
 
