@@ -309,7 +309,16 @@ function renderTable(credentials, container) {
     const table = el('table', { id: 'cred-table', class: 'table table-chrome table-striped table-hover' });
     const thead = el('thead');
     const headerRow = el('tr');
-    ['', 'Username', 'Realm', 'App', 'Owner', 'Sharing', 'Read', 'Write', 'Password', ''].forEach(h => {
+    const selectAllTh = el('th');
+    const selectAllCb = el('input', { type: 'checkbox', title: 'Select all' });
+    selectAllCb.addEventListener('change', () => {
+        document.querySelectorAll('#cred-table .cred-checkbox').forEach(cb => { cb.checked = selectAllCb.checked; });
+        const btn = document.getElementById('btn-delete-selected');
+        if (btn) btn.disabled = !selectAllCb.checked;
+    });
+    selectAllTh.appendChild(selectAllCb);
+    headerRow.appendChild(selectAllTh);
+    ['Username', 'Realm', 'App', 'Owner', 'Sharing', 'Read', 'Write', 'Password', ''].forEach(h => {
         headerRow.appendChild(el('th', h));
     });
     thead.appendChild(headerRow);
@@ -330,7 +339,11 @@ function renderTable(credentials, container) {
     table.appendChild(tbody);
     container.appendChild(table);
 
-    table.addEventListener('change', () => {
+    table.addEventListener('change', e => {
+        if (e.target === selectAllCb) return;  // handled by its own listener
+        const allCbs = Array.from(document.querySelectorAll('#cred-table .cred-checkbox'));
+        selectAllCb.checked = allCbs.length > 0 && allCbs.every(cb => cb.checked);
+        selectAllCb.indeterminate = !selectAllCb.checked && allCbs.some(cb => cb.checked);
         const btn = document.getElementById('btn-delete-selected');
         btn.disabled = getSelectedRows().length === 0;
     });
