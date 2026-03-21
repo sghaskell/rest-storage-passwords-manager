@@ -948,12 +948,18 @@ async function handleBulkImport(rows) {
     const failed    = results.length - succeeded;
     const summary   = `<p><b>${succeeded}</b> imported successfully${failed ? `, <b>${failed}</b> failed` : ''}.</p>`;
 
-    showModal({
-        id: 'modal-import',
-        title: 'Import Complete',
-        bodyHtml: summary + failHtml + successHtml,
-        onConfirm: () => refreshTable(),
-    });
+    // Update the modal in-place — replacing it would leave Bootstrap's backdrop stranded.
+    const modal = document.getElementById('modal-import');
+    if (modal) {
+        modal.querySelector('.modal-title').textContent = 'Import Complete';
+        modal.querySelector('.modal-body').innerHTML = summary + failHtml + successHtml;
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        confirmBtn.textContent = 'Close';
+        // Clone to drop the no-op listener from the progress phase, attach the real one.
+        const freshBtn = confirmBtn.cloneNode(true);
+        freshBtn.addEventListener('click', () => { $(modal).modal('hide'); refreshTable(); });
+        confirmBtn.replaceWith(freshBtn);
+    }
 }
 
 // ─── CSV template download ────────────────────────────────────────────────────
