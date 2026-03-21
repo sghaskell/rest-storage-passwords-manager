@@ -198,9 +198,10 @@ function showModal({ id, title, bodyHtml, confirmLabel = 'Close', onConfirm, sho
 
     modal.querySelector('.modal-title').textContent = title;
     modal.querySelector('.modal-body').innerHTML    = bodyHtml;
-    modal.querySelector('.confirm-btn').textContent = confirmLabel;
+    const confirmBtn = modal.querySelector('.confirm-btn');
+    if (confirmLabel == null) { confirmBtn.style.display = 'none'; } else { confirmBtn.textContent = confirmLabel; }
 
-    modal.querySelector('.confirm-btn').addEventListener('click', () => {
+    confirmBtn.addEventListener('click', () => {
         $(modal).modal('hide');
         onConfirm?.();
     });
@@ -264,7 +265,7 @@ function renderTable(credentials, container) {
 
         const uploadItem = el('button', { class: 'cred-import-item', type: 'button' });
         uploadItem.innerHTML = '<i class="icon-upload"></i> Upload CSV';
-        uploadItem.addEventListener('click', () => { menu.classList.remove('open'); fileInput.click(); });
+        uploadItem.addEventListener('click', () => { menu.classList.remove('open'); showImportDropZone(); });
 
         const templateItem = el('button', { class: 'cred-import-item', type: 'button' });
         templateItem.innerHTML = '<i class="icon-download-alt"></i> Download Template';
@@ -902,6 +903,55 @@ function parseCSV(text) {
     return { rows, errors };
 }
 
+// ─── Import drop-zone modal ───────────────────────────────────────────────────
+function showImportDropZone() {
+    const zone = el('div', { class: 'import-drop-zone', tabindex: '0' });
+
+    const icon = el('i', { class: 'icon-upload import-drop-icon' });
+    const label = el('p', { class: 'import-drop-label' });
+    label.textContent = 'Drag and drop a CSV file here';
+    const sub = el('p', { class: 'import-drop-sub' });
+    sub.textContent = 'or';
+
+    const browseBtn = el('button', { class: 'btn btn-default', type: 'button' });
+    browseBtn.textContent = 'Browse…';
+
+    const hiddenInput = el('input', { type: 'file', accept: '.csv', style: 'display:none' });
+
+    zone.appendChild(icon);
+    zone.appendChild(label);
+    zone.appendChild(sub);
+    zone.appendChild(browseBtn);
+    zone.appendChild(hiddenInput);
+
+    function pickFile(file) {
+        // Close the drop-zone modal, then hand off to the preview flow.
+        const dropModal = document.getElementById('modal-import-drop');
+        if (dropModal) $(dropModal).modal('hide');
+        handleImportFile(file);
+    }
+
+    browseBtn.addEventListener('click', () => hiddenInput.click());
+    hiddenInput.addEventListener('change', e => {
+        if (e.target.files[0]) pickFile(e.target.files[0]);
+        e.target.value = '';
+    });
+
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('import-drop-over'); });
+    zone.addEventListener('dragleave',  () => zone.classList.remove('import-drop-over'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('import-drop-over');
+        const file = e.dataTransfer.files[0];
+        if (file) pickFile(file);
+    });
+
+    // showModal uses innerHTML, which drops live listeners — inject the node directly after render.
+    showModal({ id: 'modal-import-drop', title: 'Import Credentials from CSV', bodyHtml: '', showCancel: true, confirmLabel: null });
+    const modalBody = document.querySelector('#modal-import-drop .modal-body');
+    if (modalBody) modalBody.appendChild(zone);
+}
+
 // ─── Bulk import — file handler (preview modal) ───────────────────────────────
 function handleImportFile(file) {
     if (!file) return;
@@ -1088,6 +1138,11 @@ function injectStyles() {
         .import-results-scroll { max-height: 320px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 3px; padding: 6px 8px; margin-top: 6px; }
         .import-result-ok { color: #3c763d; }
         .import-result-fail { color: #c23b2e; }
+        .import-drop-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 2px dashed #aaa; border-radius: 6px; padding: 40px 24px; text-align: center; cursor: default; transition: background 0.15s, border-color 0.15s; }
+        .import-drop-zone.import-drop-over { background: #f0f7ff; border-color: #0066cc; }
+        .import-drop-icon { font-size: 32px; color: #aaa; }
+        .import-drop-label { margin: 0; font-size: 14px; font-weight: bold; color: #555; }
+        .import-drop-sub { margin: 0; font-size: 12px; color: #888; }
     `;
     document.head.appendChild(style);
 }
