@@ -155,18 +155,21 @@ async function fetchApps() {
     return (json.entry || []).map(e => ({ label: e.content.label || e.name, value: e.name }));
 }
 
-/** Fetch roles + users for ACL dropdowns. */
-async function fetchRolesAndUsers() {
-    const [rolesRes, usersRes] = await Promise.all([
-        splunkdGET('/servicesNS/-/-/authorization/roles?output_mode=json&count=0'),
-        splunkdGET('/servicesNS/-/-/authentication/users?output_mode=json&count=0')
-    ]);
-    const roles = await rolesRes.json();
-    const users = await usersRes.json();
-    const seen  = new Set();
-    return [...(roles.entry || []), ...(users.entry || [])]
-        .map(e => ({ label: e.name, value: e.name }))
-        .filter(o => { if (seen.has(o.value)) return false; seen.add(o.value); return true; });
+/** Fetch roles for Read/Write ACL pickers. Prepends * (all roles) as first option. */
+async function fetchRoles() {
+    const res  = await splunkdGET('/servicesNS/-/-/authorization/roles?output_mode=json&count=0');
+    const json = await res.json();
+    return [
+        { label: '* (all)', value: '*' },
+        ...(json.entry || []).map(e => ({ label: e.name, value: e.name }))
+    ];
+}
+
+/** Fetch users for the Owner picker. */
+async function fetchUsers() {
+    const res  = await splunkdGET('/servicesNS/-/-/authentication/users?output_mode=json&count=0');
+    const json = await res.json();
+    return (json.entry || []).map(e => ({ label: e.name, value: e.name }));
 }
 
 // ─── Modal helper ─────────────────────────────────────────────────────────────
@@ -391,6 +394,8 @@ async function handleCreateCredential(formData) {
     if (!username) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Username is required.</div>' });
     if (!password) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Password is required.</div>' });
     if (password !== confirmPassword) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-warning">Passwords do not match.</div>' });
+    if (!read)  return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Read Users role (or * for all).</div>' });
+    if (!write) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Write Users role (or * for all).</div>' });
 
     const messages = [];
     try {
@@ -425,6 +430,8 @@ async function handleUpdateCredential(row, formData) {
     if (password && password !== confirmPassword) {
         return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-warning">Passwords do not match.</div>' });
     }
+    if (!read)  return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Read Users role (or * for all).</div>' });
+    if (!write) return showModal({ id: 'modal-val', title: 'Validation', bodyHtml: '<div class="alert alert-error">Select at least one Write Users role (or * for all).</div>' });
 
     const messages = [];
     try {
@@ -504,7 +511,7 @@ async function executeDelete(rows) {
 
 // ─── Form builders ─────────────────────────────────────────────────────────────
 async function buildCredentialForm(defaults = {}) {
-    const [apps, rolesUsers] = await Promise.all([fetchApps(), fetchRolesAndUsers()]);
+    const [apps, roles, users] = await Promise.all([fetchApps(), fetchRoles(), fetchUsers()]);
 
     const form = el('form', { class: 'credential-form' });
     form.addEventListener('submit', e => e.preventDefault());
@@ -513,10 +520,10 @@ async function buildCredentialForm(defaults = {}) {
     form.appendChild(fieldGroup('Password',        inputPassword('formPassword')));
     form.appendChild(fieldGroup('Confirm Password',inputPassword('formConfirmPassword')));
     form.appendChild(fieldGroup('Realm',           inputText('formRealm',        defaults.realm       || '', false)));
-    form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,       defaults.app         || getCurrentApp())));
-    form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      rolesUsers, defaults.owner       || currentUser())));
-    form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  rolesUsers, defaults.acl_read    ? defaults.acl_read.split(',')  : ['*'])));
-    form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', rolesUsers, defaults.acl_write   ? defaults.acl_write.split(',') : ['admin', 'power'])));
+    form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,  defaults.app            || getCurrentApp())));
+    form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      users, defaults.owner          || currentUser())));
+    form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['*'])));
+    form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'])));
     form.appendChild(fieldGroup('Sharing',         buildSelect('formSharing', [
         { label: 'global', value: 'global' },
         { label: 'app',    value: 'app'    },
@@ -528,11 +535,8 @@ async function buildCredentialForm(defaults = {}) {
 
 function getFormData(form) {
     const g  = id => form.querySelector(`#${id}`)?.value ?? '';
-    const gm = id => {
-        const val = Array.from(form.querySelector(`#${id}`)?.selectedOptions ?? [])
-            .map(o => o.value).join(',');
-        return val || '*';   // default to * if nothing selected
-    };
+    const gm = id => Array.from(form.querySelector(`#${id}`)?.selectedOptions ?? [])
+        .map(o => o.value).join(',');
     return {
         username:        g('formUsername'),
         password:        g('formPassword'),
@@ -557,7 +561,7 @@ async function toggleCreateForm() {
         isCreateFormOpen = false;
         return;
     }
-    btn.textContent = 'Loading…';
+    btn.innerHTML = '<span class="cred-spinner"></span> Loading…';
     btn.disabled = true;
     const form = await buildCredentialForm();
     const submitBtn = el('button', { class: 'btn btn-primary', id: 'btn-submit-create' });
@@ -583,7 +587,7 @@ async function toggleInlineUpdateForm(tr, row) {
 
     const formTr = el('tr', { class: 'inline-update-row' });
     const formTd = el('td', { colspan: '10' });
-    formTd.textContent = 'Loading form…';
+    showLoading(formTd, 'Loading form…');
     formTr.appendChild(formTd);
     tr.insertAdjacentElement('afterend', formTr);
 
@@ -602,12 +606,22 @@ async function toggleInlineUpdateForm(tr, row) {
     formTd.appendChild(form);
 }
 
+// ─── Loading indicator helper ──────────────────────────────────────────────────
+function showLoading(container, text) {
+    const p      = el('p', { class: 'cred-loading' });
+    const spinner = el('span', { class: 'cred-spinner' });
+    p.appendChild(spinner);
+    p.appendChild(document.createTextNode(text));
+    container.innerHTML = '';
+    container.appendChild(p);
+}
+
 // ─── Table refresh ─────────────────────────────────────────────────────────────
 // CHANGED: was location.reload() — now re-fetches credentials only.
 async function refreshTable() {
     const container = document.getElementById('password-table');
     if (!container) return;
-    container.innerHTML = '<p>Refreshing…</p>';
+    showLoading(container, 'Refreshing…');
     currentPage = 1;
     try {
         const creds = await fetchCredentials();
@@ -666,6 +680,10 @@ function buildSelect(id, options, selectedValue) {
 }
 
 function buildMultiSelect(id, options, selectedValues = []) {
+    const wrap = el('div', { class: 'multi-select-wrap' });
+
+    const counter = el('span', { class: 'multi-select-counter' });
+
     const sel = el('select', { class: 'form-control', id, multiple: 'true', size: '5' });
     options.forEach(opt => {
         const o = el('option', { value: opt.value });
@@ -673,7 +691,52 @@ function buildMultiSelect(id, options, selectedValues = []) {
         if (selectedValues.includes(opt.value)) o.selected = true;
         sel.appendChild(o);
     });
-    return sel;
+
+    const actions = el('div', { class: 'multi-select-actions' });
+    const selectAll = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
+    selectAll.textContent = 'Select All';
+    const clearBtn = el('button', { type: 'button', class: 'btn btn-link btn-xs multi-select-btn' });
+    clearBtn.textContent = 'Clear';
+    actions.appendChild(selectAll);
+    actions.appendChild(clearBtn);
+
+    const hint = el('span', { class: 'multi-select-hint' });
+    hint.textContent = 'Hold Ctrl / ⌘ Cmd to select multiple';
+
+    const updateCounter = () => {
+        const n = Array.from(sel.selectedOptions).length;
+        counter.textContent = `${n} selected`;
+    };
+    updateCounter();
+
+    // * (all) is mutually exclusive with individual role selections.
+    // Selecting * deselects all others; selecting any other role deselects *.
+    sel.addEventListener('change', e => {
+        const changed = e.target;  // the <option> that triggered the event
+        if (changed.value === '*' && changed.selected) {
+            Array.from(sel.options).forEach(o => { if (o.value !== '*') o.selected = false; });
+        } else if (changed.value !== '*' && changed.selected) {
+            const wildcard = Array.from(sel.options).find(o => o.value === '*');
+            if (wildcard) wildcard.selected = false;
+        }
+        updateCounter();
+    });
+
+    // "Select All" selects every named role but NOT *, keeping the meaning distinct.
+    selectAll.addEventListener('click', () => {
+        Array.from(sel.options).forEach(o => { o.selected = o.value !== '*'; });
+        updateCounter();
+    });
+    clearBtn.addEventListener('click', () => {
+        Array.from(sel.options).forEach(o => o.selected = false);
+        updateCounter();
+    });
+
+    wrap.appendChild(counter);
+    wrap.appendChild(sel);
+    wrap.appendChild(actions);
+    wrap.appendChild(hint);
+    return wrap;
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -694,6 +757,13 @@ function injectStyles() {
         .modal-body .icon-alert { color: #c23b2e; }
         .cred-paginator { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
         .cred-page-label { font-size: 13px; color: #555; }
+        @keyframes cred-spin { to { transform: rotate(360deg); } }
+        .cred-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #0066cc; border-radius: 50%; animation: cred-spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+        .cred-loading { color: #555; padding: 8px 0; }
+        .multi-select-counter { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
+        .multi-select-actions { display: flex; gap: 6px; margin-top: 4px; }
+        .multi-select-btn { padding: 0 2px !important; font-size: 12px !important; height: auto !important; }
+        .multi-select-hint { display: block; font-size: 12px; color: #999; font-style: italic; margin-top: 3px; }
     `;
     document.head.appendChild(style);
 }
@@ -703,7 +773,7 @@ async function init() {
     const container = document.getElementById('password-table');
     if (!container) return;
     injectStyles();
-    container.innerHTML = '<p>Loading credentials…</p>';
+    showLoading(container, 'Loading credentials…');
     try {
         const creds = await fetchCredentials();
         renderTable(creds, container);
