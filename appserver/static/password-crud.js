@@ -53,6 +53,7 @@
 // CHANGED: was window.sessionStorage – see note 5 above.
 let isCreateFormOpen = false;
 let allCredentials   = [];   // cached after each fetch; reused by paginator
+let filterText       = '';   // persists across renderTable calls; cleared on full refresh
 let currentPage      = 1;    // resets to 1 on every full table refresh
 const PAGE_SIZE      = 10;   // rows per page; paginator hidden when total ≤ this
 
@@ -217,18 +218,39 @@ function renderTable(credentials, container) {
     // When called from goToPage, credentials is already allCredentials.
     if (credentials !== allCredentials) allCredentials = credentials;
 
-    const totalPages = Math.ceil(allCredentials.length / PAGE_SIZE);
-    // Clamp currentPage in case a delete shrank the last page away.
-    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+    // Apply client-side filter (username, realm, app — case-insensitive substring).
+    const lc = filterText.toLowerCase();
+    const visible = lc
+        ? allCredentials.filter(r =>
+            [r.username, r.realm, r.app].some(f => (f || '').toLowerCase().includes(lc)))
+        : allCredentials;
 
-    const pageSlice = allCredentials.slice(
+    const totalPages = Math.ceil(visible.length / PAGE_SIZE);
+    // Clamp currentPage in case a delete or filter shrank the last page away.
+    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+    if (totalPages === 0) currentPage = 1;
+
+    const pageSlice = visible.slice(
         (currentPage - 1) * PAGE_SIZE,
         currentPage * PAGE_SIZE
     );
 
     container.innerHTML = '';
 
+    // Filter input — value is preserved via the module-level filterText variable.
+    const filterInput = el('input', { type: 'search', class: 'form-control cred-filter',
+        placeholder: 'Filter by username, realm, or app…' });
+    filterInput.value = filterText;
+    filterInput.addEventListener('input', e => {
+        filterText = e.target.value;
+        currentPage = 1;
+        renderTable(allCredentials, container);
+        const restored = container.querySelector('.cred-filter');
+        if (restored) { restored.focus(); const len = restored.value.length; restored.setSelectionRange(len, len); }
+    });
+
     const toolbar = el('div', { class: 'credential-toolbar' }, [
+        filterInput,
         (() => {
             const btn = el('button', { id: 'btn-delete-selected', class: 'btn btn-danger', disabled: 'true' });
             btn.innerHTML = '<i class="icon-x"></i> Delete';
@@ -240,7 +262,7 @@ function renderTable(credentials, container) {
         })(),
         (() => {
             const btn = el('button', { id: 'btn-create', class: 'btn btn-primary' });
-            btn.textContent = 'Create';
+            btn.textContent = '+ New Credential';
             btn.addEventListener('click', () => toggleCreateForm());
             return btn;
         })()
@@ -260,7 +282,17 @@ function renderTable(credentials, container) {
     table.appendChild(thead);
 
     const tbody = el('tbody');
-    pageSlice.forEach(row => tbody.appendChild(buildRow(row)));
+    if (visible.length === 0) {
+        const emptyTd = el('td', { colspan: '10', class: 'cred-empty-state' });
+        emptyTd.innerHTML = lc
+            ? 'No credentials match your filter.'
+            : 'No credentials found. Click <strong>+ New Credential</strong> to get started.';
+        const emptyRow = el('tr');
+        emptyRow.appendChild(emptyTd);
+        tbody.appendChild(emptyRow);
+    } else {
+        pageSlice.forEach(row => tbody.appendChild(buildRow(row)));
+    }
     table.appendChild(tbody);
     container.appendChild(table);
 
@@ -551,10 +583,10 @@ function getFormData(form) {
     const gm = id => Array.from(form.querySelector(`#${id}`)?.selectedOptions ?? [])
         .map(o => o.value).join(',');
     return {
-        username:        g('formUsername'),
+        username:        g('formUsername').trim(),
         password:        g('formPassword'),
         confirmPassword: g('formConfirmPassword'),
-        realm:           g('formRealm'),
+        realm:           g('formRealm').trim(),
         app:             g('formApp'),
         owner:           g('formOwner'),
         read:            gm('formRead'),
@@ -783,6 +815,8 @@ function injectStyles() {
         .multi-select-actions { display: flex; gap: 6px; margin-top: 4px; }
         .multi-select-btn { padding: 0 2px !important; font-size: 12px !important; height: auto !important; }
         .multi-select-hint { display: block; font-size: 12px; color: #999; font-style: italic; margin-top: 3px; }
+        .cred-filter { flex: 1; max-width: 320px; }
+        .cred-empty-state { text-align: center; color: #888; padding: 20px !important; font-style: italic; }
     `;
     document.head.appendChild(style);
 }

@@ -1,152 +1,60 @@
-# Splunk REST storage/passwords Manager for Splunk
+# REST storage/passwords Manager for Splunk
 
 ## About
 
-An intuitive, full-featured, Javascript CRUD interface to the [Splunk storage/passwords REST endpoint](http://docs.splunk.com/Documentation/Splunk/7.0.3/RESTREF/RESTaccess#storage.2Fpasswordsstorage/passwords). If you're an app developer looking to securely store passwords for API's, Custom Alert Actions, Modular Inputs or to access any resource that requires a password, this is your tool! Create, update, delete, view passwords, change permissions, sharing and app scope. Ditch your curl commands and upgrade to this simple to use interface.
+An intuitive, full-featured JavaScript CRUD interface to the [Splunk storage/passwords REST endpoint](https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTaccess#storage.2Fpasswords). If you're an app developer looking to securely store passwords for APIs, Custom Alert Actions, Modular Inputs, or any resource that requires a password, this is your tool.
+
+Create, update, delete, and view credentials — plus manage permissions, sharing scope, and app context — all from a single dashboard without touching the Splunk CLI or the REST API directly.
+
+## What's New in 1.1.0
+
+- **Modernized UI** — replaced deprecated `splunkjs/mvc` components, jQuery, and Bootstrap 3 table plugin with native DOM, `fetch`, and Splunk's built-in CSS classes. No third-party dependencies remain.
+- **Splunk Cloud compatible** — passes AppInspect `--included-tags cloud` vetting.
+- **Improved ACL controls** — separate role pickers (Read Users / Write Users) and user picker (Owner); `* (all)` wildcard is mutually exclusive with named roles; least-privilege defaults (`admin`, `power`).
+- **App scope warning** — inline hint when creating credentials in the current app explains that credentials stored in an app are lost when that app is uninstalled.
+- **Live filter** — type to filter the credentials table by username, realm, or app without a page reload.
+- **Animated loading indicator** — spinner shown while credentials load.
+- **Reset button** — restores least-privilege defaults after using Select All on role pickers.
 
 ## Dependencies
-To store passwords the user must have the `admin_all_objects` capability enabled within an assigned role. To read passwords a user must have `list_storage_passwords` capabilty enabled within an assigned role.
+
+To store passwords a user must have the `admin_all_objects` capability enabled within an assigned role. To read passwords a user must have the `list_storage_passwords` capability enabled within an assigned role.
 
 ## Usage
-The Credential Management dashboard provides a CRUD interface to create, update and delete credentials to be used within Splunk apps. 
 
-#### Create Credential
-Simply click the create button to reveal the credential creation form.
+The **Credential Management** dashboard provides a CRUD interface to create, update, and delete credentials.
 
-![Alt text](appserver/static/img/credential_management-tour:enterprise/credential-create.png?raw=true)
+### Create Credential
 
-Fill out the form specifying a username, password and optionally a realm. The realm can be used as a descriptor for the credential or left blank; e.g., prod or dev. The form will populate with sane defaults for owner, read users, write users, app scope and sharing. You can update them to whatever you like, including the target app context, before you hit create.
+Click **+ New Credential** to reveal the creation form. Fill in a username, password, and optionally a realm (used as a descriptor, e.g., `prod` or `dev`). The form pre-fills with secure defaults for owner, read users, write users, app scope, and sharing — update them before clicking **Create**.
 
-![Alt text](appserver/static/img/credential_management-tour:enterprise/create-form.png?raw=true)
+### Update Credential
 
-![Alt text](appserver/static/img/credential_management-tour:enterprise/create-success-modal.png?raw=true)
+Click any row in the table to expand it and reveal the inline update form. You can change the password, permissions, or app context. The realm cannot be changed after creation — this is a limitation of the `storage/passwords` REST endpoint.
 
-Once created, the dashboard will be refreshed automatically. 
+### Delete Credential
 
-![Alt text](appserver/static/img/credential_management-tour:enterprise/table.png?raw=true)
+Select one or more rows using the checkboxes, then click **Delete**. A confirmation dialog shows the credentials to be deleted before you confirm.
 
-#### Update Credential
+### Reveal Clear Password
 
-Right click on a table entry to reveal a context menu that allows you to update the credential. 
+Click the eye icon in the Password column to display the plain-text password in a modal.
 
-![Alt text](appserver/static/img/credential_management-tour:enterprise/context-update.png?raw=true)
+### Filter Credentials
 
-Alternatively, you can click the detail view (plus icon) in the table to update the credential.
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/detail-view.png?raw=true)
-
-The update form will be rendered under the selected row in the table. You can change the password, any of the permissions or the app context when updating. The realm is the only field that cannot be changed. This is a limitation of the storage/passwords REST endpoint, not the app. You don't have to set the password to update the ACL's on the credential or move between apps. Simply choose new permissions or app scope and hit update.
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/inline-update.png?raw=true)
-
-#### Delete Credential
-
-Right click on a table entry to reveal a context menu that allows you to delete the credential. 
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/context-delete.png?raw=true)
-
-Alternatively, select any individual credential or select all using the checkbox in the header column and press the delte button.
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/multi-delete.png?raw=true)
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/multi-delete-confirm.png?raw=true)
-
-#### Reveal Clear Password
-
-Click the eye icon to view the plain text password.
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/show-password.png?raw=true)
-
-![Alt text](appserver/static/img/credential_management-tour:enterprise/clear-password-modal.png?raw=true)
+Type in the filter box at the top of the table to narrow results by username, realm, or app. The filter is case-insensitive and updates live as you type.
 
 ## Using Stored Passwords
-Please see this [awesome blog post](http://www.georgestarcher.com/splunk-stored-encrypted-credentials/) on using your newly stored credentials. When all else fails, dig into [dev.splunk.com](http://dev.splunk.com/search/?q=storage%2Fpasswords&l=en&submit=Search) for more details.
 
-## Credits
-
-Some of the components included in REST storage/passwords Manager App for Splunk are licensed under free or open source licenses. We wish to thank the contributors to those projects.
-
-Twitter Bootstrap dropdown.js  v3.3.7 
-
-Copyright (c) 2011-2018 Twitter, Inc.
-Copyright (c) 2011-2018 The Bootstrap Authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-bootstrap-table.js v1.11.1
-
-(The MIT License)
-
-Copyright (c) 2012-2017 Zhixin Wen <wenzhixin2010@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
- 
-bootstrap-table-contextmenu.js  v1.1.4
-
-
-The MIT License (MIT)
-
-Copyright (c) 2015 David Graham
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+See the [Splunk dev documentation](https://dev.splunk.com/enterprise/docs/developapps/manageknowledge/secretstorage/) for details on reading stored credentials from your app's Python or JavaScript code.
 
 ## Support
 
 ### Feature Requests
-Please [submit feature requests through Github](https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement) using the ``enhancement`` label so they can be tracked and discussed.
+Please [submit feature requests through GitHub](https://github.com/sghaskell/rest-storage-passwords-manager/labels/enhancement) using the `enhancement` label.
 
 ### Bugs
-Please [submit bugs through Github](https://github.com/sghaskell/rest-storage-passwords-manager/labels/bug) using the ``bug`` label so they can be tracked and discussed.
+Please [submit bugs through GitHub](https://github.com/sghaskell/rest-storage-passwords-manager/labels/bug) using the `bug` label.
 
 ###### For all other inquiries
-Scott Haskell ([shaskell@splunk.com](mailto:shaskell@splunk.com))
-###### [Code hosted at Github](https://github.com/sghaskell/rest-storage-passwords-manager)
+Scott Haskell — [Code hosted at GitHub](https://github.com/sghaskell/rest-storage-passwords-manager)
