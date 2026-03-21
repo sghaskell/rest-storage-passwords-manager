@@ -521,7 +521,8 @@ async function buildCredentialForm(defaults = {}) {
     form.appendChild(fieldGroup('Confirm Password',inputPassword('formConfirmPassword')));
     form.appendChild(fieldGroup('Realm',           inputText('formRealm',        defaults.realm       || '', false)));
     form.appendChild(fieldGroup('App Scope',       buildSelect('formApp',        apps,  defaults.app            || getCurrentApp()),
-        'Credentials are stored in this app\'s local directory and will be lost if it is uninstalled. Choose a long-lived app (e.g. search) if they need to survive reinstalls.'));
+        'Credentials are stored in this app\'s local directory and will be lost if it is uninstalled. Choose a long-lived app (e.g. search) if they need to survive reinstalls.',
+        'hint-warning'));
     form.appendChild(fieldGroup('Owner',           buildSelect('formOwner',      users, defaults.owner          || currentUser())));
     form.appendChild(fieldGroup('Read Users',      buildMultiSelect('formRead',  roles, defaults.acl_read       ? defaults.acl_read.split(',')  : ['*'])));
     form.appendChild(fieldGroup('Write Users',     buildMultiSelect('formWrite', roles, defaults.acl_write      ? defaults.acl_write.split(',') : ['admin', 'power'])));
@@ -530,6 +531,17 @@ async function buildCredentialForm(defaults = {}) {
         { label: 'app',    value: 'app'    },
         { label: 'user',   value: 'user'   }
     ], defaults.acl_sharing || 'app')));
+
+    // Show the App Scope warning only when the selected app is this app.
+    const appSelect  = form.querySelector('#formApp');
+    const appHint    = appSelect?.closest('.form-group')?.querySelector('.hint-warning');
+    if (appSelect && appHint) {
+        const refresh = () => {
+            appHint.style.display = appSelect.value === getCurrentApp() ? '' : 'none';
+        };
+        appSelect.addEventListener('change', refresh);
+        refresh();
+    }
 
     return form;
 }
@@ -648,7 +660,7 @@ function escHtml(str) {
 }
 
 // ─── DOM form helpers ──────────────────────────────────────────────────────────
-function fieldGroup(label, input, hint) {
+function fieldGroup(label, input, hint, hintClass) {
     const div = el('div', { class: 'form-group' });
     const lbl = el('label');
     lbl.textContent = label;
@@ -656,7 +668,7 @@ function fieldGroup(label, input, hint) {
     div.appendChild(lbl);
     div.appendChild(input);
     if (hint) {
-        const hintEl = el('span', { class: 'help-block' });
+        const hintEl = el('span', { class: 'help-block' + (hintClass ? ' ' + hintClass : '') });
         hintEl.textContent = hint;
         div.appendChild(hintEl);
     }
@@ -766,6 +778,7 @@ function injectStyles() {
         @keyframes cred-spin { to { transform: rotate(360deg); } }
         .cred-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #0066cc; border-radius: 50%; animation: cred-spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
         .cred-loading { color: #555; padding: 8px 0; }
+        .hint-warning { color: #8a6200 !important; }
         .multi-select-counter { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
         .multi-select-actions { display: flex; gap: 6px; margin-top: 4px; }
         .multi-select-btn { padding: 0 2px !important; font-size: 12px !important; height: auto !important; }
