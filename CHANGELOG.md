@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.0] - 2026-03-20
+## [2.0.1] - 2026-03-21
+
+### Fixed
+- Show password now works correctly for credentials with special characters in the realm or username, including AOB-style credentials (e.g. `__REST_CREDENTIAL__#APP#...``splunk_cred_sep``1`). The URL is now taken directly from Splunk's API response rather than being reconstructed from the realm/username fields.
+
+## [2.0.0] - 2026-03-21
 
 ### Breaking Changes
 - Removed Bootstrap 3 table plugin, dropdown, and context menu — no third-party JS dependencies remain

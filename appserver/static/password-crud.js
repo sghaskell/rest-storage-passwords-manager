@@ -135,6 +135,7 @@ async function fetchCredentials() {
         acl_write:   (e.acl.perms && e.acl.perms.write || []).join(','),
         acl_sharing: e.acl.sharing,
         rest_uri:    e.links.edit || e.links.alternate,
+        stanza:      e.name,   // exact stanza key (realm:username:) as Splunk returns it
     }));
 }
 
@@ -142,9 +143,8 @@ async function fetchCredentials() {
  * Fetch the clear-text password for a single credential.
  * Direct REST GET — never touches the search tier or job cache.
  */
-async function fetchClearPassword(realm, username) {
-    const key  = encodeURIComponent(`${realm}:${username}:`);
-    const res  = await splunkdGET(`/servicesNS/-/-/storage/passwords/${key}?output_mode=json`);
+async function fetchClearPassword(restUri) {
+    const res  = await splunkdGET(`${restUri}?output_mode=json`);
     const json = await res.json();
     return json.entry?.[0]?.content?.clear_password ?? null;
 }
@@ -379,7 +379,7 @@ async function handleShowPassword(row) {
         if (row.acl_sharing === 'user') {
             await setSharing(row, 'app');
         }
-        const pwd = await fetchClearPassword(row.realm, row.username);
+        const pwd = await fetchClearPassword(row.rest_uri);
         if (row.acl_sharing === 'user') {
             await setSharing(row, 'user');
         }
@@ -406,7 +406,8 @@ async function handleShowPassword(row) {
 // passwords must go through configs/conf-passwords using the credential stanza
 // name.  All ${row.rest_uri}/acl references replaced with buildAclPath(row).
 function buildAclPath(row) {
-    return `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/acl`;
+    const credId = encodeURIComponent(`credential:${row.stanza}`);
+    return `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/configs/conf-passwords/${credId}/acl`;
 }
 
 // ─── Sharing toggle helper ─────────────────────────────────────────────────────
@@ -472,22 +473,24 @@ async function handleUpdateCredential(row, formData) {
 
         if (password) {
             await splunkdPOST(
-                `/servicesNS/nobody/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.realm)}:${encodeURIComponent(row.username)}:`,
+                `/servicesNS/nobody/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.stanza)}`,
                 { password }
             );
             messages.push(`<div><i class="icon-check-circle"></i> Password updated for <b>${escHtml(row.realm)}:${escHtml(row.username)}</b></div>`);
         }
 
         if (row.app !== newApp) {
+            const moveCredId = encodeURIComponent(`credential:${row.stanza}`);
             await splunkdPOST(
-                `/servicesNS/nobody/${encodeURIComponent(row.app)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/move`,
+                `/servicesNS/nobody/${encodeURIComponent(row.app)}/configs/conf-passwords/${moveCredId}/move`,
                 { app: newApp, user: 'nobody' }
             );
             messages.push(`<div><i class="icon-check-circle"></i> Moved from <b>${escHtml(row.app)}</b> to <b>${escHtml(newApp)}</b></div>`);
         }
 
+        const finalCredId = encodeURIComponent(`credential:${row.stanza}`);
         await splunkdPOST(
-            `/servicesNS/nobody/${encodeURIComponent(newApp)}/configs/conf-passwords/credential%3A${encodeURIComponent(row.realm)}%3A${encodeURIComponent(row.username)}%3A/acl`,
+            `/servicesNS/nobody/${encodeURIComponent(newApp)}/configs/conf-passwords/${finalCredId}/acl`,
             { 'perms.read': read, 'perms.write': write, sharing, owner }
         );
         messages.push(`<div><i class="icon-check-circle"></i> ACLs applied</div>`);
@@ -522,7 +525,7 @@ async function executeDelete(rows) {
             owner:   row.owner
         });
         await splunkdDELETE(
-            `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.realm)}:${encodeURIComponent(row.username)}:`
+            `/servicesNS/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.app)}/storage/passwords/${encodeURIComponent(row.stanza)}`
         );
         return row;
     }));
