@@ -926,7 +926,7 @@ function handleImportFile(file) {
 // ─── Bulk import — batch create with results modal ────────────────────────────
 async function handleBulkImport(rows) {
     showModal({
-        id: 'modal-import-progress',
+        id: 'modal-import',
         title: 'Importing…',
         bodyHtml: `<div class="cred-loading"><span class="cred-spinner"></span> Importing ${rows.length} credential${rows.length !== 1 ? 's' : ''}…</div>`,
     });
@@ -949,7 +949,7 @@ async function handleBulkImport(rows) {
     const summary   = `<p><b>${succeeded}</b> imported successfully${failed ? `, <b>${failed}</b> failed` : ''}.</p>`;
 
     showModal({
-        id: 'modal-import-done',
+        id: 'modal-import',
         title: 'Import Complete',
         bodyHtml: summary + failHtml + successHtml,
         onConfirm: () => refreshTable(),
