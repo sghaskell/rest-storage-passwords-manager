@@ -887,8 +887,8 @@ function parseCSV(text) {
             password,
             realm:   row.realm   || '',
             app:     row.app     || defaultApp,
-            owner:   row.owner   || defaultOwner,
-            sharing: row.sharing || 'app',
+            owner:   (row.owner && row.owner !== '*') ? row.owner : defaultOwner,
+            sharing: ['global', 'app', 'user'].includes(row.sharing) ? row.sharing : 'app',
             read:    row.read    || 'admin,power',
             write:   row.write   || 'admin,power',
         });
