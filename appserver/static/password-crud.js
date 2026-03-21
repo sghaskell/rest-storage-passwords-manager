@@ -869,6 +869,9 @@ function parseCSV(text) {
     }
 
     const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
+    if (!headers.includes('username') || !headers.includes('password')) {
+        return { rows: [], errors: ['Invalid CSV: the header row must contain "username" and "password" columns. Please download the template for the correct format.'] };
+    }
     const defaultApp     = getCurrentApp();
     const defaultOwner   = currentUser();
     const rows = [], errors = [];
@@ -902,6 +905,16 @@ function parseCSV(text) {
 // ─── Bulk import — file handler (preview modal) ───────────────────────────────
 function handleImportFile(file) {
     if (!file) return;
+    const MAX_CSV_BYTES = 512 * 1024;
+    if (file.size > MAX_CSV_BYTES) {
+        const kb = (file.size / 1024).toFixed(0);
+        showModal({
+            id: 'modal-import-preview',
+            title: 'Import Preview',
+            bodyHtml: `<div class="alert alert-error"><i class="icon-alert"></i> File is too large (${kb} KB). The maximum allowed size is 512 KB. Please verify this is a credential CSV and not a different file type.</div>`,
+        });
+        return;
+    }
     const reader = new FileReader();
     reader.onload = e => {
         const { rows, errors } = parseCSV(e.target.result);
@@ -930,10 +943,15 @@ function handleImportFile(file) {
         const tableWrap = el('div', { class: 'import-preview-scroll' });
         tableWrap.appendChild(table);
 
+        const MAX_ERRORS_SHOWN = 10;
+        const shownErrors  = errors.slice(0, MAX_ERRORS_SHOWN);
+        const hiddenCount  = errors.length - shownErrors.length;
+        let errHtml = shownErrors.map(e => `<div><i class="icon-alert"></i> ${escHtml(e)}</div>`).join('');
+        if (hiddenCount > 0) errHtml += `<div style="margin-top:4px;font-style:italic">\u2026and ${hiddenCount} more row${hiddenCount !== 1 ? 's' : ''} skipped.</div>`;
+
         let html = '';
         if (rows.length)   html += `<p><b>${rows.length}</b> credential${rows.length !== 1 ? 's' : ''} ready to import.</p>`;
-        if (errors.length) html += `<div class="alert alert-warning" style="margin-bottom:8px">` +
-            errors.map(e => `<div><i class="icon-alert"></i> ${escHtml(e)}</div>`).join('') + `</div>`;
+        if (errors.length) html += `<div class="alert alert-warning" style="margin-bottom:8px">${errHtml}</div>`;
         if (!rows.length) {
             html += `<div class="alert alert-error"><i class="icon-alert"></i> No valid rows to import.</div>`;
             showModal({ id: 'modal-import-preview', title: 'Import Preview', bodyHtml: html });
@@ -985,7 +1003,14 @@ async function handleBulkImport(rows) {
     const modal = document.getElementById('modal-import');
     if (modal) {
         modal.querySelector('.modal-title').textContent = 'Import Complete';
-        modal.querySelector('.modal-body').innerHTML = summary + failHtml + successHtml;
+        const resultsWrap = el('div', { class: 'import-results-scroll' });
+        resultsWrap.innerHTML = failHtml + successHtml;
+        const bodyDiv = el('div');
+        bodyDiv.innerHTML = summary;
+        bodyDiv.appendChild(resultsWrap);
+        const modalBody = modal.querySelector('.modal-body');
+        modalBody.innerHTML = '';
+        modalBody.appendChild(bodyDiv);
         const confirmBtn = modal.querySelector('.confirm-btn');
         confirmBtn.textContent = 'Close';
         // Clone to drop the no-op listener from the progress phase, attach the real one.
@@ -1060,6 +1085,7 @@ function injectStyles() {
         .cred-import-item i { margin-right: 6px; }
         .import-preview-scroll { max-height: 300px; overflow-y: auto; margin-top: 8px; }
         .import-preview-scroll .table { font-size: 12px; margin-bottom: 0; }
+        .import-results-scroll { max-height: 320px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 3px; padding: 6px 8px; margin-top: 6px; }
         .import-result-ok { color: #3c763d; }
         .import-result-fail { color: #c23b2e; }
     `;
