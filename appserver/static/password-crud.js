@@ -249,6 +249,39 @@ function renderTable(credentials, container) {
         if (restored) { restored.focus(); const len = restored.value.length; restored.setSelectionRange(len, len); }
     });
 
+    // Hidden file input for CSV import
+    const fileInput = el('input', { type: 'file', accept: '.csv', style: 'display:none' });
+    fileInput.addEventListener('change', e => { handleImportFile(e.target.files[0]); e.target.value = ''; });
+
+    // Import dropdown — toggle on click, close on outside click
+    const importDropdown = (() => {
+        const wrap = el('div', { class: 'cred-import-wrap' });
+
+        const toggleBtn = el('button', { class: 'btn btn-default cred-import-toggle' });
+        toggleBtn.innerHTML = 'Import <i class="icon-chevron-down" style="font-size:10px;vertical-align:middle"></i>';
+
+        const menu = el('div', { class: 'cred-import-menu' });
+
+        const uploadItem = el('button', { class: 'cred-import-item', type: 'button' });
+        uploadItem.innerHTML = '<i class="icon-upload"></i> Upload CSV';
+        uploadItem.addEventListener('click', () => { menu.classList.remove('open'); fileInput.click(); });
+
+        const templateItem = el('button', { class: 'cred-import-item', type: 'button' });
+        templateItem.innerHTML = '<i class="icon-download-alt"></i> Download Template';
+        templateItem.addEventListener('click', () => { menu.classList.remove('open'); downloadCSVTemplate(); });
+
+        menu.appendChild(uploadItem);
+        menu.appendChild(templateItem);
+
+        toggleBtn.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
+        document.addEventListener('click', () => menu.classList.remove('open'));
+
+        wrap.appendChild(toggleBtn);
+        wrap.appendChild(menu);
+        wrap.appendChild(fileInput);
+        return wrap;
+    })();
+
     const toolbar = el('div', { class: 'credential-toolbar' }, [
         filterInput,
         (() => {
@@ -260,12 +293,13 @@ function renderTable(credentials, container) {
             });
             return btn;
         })(),
+        importDropdown,
         (() => {
             const btn = el('button', { id: 'btn-create', class: 'btn btn-primary' });
             btn.textContent = '+ New Credential';
             btn.addEventListener('click', () => toggleCreateForm());
             return btn;
-        })()
+        })(),
     ]);
     container.appendChild(toolbar);
 
@@ -433,7 +467,20 @@ async function setSharing(row, sharing) {
     });
 }
 
-// ─── Create credential ─────────────────────────────────────────────────────────
+// ─── Create credential (core — no modal, suitable for single and bulk use) ──────
+async function createSingleCredential({ username, password, realm = '', app, owner, sharing = 'app', read = 'admin,power', write = 'admin,power' }) {
+    await splunkdPOST(`/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/storage/passwords`, {
+        name: username, password, realm
+    });
+    const aclPath = `/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/configs/conf-passwords/credential%3A${encodeURIComponent(realm)}%3A${encodeURIComponent(username)}%3A/acl`;
+    // PRESERVED: two-step ACL pattern required by splunkd when sharing='user'
+    if (sharing === 'user') {
+        await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing: 'app', owner });
+    }
+    await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing, owner });
+}
+
+// ─── Create credential (single form — validates then delegates to core) ─────────
 async function handleCreateCredential(formData) {
     const { username, password, confirmPassword, realm, owner, app, sharing, read, write } = formData;
 
@@ -445,19 +492,9 @@ async function handleCreateCredential(formData) {
 
     const messages = [];
     try {
-        await splunkdPOST(`/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/storage/passwords`, {
-            name: username, password, realm
-        });
+        await createSingleCredential({ username, password, realm, app, owner, sharing, read, write });
         messages.push(`<div><i class="icon-check-circle"></i> Created <b>${escHtml(realm)}:${escHtml(username)}</b></div>`);
-
-        const aclPath = `/servicesNS/${encodeURIComponent(owner)}/${encodeURIComponent(app)}/configs/conf-passwords/credential%3A${encodeURIComponent(realm)}%3A${encodeURIComponent(username)}%3A/acl`;
-        // PRESERVED: two-step ACL pattern required by splunkd when sharing='user'
-        if (sharing === 'user') {
-            await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing: 'app', owner });
-        }
-        await splunkdPOST(aclPath, { 'perms.read': read, 'perms.write': write, sharing, owner });
         messages.push(`<div><i class="icon-check-circle"></i> ACLs applied</div>`);
-
         showModal({ id: 'modal-created', title: 'Credential Created', bodyHtml: messages.join(''), onConfirm: () => refreshTable() });
     } catch (err) {
         if (err.status === 409) {
@@ -806,6 +843,188 @@ function buildMultiSelect(id, options, selectedValues = [], resetValues = select
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── CSV parser ───────────────────────────────────────────────────────────────
+function parseCSV(text) {
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim() && !l.trimStart().startsWith('#'));
+    if (lines.length < 2) return { rows: [], errors: ['File is empty or has no data rows.'] };
+
+    // RFC 4180-compliant field splitter
+    function splitLine(line) {
+        const fields = [];
+        let cur = '', inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (inQuote) {
+                if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+                else if (ch === '"') inQuote = false;
+                else cur += ch;
+            } else {
+                if (ch === '"') inQuote = true;
+                else if (ch === ',') { fields.push(cur); cur = ''; }
+                else cur += ch;
+            }
+        }
+        fields.push(cur);
+        return fields;
+    }
+
+    const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
+    const defaultApp     = getCurrentApp();
+    const defaultOwner   = currentUser();
+    const rows = [], errors = [];
+
+    lines.slice(1).forEach((line, i) => {
+        if (!line.trim()) return;
+        const vals = splitLine(line);
+        const row  = {};
+        headers.forEach((h, j) => { row[h] = (vals[j] ?? '').trim(); });
+
+        const username = row.username || '';
+        const password = row.password || '';
+        if (!username || !password) {
+            errors.push(`Row ${i + 2}: ${!username ? 'username' : 'password'} is required — skipped.`);
+            return;
+        }
+        rows.push({
+            username,
+            password,
+            realm:   row.realm   || '',
+            app:     row.app     || defaultApp,
+            owner:   (row.owner && row.owner !== '*') ? row.owner : defaultOwner,
+            sharing: ['global', 'app', 'user'].includes(row.sharing) ? row.sharing : 'app',
+            read:    row.read    || 'admin,power',
+            write:   row.write   || 'admin,power',
+        });
+    });
+    return { rows, errors };
+}
+
+// ─── Bulk import — file handler (preview modal) ───────────────────────────────
+function handleImportFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const { rows, errors } = parseCSV(e.target.result);
+
+        const headerCells = ['Username', 'Realm', 'App', 'Owner', 'Sharing', 'Read', 'Write', 'Password'].map(h => {
+            const th = el('th'); th.textContent = h; return th;
+        });
+        const headerRow = el('tr');
+        headerCells.forEach(th => headerRow.appendChild(th));
+        const thead = el('thead');
+        thead.appendChild(headerRow);
+
+        const tbody = el('tbody');
+        rows.forEach(r => {
+            const tr = el('tr');
+            [r.username, r.realm, r.app, r.owner, r.sharing, r.read, r.write, '••••••'].forEach(v => {
+                const td = el('td'); td.textContent = v; tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+
+        const table = el('table', { class: 'table table-chrome table-striped import-preview-table' });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+
+        const tableWrap = el('div', { class: 'import-preview-scroll' });
+        tableWrap.appendChild(table);
+
+        let html = '';
+        if (rows.length)   html += `<p><b>${rows.length}</b> credential${rows.length !== 1 ? 's' : ''} ready to import.</p>`;
+        if (errors.length) html += `<div class="alert alert-warning" style="margin-bottom:8px">` +
+            errors.map(e => `<div><i class="icon-alert"></i> ${escHtml(e)}</div>`).join('') + `</div>`;
+        if (!rows.length) {
+            html += `<div class="alert alert-error"><i class="icon-alert"></i> No valid rows to import.</div>`;
+            showModal({ id: 'modal-import-preview', title: 'Import Preview', bodyHtml: html });
+            return;
+        }
+
+        const bodyDiv = document.createElement('div');
+        bodyDiv.innerHTML = html;
+        bodyDiv.appendChild(tableWrap);
+
+        showModal({
+            id: 'modal-import-preview',
+            title: `Import Preview — ${rows.length} credential${rows.length !== 1 ? 's' : ''}`,
+            bodyHtml: bodyDiv.innerHTML,
+            confirmLabel: 'Import',
+            showCancel: true,
+            onConfirm: () => handleBulkImport(rows),
+        });
+    };
+    reader.readAsText(file);
+}
+
+// ─── Bulk import — batch create with results modal ────────────────────────────
+async function handleBulkImport(rows) {
+    showModal({
+        id: 'modal-import',
+        title: 'Importing…',
+        bodyHtml: `<div class="cred-loading"><span class="cred-spinner"></span> Importing ${rows.length} credential${rows.length !== 1 ? 's' : ''}…</div>`,
+    });
+
+    const results = await Promise.allSettled(rows.map(r => createSingleCredential(r)));
+
+    let successHtml = '', failHtml = '';
+    results.forEach((r, i) => {
+        const label = `${escHtml(rows[i].realm)}:${escHtml(rows[i].username)}`;
+        if (r.status === 'fulfilled') {
+            successHtml += `<div class="import-result-ok"><i class="icon-check-circle"></i> ${label}</div>`;
+        } else {
+            const msg = r.reason?.status === 409 ? 'already exists' : escHtml(r.reason?.message || 'unknown error');
+            failHtml += `<div class="import-result-fail"><i class="icon-alert"></i> ${label} — ${msg}</div>`;
+        }
+    });
+
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    const failed    = results.length - succeeded;
+    const summary   = `<p><b>${succeeded}</b> imported successfully${failed ? `, <b>${failed}</b> failed` : ''}.</p>`;
+
+    // Update the modal in-place — replacing it would leave Bootstrap's backdrop stranded.
+    const modal = document.getElementById('modal-import');
+    if (modal) {
+        modal.querySelector('.modal-title').textContent = 'Import Complete';
+        modal.querySelector('.modal-body').innerHTML = summary + failHtml + successHtml;
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        confirmBtn.textContent = 'Close';
+        // Clone to drop the no-op listener from the progress phase, attach the real one.
+        const freshBtn = confirmBtn.cloneNode(true);
+        freshBtn.addEventListener('click', () => { $(modal).modal('hide'); refreshTable(); });
+        confirmBtn.replaceWith(freshBtn);
+    }
+}
+
+// ─── CSV template download ────────────────────────────────────────────────────
+function downloadCSVTemplate() {
+    const lines = [
+        '# REST storage/passwords Manager — Bulk Import Template',
+        '# Required columns : username, password',
+        '# Optional columns : realm, app, owner, sharing, read, write',
+        '#',
+        '# Column notes:',
+        '#   username : the credential username (required)',
+        '#   password : the credential password (required)',
+        '#   realm    : optional descriptor, e.g. prod or dev (default: empty)',
+        `#   app      : Splunk app context to store the credential in (default: ${getCurrentApp()})`,
+        `#   owner    : a Splunk username — must be a real user, NOT * (default: ${currentUser()})`,
+        '#   sharing  : one of: global, app, user (default: app)',
+        '#   read     : comma-separated roles that can read, or * for all — enclose in quotes if multiple, e.g. "admin,power" (default: admin,power)',
+        '#   write    : comma-separated roles that can write, or * for all — enclose in quotes if multiple, e.g. "admin,power" (default: admin,power)',
+        '#',
+        '# Lines starting with # are ignored during import.',
+        '#',
+        'username,password,realm,app,owner,sharing,read,write',
+        `myuser,mysecret,myrealm,${getCurrentApp()},${currentUser()},app,"admin,power","admin,power"`,
+    ];
+    const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'credential-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
 function injectStyles() {
     if (document.getElementById('cred-mgr-styles')) return;
     const style = document.createElement('style');
@@ -833,6 +1052,16 @@ function injectStyles() {
         .multi-select-hint { display: block; font-size: 12px; color: #999; font-style: italic; margin-top: 3px; }
         .cred-filter { flex: 1; max-width: 320px; }
         .cred-empty-state { text-align: center; color: #888; padding: 20px !important; font-style: italic; }
+        .cred-import-wrap { position: relative; }
+        .cred-import-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 1000; background: #fff; border: 1px solid #ccc; border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.15); min-width: 170px; margin-top: 2px; }
+        .cred-import-menu.open { display: block; }
+        .cred-import-item { display: block; width: 100%; text-align: left; padding: 7px 14px; background: none; border: none; cursor: pointer; font-size: 13px; color: #333; white-space: nowrap; }
+        .cred-import-item:hover { background: #f5f5f5; }
+        .cred-import-item i { margin-right: 6px; }
+        .import-preview-scroll { max-height: 300px; overflow-y: auto; margin-top: 8px; }
+        .import-preview-scroll .table { font-size: 12px; margin-bottom: 0; }
+        .import-result-ok { color: #3c763d; }
+        .import-result-fail { color: #c23b2e; }
     `;
     document.head.appendChild(style);
 }

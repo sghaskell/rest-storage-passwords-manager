@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-03-21
+
+### Added
+- **Bulk CSV import** — upload a CSV file to create multiple credentials in one operation
+  - Preview modal shows all rows to be imported (password masked as `••••••`) with validation errors highlighted
+  - Row count summary: "X credentials ready to import, Y rows skipped"
+  - Per-row results modal after import: each credential shows ✓ success or ✗ failure with error detail
+  - 409 conflicts shown as "already exists" — other rows continue importing
+  - **Download Template** — one-click download of a documented CSV template with header comments explaining each column, valid values, and quoting rules for multi-role fields
+- Import dropdown in toolbar — **Import** toggle reveals "Upload CSV" and "Download Template" options; closes on outside click
+
+### Changed
+- `owner` column in CSV defaults to current user if blank or `*` (API rejects `*` as owner)
+- `sharing` column in CSV defaults to `app` if blank or not one of `global`, `app`, `user`
+- CSV parser skips lines beginning with `#` (comment lines used in the downloadable template)
+
 ## [2.0.2] - 2026-03-21
 
 ### Added
