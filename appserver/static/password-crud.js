@@ -253,6 +253,35 @@ function renderTable(credentials, container) {
     const fileInput = el('input', { type: 'file', accept: '.csv', style: 'display:none' });
     fileInput.addEventListener('change', e => { handleImportFile(e.target.files[0]); e.target.value = ''; });
 
+    // Import dropdown — toggle on click, close on outside click
+    const importDropdown = (() => {
+        const wrap = el('div', { class: 'cred-import-wrap' });
+
+        const toggleBtn = el('button', { class: 'btn btn-default cred-import-toggle' });
+        toggleBtn.innerHTML = 'Import <i class="icon-chevron-down" style="font-size:10px;vertical-align:middle"></i>';
+
+        const menu = el('div', { class: 'cred-import-menu' });
+
+        const uploadItem = el('button', { class: 'cred-import-item', type: 'button' });
+        uploadItem.innerHTML = '<i class="icon-upload"></i> Upload CSV';
+        uploadItem.addEventListener('click', () => { menu.classList.remove('open'); fileInput.click(); });
+
+        const templateItem = el('button', { class: 'cred-import-item', type: 'button' });
+        templateItem.innerHTML = '<i class="icon-download-alt"></i> Download Template';
+        templateItem.addEventListener('click', () => { menu.classList.remove('open'); downloadCSVTemplate(); });
+
+        menu.appendChild(uploadItem);
+        menu.appendChild(templateItem);
+
+        toggleBtn.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
+        document.addEventListener('click', () => menu.classList.remove('open'));
+
+        wrap.appendChild(toggleBtn);
+        wrap.appendChild(menu);
+        wrap.appendChild(fileInput);
+        return wrap;
+    })();
+
     const toolbar = el('div', { class: 'credential-toolbar' }, [
         filterInput,
         (() => {
@@ -264,25 +293,13 @@ function renderTable(credentials, container) {
             });
             return btn;
         })(),
-        (() => {
-            const btn = el('button', { class: 'btn btn-default' });
-            btn.textContent = 'Import CSV';
-            btn.addEventListener('click', () => fileInput.click());
-            return btn;
-        })(),
-        (() => {
-            const link = el('a', { class: 'cred-download-link', href: '#', title: 'Download CSV template' });
-            link.textContent = 'Download Template';
-            link.addEventListener('click', e => { e.preventDefault(); downloadCSVTemplate(); });
-            return link;
-        })(),
+        importDropdown,
         (() => {
             const btn = el('button', { id: 'btn-create', class: 'btn btn-primary' });
             btn.textContent = '+ New Credential';
             btn.addEventListener('click', () => toggleCreateForm());
             return btn;
         })(),
-        fileInput,
     ]);
     container.appendChild(toolbar);
 
@@ -1001,7 +1018,12 @@ function injectStyles() {
         .multi-select-hint { display: block; font-size: 12px; color: #999; font-style: italic; margin-top: 3px; }
         .cred-filter { flex: 1; max-width: 320px; }
         .cred-empty-state { text-align: center; color: #888; padding: 20px !important; font-style: italic; }
-        .cred-download-link { font-size: 12px; align-self: center; white-space: nowrap; }
+        .cred-import-wrap { position: relative; }
+        .cred-import-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 1000; background: #fff; border: 1px solid #ccc; border-radius: 3px; box-shadow: 0 3px 8px rgba(0,0,0,0.15); min-width: 170px; margin-top: 2px; }
+        .cred-import-menu.open { display: block; }
+        .cred-import-item { display: block; width: 100%; text-align: left; padding: 7px 14px; background: none; border: none; cursor: pointer; font-size: 13px; color: #333; white-space: nowrap; }
+        .cred-import-item:hover { background: #f5f5f5; }
+        .cred-import-item i { margin-right: 6px; }
         .import-preview-scroll { max-height: 300px; overflow-y: auto; margin-top: 8px; }
         .import-preview-scroll .table { font-size: 12px; margin-bottom: 0; }
         .import-result-ok { color: #3c763d; }
