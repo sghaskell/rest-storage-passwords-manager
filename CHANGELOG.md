@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-03-21
+
+### Fixed
+- CSV files with invalid structure (wrong or missing header columns) now fail immediately with a single actionable error instead of generating a "username is required" message for every row
+- Files larger than 512 KB are rejected before parsing with a clear size error
+
+### Added
+- Drag-and-drop import modal — clicking **Import → Upload CSV** now opens a modal where files can be dragged in from Finder or Explorer; a **Browse…** button provides the OS file picker as a fallback
+- Import results are now displayed in a scrollable container, making all rows visible for large imports regardless of count
+- Preview error list is capped at 10 rows with "…and N more skipped" for files with many invalid rows
+
 ## [2.1.0] - 2026-03-21
 
 ### Added
