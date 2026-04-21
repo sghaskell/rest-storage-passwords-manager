@@ -1,0 +1,27 @@
+{
+  "name": "rest-storage-passwords-manager",
+  "version": "3.0.0",
+  "description": "React-based Splunk app for managing storage/passwords credentials",
+  "main": "appserver/static/react/bundle.js",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "splunk",
+    "react",
+    "credential-manager"
+  ],
+  "author": "Scott Haskell",
+  "license": "MIT",
+  "devDependencies": {
+    "@splunk/dashboard-ui": "^1.0.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
