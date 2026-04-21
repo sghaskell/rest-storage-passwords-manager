@@ -1,17 +1,11 @@
 /**
  * credentials.jsx - Splunk Custom Page entry point for React Credential Manager
- * 
- * This file uses Splunk's custom pages framework to load the React application.
- * It bootstraps the React app and renders it within the Splunk UI.
+ *
+ * This file bootstraps the React application. It expects the React bundle
+ * (bundle.js) to be loaded first, which exposes CredentialManager globally.
  */
 
-define([
-    'react',
-    'react-dom',
-    'underscore',
-    'splunkweb_utils',
-    'CredentialManager'
-], function(React, ReactDOM, _, splunkweb_utils, CredentialManager) {
+(function() {
     'use strict';
 
     /**
@@ -24,24 +18,40 @@ define([
             return;
         }
 
+        // Wait for React to be available
+        if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+            console.error('Credential Manager: React or ReactDOM not loaded');
+            container.innerHTML = '<div class="alert alert-error">React not loaded. Check browser console.</div>';
+            return;
+        }
+
+        // Wait for CredentialManager component to be available
+        if (typeof CredentialManager === 'undefined') {
+            console.error('Credential Manager: CredentialManager component not loaded');
+            container.innerHTML = '<div class="alert alert-error">CredentialManager component not loaded.</div>';
+            return;
+        }
+
         // Create root and render the React component
         const root = ReactDOM.createRoot(container);
         root.render(React.createElement(CredentialManager));
     }
 
     /**
-     * Initialize the page
+     * Initialize when DOM is ready
      */
     function init() {
         // Wait for DOM to be ready
-        document.addEventListener('DOMContentLoaded', function() {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', renderApp);
+        } else {
             renderApp();
-        });
+        }
     }
 
-    // Export initialization function for Splunk's page loader
-    return {
+    // Export for Splunk's page loader
+    window.CredentialPage = {
         init: init,
-        render: renderApp,
+        render: renderApp
     };
-});
+})();

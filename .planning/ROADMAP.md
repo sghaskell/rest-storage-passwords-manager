@@ -2,21 +2,23 @@
 
 ## Milestone 1: React Dashboard Rewrite (v3.0.0)
 
-### Phase 1.1: Project Setup
+### Phase 1.1: Project Setup ✅ COMPLETED
 **Goal:** Configure the development environment and project structure for React development.
 
 **Plans:**
 - 1.1.1: Setup React component structure
-- 1.1.2: Configure Vite build for Splunk compatibility
+- 1.1.2: Configure Webpack build for Splunk compatibility
 - 1.1.3: Create development server configuration
 
-**Depends on:** -  
+**Depends on:** -
 
-**Status:** Planned
+**Status:** Complete
+- Build working: `npm run build` generates `appserver/static/react/bundle.js`
+- UMD format compatible with Splunk's RequireJS loader
 
 ---
 
-### Phase 1.2: Core Components
+### Phase 1.2: Core Components ✅ COMPLETED
 **Goal:** Implement the core React components that mirror the legacy functionality.
 
 **Plans:**
@@ -25,9 +27,14 @@
 - 1.2.3: Create CredentialForm (create/update forms)
 - 1.2.4: Create Modal component for password reveal and imports
 
-**Depends on:** 1.1  
+**Depends on:** 1.1
 
-**Status:** Planned
+**Status:** Complete
+- CredentialManager.jsx - Main application component with state management
+- CredentialTable.jsx - Table with pagination, filtering, sorting
+- CredentialForm.jsx - Create/update credential forms
+- Modal.jsx - Password reveal, CSV import, delete confirmation modals
+- api.js - REST API service for Splunk storage/passwords endpoint
 
 ---
 
@@ -81,9 +88,9 @@
 
 | Phase | Status | Plans | Depends on |
 |-------|--------|-------|------------|
-| 1.1 | Planned | 3 | - |
-| 1.2 | Planned | 4 | 1.1 |
+| 1.1 | ✅ Complete | 3 | - |
+| 1.2 | ✅ Complete | 4 | 1.1 |
 | 1.3 | Planned | 5 | 1.2 |
 | 1.4 | Planned | 4 | 1.2, 1.3 |
 | 1.5 | Planned | 4 | 1.1, 1.2, 1.3, 1.4 |
-| **Total** | | **20** | |
+| **Total** | **2/20** | | |

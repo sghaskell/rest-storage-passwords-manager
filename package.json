@@ -4,9 +4,11 @@
   "description": "React-based Splunk app for managing storage/passwords credentials",
   "main": "appserver/static/react/bundle.js",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite",
-    "preview": "vite preview"
+    "build": "webpack --mode production",
+    "build:watch": "webpack --mode development --watch",
+    "build:dev": "webpack --mode development",
+    "package": "find appserver static default -type f | tar -czf rest-storage-passwords-manager.spl -T -",
+    "install": "curl -k -u admin:password -F file=@rest-storage-passwords-manager.spl https://localhost:8089/services/apps/local/"
   },
   "keywords": [
     "splunk",
@@ -16,9 +18,15 @@
   "author": "Scott Haskell",
   "license": "MIT",
   "devDependencies": {
-    "@splunk/dashboard-ui": "^1.0.0",
-    "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.0.0"
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-react": "^7.28.5",
+    "@splunk/react-ui": "^5.9.1",
+    "babel-loader": "^10.1.1",
+    "html-webpack-plugin": "^5.6.7",
+    "webpack": "^5.106.2",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
     "react": "^18.2.0",
