@@ -1,0 +1,99 @@
+# Project: REST storage/passwords Manager v3.0.0
+
+## What This Is
+
+A Splunk app that provides a modern React-based interface for managing credentials stored in Splunk's `storage/passwords` REST endpoint. This is a complete rewrite of the existing v2.x application (which uses vanilla JavaScript with splunkjs/mvc) into a React application with Vite build tooling.
+
+The app enables users to:
+- Create, read, update, and delete credentials via a CRUD dashboard
+- Manage permissions (roles for read/write, owner, sharing scope)
+- Bulk import credentials from CSV files
+- Reveal clear-text passwords securely in a modal
+- Filter credentials in real-time
+- View credentials with pagination
+
+## What This Is Not
+
+- Not a Splunk SDK or library
+- Not a general-purpose password manager
+- Not a replacement for Splunk's built-in credential storage (it uses that storage)
+
+## Value Proposition
+
+- **Modern UI** - React with proper component architecture, faster than vanilla JS
+- **Splunk Cloud compatible** - No deprecated splunkjs/mvc components
+- **Better developer experience** - Vite dev server, proper component structure
+- **Maintainable** - Clear separation of concerns, TypeScript-ready structure
+
+## Context
+
+### Current State
+- Version 2.1.1 is deployed and working
+- Uses `appserver/static/password-crud.js` (~1172 lines) with splunkjs/mvc
+- Bundle output: `appserver/static/react/bundle.js` (currently not built)
+
+### Target State
+- Version 3.0.0 with React 18.2.0
+- Built with Vite into `appserver/static/react/bundle.js`
+- Uses `@splunk/react-ui` for Splunk-consistent components
+- Code organized in proper React components
+
+## Requirements
+
+### Validated
+
+- ✓ User can list all credentials in a table
+- ✓ User can create new credentials with username, password, realm
+- ✓ User can update credential passwords and permissions
+- ✓ User can delete credentials
+- ✓ User can reveal clear-text passwords in a modal
+- ✓ User can filter credentials by username, realm, or app
+- ✓ User can bulk import credentials from CSV
+- ✓ User can download a CSV template for import
+- ✓ ACL controls use correct role/user pickers
+- ✓ Splunk Cloud compatible (passes AppInspect cloud tags)
+
+### Active
+
+- [ ] React component architecture (proper separation into components)
+- [ ] Vite build tooling configured and working
+- [ ] Dev server for local development
+- [ ] Production build generates correct bundle output
+- [ ] Component structure matches legacy functionality
+
+### Out of Scope
+
+- Not changing the UI design (keep existing visual style)
+- Not adding new credential fields beyond what v2.x supports
+- Not changing the REST API interaction patterns
+- Not removing legacy `password-crud.js` until v3.0.0 is fully verified
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| React 18.2.0 | Current stable, matches `@splunk/react-ui` compatibility | Modern UI framework |
+| Vite build | Modern build tool, fast dev server, good for IIFE output | Developer-friendly workflow |
+| IIFE bundle format | Splunk loads via RequireJS, no module system needed | Compatibility with Splunk's loader |
+| Keep legacy password-crud.js | Safety during migration, rollback option | Gradual deprecation path |
+| Use @splunk/react-ui | Splunk's official UI library, ensures consistency | Splunk-native look and feel |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-04-20 after initialization*
