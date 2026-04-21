@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A Splunk app that provides a modern React-based interface for managing credentials stored in Splunk's `storage/passwords` REST endpoint. This is a complete rewrite of the existing v2.x application (which uses vanilla JavaScript with splunkjs/mvc) into a React application with Vite build tooling.
+A Splunk app that provides a modern React-based interface for managing credentials stored in Splunk's `storage/passwords` REST endpoint. This is a complete rewrite of the existing v2.x application (which uses vanilla JavaScript with splunkjs/mvc) into a React application with Webpack build tooling.
 
 The app enables users to:
 - Create, read, update, and delete credentials via a CRUD dashboard
@@ -22,7 +22,7 @@ The app enables users to:
 
 - **Modern UI** - React with proper component architecture, faster than vanilla JS
 - **Splunk Cloud compatible** - No deprecated splunkjs/mvc components
-- **Better developer experience** - Vite dev server, proper component structure
+- **Proven workflow** - Build → Package → Deploy to Splunk (local or cloud)
 - **Maintainable** - Clear separation of concerns, TypeScript-ready structure
 
 ## Context
@@ -34,7 +34,7 @@ The app enables users to:
 
 ### Target State
 - Version 3.0.0 with React 18.2.0
-- Built with Vite into `appserver/static/react/bundle.js`
+- Built with Webpack into `appserver/static/react/bundle.js`
 - Uses `@splunk/react-ui` for Splunk-consistent components
 - Code organized in proper React components
 
@@ -56,8 +56,9 @@ The app enables users to:
 ### Active
 
 - [ ] React component architecture (proper separation into components)
-- [ ] Vite build tooling configured and working
-- [ ] Dev server for local development
+- [ ] Webpack build tooling configured and working
+- [ ] App packaging for Splunk deployment
+- [ ] Deployment to local Splunk Docker container
 - [ ] Production build generates correct bundle output
 - [ ] Component structure matches legacy functionality
 
@@ -73,8 +74,8 @@ The app enables users to:
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | React 18.2.0 | Current stable, matches `@splunk/react-ui` compatibility | Modern UI framework |
-| Vite build | Modern build tool, fast dev server, good for IIFE output | Developer-friendly workflow |
-| IIFE bundle format | Splunk loads via RequireJS, no module system needed | Compatibility with Splunk's loader |
+| Webpack build | Splunk-recommended, mature ecosystem, better RequireJS compatibility | Splunk-native build tool |
+| UMD bundle format | Works with Splunk's RequireJS loader | Compatibility with Splunk's loader |
 | Keep legacy password-crud.js | Safety during migration, rollback option | Gradual deprecation path |
 | Use @splunk/react-ui | Splunk's official UI library, ensures consistency | Splunk-native look and feel |
 
