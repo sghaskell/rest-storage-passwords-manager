@@ -38,6 +38,17 @@
 
 ---
 
+### Phase 01.2.1: Wave 1 Critical Gap Fixes (INSERTED)
+
+**Goal:** Fix blocking API contract bugs (ACL path, credential naming, password reveal, app move) that prevent CRUD operations from working correctly in Splunk.
+**Requirements**: GAP-C01, GAP-C06, GAP-C07, GAP-C08, GAP-C09, GAP-U04
+**Depends on:** Phase 1.2
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01.2.1-01-PLAN.md — API contract fixes (buildAclPath, credential naming, table key uniqueness)
+- [ ] 01.2.1-02-PLAN.md — New API functions (getCredentialPassword, moveCredential) + Modal wiring
+
 ### Phase 1.3: API Integration
 **Goal:** Implement REST API calls to Splunk's storage/passwords endpoint.
 
