@@ -28,9 +28,9 @@ The app enables users to:
 ## Context
 
 ### Current State
-- Version 2.1.1 is deployed and working
-- Uses `appserver/static/password-crud.js` (~1172 lines) with splunkjs/mvc
-- Bundle output: `appserver/static/react/bundle.js` (currently not built)
+- Version 2.1.1 is deployed and working; v3.0.0 React rewrite in progress
+- Phase 01.2.1 complete — API contract bugs fixed: buildAclPath helper, credential naming, password reveal, moveCredential exported
+- V3 bundle at `appserver/static/react/bundle.js` compiles with Webpack (tested during phase builds)
 
 ### Target State
 - Version 3.0.0 with React 18.2.0
@@ -56,11 +56,14 @@ The app enables users to:
 ### Active
 
 - [ ] React component architecture (proper separation into components)
-- [ ] Webpack build tooling configured and working
 - [ ] App packaging for Splunk deployment
 - [ ] Deployment to local Splunk Docker container
 - [ ] Production build generates correct bundle output
 - [ ] Component structure matches legacy functionality
+
+### Validated in Phase 01.2.1
+
+- ✓ Webpack build tooling configured and working (verified via npm run build during gap fixes)
 
 ### Out of Scope
 
@@ -97,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-20 after initialization*
+*Last updated: 2026-04-28 after Phase 01.2.1 completion*
