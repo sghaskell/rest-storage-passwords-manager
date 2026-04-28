@@ -29,9 +29,10 @@ The app enables users to:
 
 ### Current State
 - Version 2.1.1 is deployed and working; v3.0.0 React rewrite in progress
+- Phase 01.5 complete — production build hardened (Terser, externals), Playwright CRUD tests, bundle verified at 820 KB
 - Phase 01.4 complete — CredentialForm upgraded to Splunk React UI components with sharing/ACL wiring
 - Phase 01.2.1 complete — API contract bugs fixed: buildAclPath helper, credential naming, password reveal, moveCredential exported
-- V3 bundle at `appserver/static/react/bundle.js` compiles with Webpack (tested during phase builds)
+- V3 bundle at `appserver/static/react/bundle.js` compiles production-ready (820 KB, no sourcemaps, React externalized)
 
 ### Target State
 - Version 3.0.0 with React 18.2.0
@@ -57,9 +58,7 @@ The app enables users to:
 ### Active
 
 - [ ] React component architecture (proper separation into components)
-- [ ] App packaging for Splunk deployment
-- [ ] Deployment to local Splunk Docker container
-- [ ] Production build generates correct bundle output
+- [ ] Deployment to local Splunk Docker container (build and package ready; requires manual Splunk install test)
 - [ ] Component structure matches legacy functionality
 
 ### Validated in Phase 01.2.1
@@ -73,6 +72,12 @@ The app enables users to:
 - ✓ Two-step ACL pattern for user-scoped credentials matches legacy behavior
 - ✓ Bundle handlers pass sharing parameter to create/update/delete API calls
 - ✓ Password confirmation with native Splunk validation (ControlGroup.errorText)
+
+### Validated in Phase 01.5-build-deployment
+
+- ✓ Production build generates correct bundle output — webpack hardening with Terser minification, conditional sourcemaps, React/ReactDOM externals produces 820 KB optimized bundle
+- ✓ App packaging for Splunk deployment — .spl generation validated; legacy password-crud.js co-exists with React bundle
+- ✓ CI-ready verification scripts — check:bundle-size and verify:legacy npm scripts for automated gates
 
 ### Out of Scope
 
@@ -109,4 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 after Phase 01.4-wave-2-ui-upgrades completion*
+*Last updated: 2026-04-28 after Phase 01.5-build-deployment completion*
