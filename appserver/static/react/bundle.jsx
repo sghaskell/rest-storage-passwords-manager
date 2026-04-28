@@ -55,9 +55,39 @@ const API = require('./api');
         const DEFAULT_READ = API.DEFAULT_READ_ROLES ? API.DEFAULT_READ_ROLES.join(', ') : 'admin, power';
         const DEFAULT_WRITE = API.DEFAULT_WRITE_ROLES ? API.DEFAULT_WRITE_ROLES.join(', ') : 'admin, power';
 
+        // Reference data state — apps, current user, roles for form dropdowns
+        const [availableApps, setAvailableApps] = React.useState([]);
+        const [currentUserIdentity, setCurrentUserIdentity] = React.useState('');
+        const [availableRolesList, setAvailableRolesList] = React.useState([]);
+
         // Load credentials on mount
         React.useEffect(() => {
             loadCredentials();
+        }, []);
+
+        // Fetch reference data on mount (apps, current user info, roles)
+        React.useEffect(() => {
+            async function fetchReferenceData() {
+                try {
+                    const [appsResult, userResult, rolesResult] = await Promise.allSettled([
+                        API.getApps(),
+                        API.getUsers(),
+                        API.getRoles(),
+                    ]);
+                    if (appsResult.status === 'fulfilled') {
+                        setAvailableApps(appsResult.value); // Array of {name} objects
+                    }
+                    if (userResult.status === 'fulfilled' && userResult.value) {
+                        setCurrentUserIdentity(userResult.value.username || userResult.value.name || '');
+                    }
+                    if (rolesResult.status === 'fulfilled') {
+                        setAvailableRolesList(rolesResult.value); // Array of role name strings
+                    }
+                } catch (err) {
+                    console.warn('Failed to load reference data, continuing with defaults:', err.message);
+                }
+            }
+            fetchReferenceData();
         }, []);
 
         async function loadCredentials() {
@@ -158,7 +188,7 @@ const API = require('./api');
                 React.createElement('button', { onClick: handleCreateClick, style: { padding: '0.5rem 1rem', cursor: 'pointer' } }, 'Create Credential')
             ),
             React.createElement(CredentialTable, { credentials, onEdit: handleEditCredential, onDelete: handleDeleteConfirmation, onReveal: handleRevealPassword }),
-            showFormModal && React.createElement(ConfirmDeleteModal, { credential: null, isOpen: showFormModal, onClose: () => { setShowFormModal(false); setEditingCredential(null); }, onDelete: () => {} }, React.createElement(CredentialForm, { credential: editingCredential, onSave: editingCredential ? handleUpdateCredential : handleCreateCredential, onCancel: () => { setShowFormModal(false); setEditingCredential(null); } })),
+            showFormModal && React.createElement(ConfirmDeleteModal, { credential: null, isOpen: showFormModal, onClose: () => { setShowFormModal(false); setEditingCredential(null); }, onDelete: () => {} }, React.createElement(CredentialForm, { credential: editingCredential, onSave: editingCredential ? handleUpdateCredential : handleCreateCredential, onCancel: () => { setShowFormModal(false); setEditingCredential(null); }, apps: availableApps, currentUserIdentity: currentUserIdentity, availableRoles: availableRolesList, defaultReadRoles: DEFAULT_READ, defaultWriteRoles: DEFAULT_WRITE })),
             showPasswordModal && React.createElement(PasswordRevealModal, { credential: selectedCredential, onClose: () => { setShowPasswordModal(false); setSelectedCredential(null); } }),
             showDeleteModal && React.createElement(ConfirmDeleteModal, { credential: selectedCredential, isOpen: showDeleteModal, onClose: () => { setShowDeleteModal(false); setSelectedCredential(null); }, onDelete: handleDeleteCredential }),
             showImportModal && React.createElement(ImportCSVModal, { isOpen: showImportModal, onClose: () => setShowImportModal(false), onImport: async (csvContent) => { alert('CSV import not yet implemented'); } })
