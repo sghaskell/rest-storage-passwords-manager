@@ -29,6 +29,7 @@ The app enables users to:
 
 ### Current State
 - Version 2.1.1 is deployed and working; v3.0.0 React rewrite in progress
+- Phase 01.4 complete — CredentialForm upgraded to Splunk React UI components with sharing/ACL wiring
 - Phase 01.2.1 complete — API contract bugs fixed: buildAclPath helper, credential naming, password reveal, moveCredential exported
 - V3 bundle at `appserver/static/react/bundle.js` compiles with Webpack (tested during phase builds)
 
@@ -65,6 +66,14 @@ The app enables users to:
 
 - ✓ Webpack build tooling configured and working (verified via npm run build during gap fixes)
 
+### Validated in Phase 01.4-wave-2-ui-upgrades (Validated)
+
+- ✓ Component structure uses @splunk/react-ui primitives with ControlGroup wrapping
+- ✓ Sharing selector with global/app/user options wired through API layer
+- ✓ Two-step ACL pattern for user-scoped credentials matches legacy behavior
+- ✓ Bundle handlers pass sharing parameter to create/update/delete API calls
+- ✓ Password confirmation with native Splunk validation (ControlGroup.errorText)
+
 ### Out of Scope
 
 - Not changing the UI design (keep existing visual style)
@@ -100,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 after Phase 01.2.1 completion*
+*Last updated: 2026-04-28 after Phase 01.4-wave-2-ui-upgrades completion*
