@@ -246,7 +246,7 @@ async function createCredential(username, password, realm, app, owner, readRoles
 /**
  * Update an existing credential password, then set ACL permissions.
  */
-async function updateCredential(name, realm, password, readRoles, writeRoles, owner, app) {
+async function updateCredential(name, realm, password, readRoles, writeRoles, owner, app, sharing = 'app') {
     try {
         const encodedName = encodeURIComponent(name);
         const encodedRealm = encodeURIComponent(realm);
@@ -266,10 +266,23 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
         // Update ACL separately using buildAclPath
         const stanzaKey = `${realm}:${name}:`;
         const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
+
+        // Pre-set sharing=app for predictable splunkd URI behaviour (legacy L522-523)
         await splunkdRequest(aclPath, {
             method: 'PUT',
             body: {
                 sharing: 'app',
+                owner: owner || 'nobody',
+                perms_read: readRoles ? readRoles.join(',') : '',
+                perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
+            },
+        });
+
+        // Final ACL with actual sharing value
+        await splunkdRequest(aclPath, {
+            method: 'PUT',
+            body: {
+                sharing: sharing,
                 owner: owner || 'nobody',
                 perms_read: readRoles ? readRoles.join(',') : '',
                 perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
@@ -284,8 +297,23 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
 /**
  * Delete a credential
  */
-async function deleteCredential(name, realm) {
+async function deleteCredential(name, realm, app, sharing = 'app') {
     try {
+        // Pre-delete ACL bump for user-scoped credentials (legacy L572-576)
+        if (sharing === 'user') {
+            const stanzaKey = `${realm}:${name}:`;
+            const aclPath = buildAclPath(stanzaKey, 'nobody', app || 'search');
+            await splunkdRequest(aclPath, {
+                method: 'PUT',
+                body: {
+                    sharing: 'app',
+                    owner: 'nobody',
+                    perms_read: '*',
+                    perms_write: 'admin,power',
+                },
+            });
+        }
+
         const encodedName = encodeURIComponent(name);
         const encodedRealm = encodeURIComponent(realm);
         await apiRequest(`/${encodedRealm}:${encodedName}`, {

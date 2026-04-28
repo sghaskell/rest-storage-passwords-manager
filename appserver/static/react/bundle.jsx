@@ -106,7 +106,7 @@ const API = require('./api');
 
         async function handleCreateCredential(data) {
             try {
-                await API.createCredential(data.username, data.password, data.realm, data.app, data.owner, data.readRoles, data.writeRoles);
+                await API.createCredential(data.username, data.password, data.realm, data.app, data.owner, data.readRoles, data.writeRoles, data.sharing || 'app')
                 await loadCredentials();
                 setShowFormModal(false);
                 setEditingCredential(null);
@@ -125,7 +125,7 @@ const API = require('./api');
         async function handleUpdateCredential(data) {
             if (!editingCredential) return;
             try {
-                await API.updateCredential(editingCredential.name, editingCredential.realm, data.password, data.readRoles, data.writeRoles, data.owner, data.app);
+                await API.updateCredential(editingCredential.name, editingCredential.realm, data.password, data.readRoles, data.writeRoles, data.owner, data.app, data.sharing || 'app');
                 await loadCredentials();
                 setShowFormModal(false);
                 setEditingCredential(null);
@@ -139,7 +139,7 @@ const API = require('./api');
         async function handleDeleteCredential() {
             if (!selectedCredential) return;
             try {
-                await API.deleteCredential(selectedCredential.name, selectedCredential.realm);
+                await API.deleteCredential(selectedCredential.name, selectedCredential.realm, selectedCredential.app, selectedCredential.sharing || 'app');
                 await loadCredentials();
                 setShowDeleteModal(false);
                 setSelectedCredential(null);
