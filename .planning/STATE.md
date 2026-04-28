@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 01.2.1 inserted and awaiting plan
-last_updated: "2026-04-28T17:22:52.465Z"
+status: ready-to-execute
+stopped_at: Phase 01.4-wave-2-ui-upgrades plans created — awaiting execution
+last_updated: "2026-04-28T20:00:00.000Z"
 last_activity: 2026-04-28
 progress:
-  total_phases: 6
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 7
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 9
+  percent: 82
 ---
 
 # Project State
@@ -29,14 +29,14 @@ progress:
 
 ## Current Position
 
-Phase: 01.3 (api-integration) — EXECUTING
-Plan: 1 of 2
-**Phase:** 1.4 of 5 (advanced features)
-**Plan:** Not started
-**Status:** Ready to plan
+Phase: 01.4-wave-2-ui-upgrades (inserted — Gap Audit Wave 2) — PLANNED
+Plan: 0 of 2 executed
+**Previous phase:** Phase 1.3 (VERIFIED 10/10)
+**Next phase after this:** Phase 1.4 (Advanced Features)
+**Status:** Plans ready to execute via `/gsd-execute-phase 01.4-wave-2-ui-upgrades`
 **Last activity:** 2026-04-28
 
-**Progress:** [███████████████████] 40%
+**Progress:** [██████████████████░░] 82%
 
 ## Project History
 
@@ -49,22 +49,24 @@ Plan: 1 of 2
 | 2026-04-20 | Phase 1.2 complete | Core components implemented and build verified |
 | 2026-04-28 | Gap audit completed | GAP-AUDIT.md — 27 issues identified across 5 source files |
 | 2026-04-28 | Phase 01.2.1 inserted | Wave 1 Critical Gap Fixes (INSERTED) between 1.2 and 1.3 |
+| 2026-04-28 | Phase 01.2.1 complete | 2/2 plans executed — ACL path, credential naming, app move, password API fixes |
+| 2026-04-28 | Phase 1.3 verified | 10/10 verification pass — all props wired, getApps/getUsers/getRoles working |
+| 2026-04-28 | Gap audit Wave 2 | GAP-AUTOMATED.md — form dropdowns, sharing, password confirmation gaps identified |
+| 2026-04-28 | Phase 01.4-wave-2 planned | 2 plans created: form UI upgrades (01) + API sharing/wiring (02) |
 
 ## Next Actions
 
-**PREFERRED PATH (Option C — Hybrid):**
-
-1. ~~Insert Phase 1.2.5: Critical Gap Fixes~~ ✅ DONE → Inserted as Phase 01.2.1 between 1.2 and 1.3
-2. **Phase 01.2.1: Wave 1 Critical Gap Fixes** — Plan and execute Wave 1 items (ACL path, name format, app move, password API)
-    - Subagents can execute in parallel: GAP-C01, C06, C07, C09 are independent; C08 depends on C01
-3. **Phase 1.3: API Integration** — Proceed with Wave 2 fixes rolled into existing plan
-   - Form validation (V01–V04), field dropdowns (V18–V20), key fix (U04)
-3. **Phase 1.4: Advanced Features** — Wave 3 items fit naturally
+1. ~~Phase 01.2.1: Wave 1 Critical Gap Fixes~~ ✅ COMPLETE — ACL path, name format, app move, password reveal, modal wiring
+2. ~~Phase 1.3: API Integration~~ ✅ VERIFIED 10/10 — getCredentials, getApps, getUsers, getRoles, CRUD operations
+3. **Phase 01.4-wave-2-ui-upgrades: Wave 2 UI Gap Fixes** — Execute plans (form dropdowns, sharing, password confirmation)
+   - Plan 01: Form UI upgrades (V18/V19/V20/C04/V01/V02) — wave 1, autonomous
+   - Plan 02: API sharing + bundle wiring (C05/C04) — wave 2, depends on Plan 01
+4. **Phase 1.4: Advanced Features** — Wave 3 items fit naturally
    - CSV import (F03/F04), bulk delete (F02), error handling (E01–E03)
 
 ## Blockers & Risks
 
-- **Wave 1 gaps are blocking:** ACL path mismatch (GAP-C01/C08) will cause 404 on every credential update. Name double-namespacing (GAP-C06) may corrupt created credentials. These must resolve before any Splunk deployment or testing.
+- **No active blockers** — Wave 1 gaps (GAP-C01/C06/C07/C08/C09) resolved in Phase 01.2.1
 - See `.planning/GAP-AUDIT.md` for full dependency graph and execution plan
 
 ## Recent Decisions
@@ -86,9 +88,8 @@ Plan: 1 of 2
 ## Session Continuity
 
 **Last session:** 2026-04-28
-**Stopped at:** Phase 01.2.1 inserted and awaiting plan
-**Resume file:** GAP-AUDIT.md (structured for orchestrator agent consumption)
-**Recommendation:** Plan Phase 01.2.1 via `/gsd-plan-phase 01.2.1`, using GAP-AUDIT.md Wave 1 items as source
+**Stopped at:** Phase 01.4-wave-2-ui-upgrades plans created — awaiting execution
+**Resume via:** `/gsd-execute-phase 01.4-wave-2-ui-upgrades`
 
 ## Recent Fixes
 
