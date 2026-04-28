@@ -6,12 +6,6 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'appserver/static/react'),
     filename: 'bundle.js',
-    library: {
-      name: 'CredentialManager',
-      type: 'umd',
-      export: 'default',
-    },
-    globalObject: 'this',
   },
   module: {
     rules: [
@@ -34,7 +28,6 @@ module.exports = {
     extensions: ['.js', '.jsx'],
   },
   externals: {
-    // splunkjs/mvc is provided by Splunk at runtime
     'splunkjs/mvc/simplexml/ready!': 'splunkjs/mvc/simplexml/ready!',
   },
   plugins: [],

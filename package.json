@@ -8,7 +8,8 @@
     "build:watch": "webpack --mode development --watch",
     "build:dev": "webpack --mode development",
     "package": "find appserver static default -type f | tar -czf rest-storage-passwords-manager.spl -T -",
-    "install": "curl -k -u admin:password -F file=@rest-storage-passwords-manager.spl https://localhost:8089/services/apps/local/"
+    "test": "npx playwright test",
+    "install": "./bin/install-spl.sh"
   },
   "keywords": [
     "splunk",
@@ -21,8 +22,10 @@
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.2",
     "@babel/preset-react": "^7.28.5",
+    "@playwright/test": "^1.59.1",
     "@splunk/react-ui": "^5.9.1",
     "babel-loader": "^10.1.1",
+    "dotenv": "^17.4.2",
     "html-webpack-plugin": "^5.6.7",
     "webpack": "^5.106.2",
     "webpack-cli": "^7.0.2",

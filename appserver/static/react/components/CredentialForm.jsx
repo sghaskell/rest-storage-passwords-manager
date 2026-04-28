@@ -32,11 +32,9 @@ function CredentialForm({ credential = null, onSave, onCancel }) {
             setApp(credential.app || 'search');
             setOwner(credential.owner || 'nobody');
 
-            // Parse roles from ACL
-            if (credential.acl) {
-                setReadRoles((credential.acl.read || []).join(', '));
-                setWriteRoles((credential.acl.write || []).join(', '));
-            }
+            // Flattened credential has aclRead/aclWrite as comma-separated strings
+            setReadRoles(credential.aclRead || '');
+            setWriteRoles(credential.aclWrite || '');
         } else {
             // Reset form for new credential
             setUsername('');
