@@ -16,6 +16,7 @@
     "ui_safety_gate": true,
     "ai_integration_phase": true,
     "pattern_mapper": true,
-    "auto_advance": true
+    "auto_advance": true,
+    "_auto_chain_active": false
   }
 }
