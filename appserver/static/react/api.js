@@ -113,6 +113,22 @@ function flattenCredential(entry) {
 }
 
 /**
+ * Build ACL path for a credential using Splunk's storage/passwords convention.
+ * Uses "credential:" prefix with URL-encoded stanza key to match Splunk REST API.
+ *
+ * @param {string} stanzaKey - The credential stanza (e.g., "prod:api-user:")
+ * @param {string} owner     - Owner (defaults to "nobody")
+ * @param {string} app       - App context (defaults to "search")
+ * @returns {string} Full ACL path ready for splunkd/__raw requests
+ */
+function buildAclPath(stanzaKey, owner, app) {
+    const credId = encodeURIComponent(`credential:${stanzaKey}`);
+    const safeOwner = encodeURIComponent(owner || 'nobody');
+    const safeApp = encodeURIComponent(app || 'search');
+    return `/servicesNS/${safeOwner}/${safeApp}/configs/conf-passwords/${credId}/acl`;
+}
+
+/**
  * Get all credentials
  */
 async function getAllCredentials() {
@@ -159,11 +175,11 @@ async function createCredential(username, password, realm, app, owner, readRoles
             },
         });
 
-        const editLink = (created.entry && created.entry.length > 0 && created.entry[0].links && created.entry[0].links.edit) || null;
-
-        // Step 2: Set ACL permissions
-        if (editLink) {
-            await splunkdRequest(`${editLink}/acl`, {
+        // Step 2: Set ACL permissions using buildAclPath
+        const stanzaKey = (created.entry && created.entry.length > 0) ? created.entry[0].name : '';
+        if (stanzaKey) {
+            const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
+            await splunkdRequest(aclPath, {
                 method: 'PUT',
                 body: {
                     sharing: 'app',
@@ -201,8 +217,9 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
             body: body,
         });
 
-        // Update ACL separately
-        const aclPath = `/servicesNS/nobody/${app || 'search'}/configs/conf-passwords/${encodedRealm}%3A${encodedName}/acl`;
+        // Update ACL separately using buildAclPath
+        const stanzaKey = `${realm}:${name}:`;
+        const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
         await splunkdRequest(aclPath, {
             method: 'PUT',
             body: {
@@ -252,6 +269,7 @@ async function getCredentialACL(name, realm) {
 
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
+    buildAclPath,
     getAllCredentials,
     getCredential,
     createCredential,
