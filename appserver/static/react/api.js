@@ -8,6 +8,31 @@
 const API_ENDPOINT = '/en-US/splunkd/__raw/servicesNS/-/-/storage/passwords';
 
 /**
+ * Parse Splunk XML error responses to extract human-readable messages.
+ * Strips HTML entities and extracts content between <msg> tags.
+ */
+function parseError(errorText) {
+    if (!errorText || typeof errorText !== 'string') return '';
+    const match = errorText.match(/<msg[^>]*>([\s\S]*?)<\/msg>/i);
+    // Extract message text from XML <msg> tag
+    let extracted = (match && match[1])
+        ? match[1].trim()
+        : null;
+
+    if (extracted) {
+        // Strip common HTML entities
+        return extracted
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+    }
+
+    return errorText.trim();
+}
+
+/**
  * Extract Splunk CSRF token from cookies
  */
 function getCSRFToken() {
@@ -49,7 +74,10 @@ async function apiRequest(endpoint, options = {}) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
+        const parsedMsg = parseError(errorText);
+        const error = new Error(parsedMsg || `API Error ${response.status}`);
+        error.status = response.status; // Preserve for createCredential conflict detection
+        throw error;
     }
 
     return response.json().catch(() => ({}));
@@ -86,7 +114,10 @@ async function splunkdRequest(path, options = {}) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
+        const parsedMsg = parseError(errorText);
+        const error = new Error(parsedMsg || `API Error ${response.status}`);
+        error.status = response.status; // Preserve for createCredential conflict detection
+        throw error;
     }
 
     return response.json().catch(() => ({}));
@@ -304,6 +335,7 @@ async function moveCredential(name, realm, newApp) {
 
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
+    parseError,
     buildAclPath,
     getAllCredentials,
     getCredential,
