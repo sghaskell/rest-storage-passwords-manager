@@ -65,6 +65,19 @@ Plans:
 
 ---
 
+### Phase 01.4-wave-2-ui-upgrades (INSERTED — Gap Audit Wave 2)
+
+**Goal:** Replace form free-text fields with validated dropdowns and multi-select controls, add sharing selector, password confirmation, and wire full two-step ACL pattern through API layer for complete CRUD sharing parity.
+**Requirements**: GAP-V18, GAP-V19, GAP-V20, GAP-C04, GAP-C05, GAP-V01, GAP-V02
+**Depends on:** Phase 1.3 (VERIFIED)
+**Plans:** 0/2 plans complete
+
+Plans:
+- [ ] 01.4-01-PLAN.md — Form UI upgrades: dropdowns, multi-select roles, sharing selector, password confirmation
+- [ ] 01.4-02-PLAN.md — API sharing parameter + two-step ACL pattern + bundle.jsx handler wiring
+
+---
+
 ### Phase 1.4: Advanced Features
 **Goal:** Implement bulk import and other advanced features.
 
@@ -101,7 +114,9 @@ Plans:
 |-------|--------|-------|------------|
 | 1.1 | ✅ Complete | 3 | - |
 | 1.2 | ✅ Complete | 4 | 1.1 |
-| 1.3 | Planned | 5 | 1.2 |
+| 01.2.1 | ✅ Complete | 2 | 1.2 |
+| 1.3 | Verified | 5 | 1.2 |
+| 01.4-wave-2 | Planned | 2 | 1.3 |
 | 1.4 | Planned | 4 | 1.2, 1.3 |
 | 1.5 | Planned | 4 | 1.1, 1.2, 1.3, 1.4 |
-| **Total** | **2/20** | | |
+| **Total** | **8/24** | | |
