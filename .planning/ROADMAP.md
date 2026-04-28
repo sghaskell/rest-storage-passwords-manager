@@ -96,13 +96,14 @@ Plans:
 ### Phase 1.5: Build & Deployment
 **Goal:** Build and deploy the React application, verify compatibility.
 
-**Plans:**
-- 1.5.1: Production build verification
-- 1.5.2: Splunk Cloud compatibility verification
-- 1.5.3: AppInspect validation
-- 1.5.4: Documentation update
+**Requirements:** D-01 through D-10 (CONTEXT.md decisions)
 
-**Depends on:** 1.1, 1.2, 1.3, 1.4  
+**Plans:**
+- 01.5-01: Webpack hardening (Terser minification, conditional sourcemaps, React/ReactDOM externals)
+- 01.5-02: Playwright CRUD tests (Docker target config, credential listing/create/update/delete + error scenarios)
+- 01.5-03: Build verification + packaging (production build check, bundle size validation, legacy file co-existence, .spl package)
+
+**Depends on:** 1.1, 1.2, 1.3, 1.4
 
 **Status:** Planned
 
@@ -118,5 +119,5 @@ Plans:
 | 1.3 | Verified | 5 | 1.2 |
 | 01.4-wave-2 | Planned | 2 | 1.3 |
 | 1.4 | Planned | 4 | 1.2, 1.3 |
-| 1.5 | Planned | 4 | 1.1, 1.2, 1.3, 1.4 |
+| 01.5 | Planned | 3 | 1.1, 1.2, 1.3, 1.4 |
 | **Total** | **8/24** | | |
