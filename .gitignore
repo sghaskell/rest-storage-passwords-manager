@@ -34,6 +34,9 @@ yarn-error.log*
 # Coverage
 coverage/
 
+# Generated package artifacts
+*.spl
+
 # Temporary files
 tmp/
 temp/
