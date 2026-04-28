@@ -70,11 +70,11 @@ Plans:
 **Goal:** Replace form free-text fields with validated dropdowns and multi-select controls, add sharing selector, password confirmation, and wire full two-step ACL pattern through API layer for complete CRUD sharing parity.
 **Requirements**: GAP-V18, GAP-V19, GAP-V20, GAP-C04, GAP-C05, GAP-V01, GAP-V02
 **Depends on:** Phase 1.3 (VERIFIED)
-**Plans:** 0/2 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 01.4-01-PLAN.md — Form UI upgrades: dropdowns, multi-select roles, sharing selector, password confirmation
-- [ ] 01.4-02-PLAN.md — API sharing parameter + two-step ACL pattern + bundle.jsx handler wiring
+- [x] 01.4-01-PLAN.md — Form UI upgrades: dropdowns, multi-select roles, sharing selector, password confirmation
+- [x] 01.4-02-PLAN.md — API sharing parameter + two-step ACL pattern + bundle.jsx handler wiring
 
 ---
 
