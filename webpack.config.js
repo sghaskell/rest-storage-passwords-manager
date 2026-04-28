@@ -32,6 +32,8 @@ module.exports = (env, argv) => {
       extensions: ['.js', '.jsx'],
     },
     externals: {
+      'react': 'React',
+      'react-dom': 'ReactDOM',
       'splunkjs/mvc/simplexml/ready!': 'splunkjs/mvc/simplexml/ready!',
     },
     plugins: [
