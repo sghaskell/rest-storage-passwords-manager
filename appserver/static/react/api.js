@@ -167,7 +167,7 @@ async function createCredential(username, password, realm, app, owner, readRoles
         const created = await splunkdRequest(createUri, {
             method: 'POST',
             body: {
-                name: realm ? `${realm}:${username}` : username,
+                name: username,
                 password: password,
                 realm: realm || '',
                 owner: owner || 'nobody',
