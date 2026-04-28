@@ -43,6 +43,18 @@ const API = require('./api');
         // Form state
         const [editingCredential, setEditingCredential] = React.useState(null);
 
+        // Error helper — strips XML tags from Splunk responses for readable messages
+        function getErrorMessage(err) {
+            if (err.message && /&lt;msg/i.test(err.message)) {
+                return API.parseError ? API.parseError(err.message) : err.message;
+            }
+            return err.message || 'An unexpected error occurred';
+        }
+
+        // Default role constants from API — prevents empty ACL stripping access (GAP-V03/V04)
+        const DEFAULT_READ = API.DEFAULT_READ_ROLES ? API.DEFAULT_READ_ROLES.join(', ') : 'admin, power';
+        const DEFAULT_WRITE = API.DEFAULT_WRITE_ROLES ? API.DEFAULT_WRITE_ROLES.join(', ') : 'admin, power';
+
         // Load credentials on mount
         React.useEffect(() => {
             loadCredentials();
@@ -56,7 +68,7 @@ const API = require('./api');
                 setCredentials(data);
             } catch (err) {
                 console.error('Error loading credentials:', err);
-                setError(err.message || 'Failed to load credentials');
+                setError(getErrorMessage(err));
             } finally {
                 setLoading(false);
             }
@@ -68,10 +80,15 @@ const API = require('./api');
                 await loadCredentials();
                 setShowFormModal(false);
                 setEditingCredential(null);
-                alert('Credential created successfully!');
+                alert('Credential "' + data.username + '" created successfully!');
             } catch (err) {
                 console.error('Error creating credential:', err);
-                alert('Failed to create credential: ' + (err.message || 'Unknown error'));
+                const result = API.parseCreateError ? API.parseCreateError(err) : null;
+                if (result && result.isDuplicate) {
+                    alert(result.message); // Already contains human-friendly duplicate message
+                } else {
+                    alert('Failed to create credential: ' + getErrorMessage(err));
+                }
             }
         }
 
@@ -82,10 +99,10 @@ const API = require('./api');
                 await loadCredentials();
                 setShowFormModal(false);
                 setEditingCredential(null);
-                alert('Credential updated successfully!');
+                alert('Credential "' + editingCredential.name + '" updated successfully!');
             } catch (err) {
                 console.error('Error updating credential:', err);
-                alert('Failed to update credential: ' + (err.message || 'Unknown error'));
+                alert('Failed to update credential: ' + getErrorMessage(err));
             }
         }
 
@@ -96,10 +113,10 @@ const API = require('./api');
                 await loadCredentials();
                 setShowDeleteModal(false);
                 setSelectedCredential(null);
-                alert('Credential deleted successfully!');
+               alert('Credential "' + selectedCredential.name + '" deleted successfully!');
             } catch (err) {
                 console.error('Error deleting credential:', err);
-                alert('Failed to delete credential: ' + (err.message || 'Unknown error'));
+                alert('Failed to delete credential: ' + getErrorMessage(err));
             }
         }
 
