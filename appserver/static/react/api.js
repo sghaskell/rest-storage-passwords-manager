@@ -333,6 +333,56 @@ async function moveCredential(name, realm, newApp) {
     );
 }
 
+/**
+ * Fetch available apps from Splunk /apps/local endpoint.
+ * Returns array of { name } objects for app dropdown.
+ * Gracefully returns empty array on failure.
+ */
+async function getApps() {
+    try {
+        const data = await splunkdRequest('/servicesNS/-/-/apps/local', { method: 'GET' });
+        return (data.entry || []).map(e => ({ name: e.name }));
+    } catch (err) {
+        console.warn('Failed to fetch apps:', err.message);
+        return [];
+    }
+}
+
+/**
+ * Fetch current authenticated user from /authentication/current-context endpoint.
+ * Returns { username, fullName, email } object. Defaults to { username: 'nobody' } on failure.
+ */
+async function getUsers() {
+    try {
+        const data = await splunkdRequest('/servicesNS/nobody/system/authentication/current-context', { method: 'GET' });
+        const entry = (data.entry || [])[0];
+        if (!entry) return { username: 'nobody' };
+        return {
+            username: entry.content?.name || entry.name || 'nobody',
+            fullName: entry.content?.fullName || '',
+            email: entry.content?.email || '',
+        };
+    } catch (err) {
+        console.warn('Failed to fetch current user:', err.message);
+        return { username: 'nobody' };
+    }
+}
+
+/**
+ * Fetch available roles from /authorization/roles endpoint.
+ * Returns array of role name strings for role dropdowns.
+ * Gracefully returns empty array on failure.
+ */
+async function getRoles() {
+    try {
+        const data = await splunkdRequest('/servicesNS/-/-/authorization/roles', { method: 'GET' });
+        return (data.entry || []).map(e => e.name);
+    } catch (err) {
+        console.warn('Failed to fetch roles:', err.message);
+        return [];
+    }
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -345,4 +395,9 @@ module.exports = {
     getCredentialACL,
     getCredentialPassword,
     moveCredential,
+    getApps,
+    getUsers,
+    getApps,
+    getUsers,
+    getRoles,
 };
