@@ -383,9 +383,30 @@ async function getRoles() {
     }
 }
 
+/**
+ * Parse create error to detect duplicate credential conflicts.
+ * Returns { isDuplicate, conflictName, message } for user-friendly feedback.
+ */
+function parseCreateError(error) {
+    const isDuplicate = error.status === 409 ||
+        (error.message && /already exists/i.test(error.message));
+    return {
+        isDuplicate,
+        conflictName: null,
+        message: isDuplicate
+            ? 'A credential with this name already exists. Use the Edit button on the existing row to update it.'
+            : (error.message || 'Failed to create credential'),
+    };
+}
+
+// Default role constants for form defaults — prevents empty ACL stripping access (GAP-V03/V04)
+const DEFAULT_READ_ROLES = ['admin', 'power'];
+const DEFAULT_WRITE_ROLES = ['admin', 'power'];
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
+    parseCreateError,
     buildAclPath,
     getAllCredentials,
     getCredential,
@@ -397,7 +418,7 @@ module.exports = {
     moveCredential,
     getApps,
     getUsers,
-    getApps,
-    getUsers,
     getRoles,
+    DEFAULT_READ_ROLES,
+    DEFAULT_WRITE_ROLES,
 };
