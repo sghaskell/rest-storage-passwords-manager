@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v3.0.0
+milestone_name: milestone
+status: planning
+stopped_at: Phase 01.2.1 inserted and awaiting plan
+last_updated: "2026-04-28T15:48:48.357Z"
+last_activity: 2026-04-28
+progress:
+  total_phases: 6
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 100
+---
+
 # Project State
 
 ## Summary
@@ -9,14 +25,16 @@
 | **Type** | Splunk Custom App (React) |
 | **Status** | Phase 1.2 complete - Core Components implemented |
 | **Milestone** | 1 - React Dashboard Rewrite |
-| **Phases** | 5 (2 completed, 3 planned) |
+| **Phases** | 6 (2 completed, 1 inserted, 3 planned) |
 
 ## Current Position
 
-**Phase:** 1.2 of 5 (Core Components)
-**Plan:** Complete
-**Status:** Phase complete - Build verified working
-**Last activity:** 2026-04-20 - Phase 1.2 complete
+Phase: 01.2.1 (wave-1-critical-gap-fixes) — EXECUTING
+Plan: 1 of 2
+**Phase:** 1.3 of 5 (api integration)
+**Plan:** Not started
+**Status:** Ready to plan
+**Last activity:** 2026-04-28
 
 **Progress:** [███████████████████] 40%
 
@@ -29,21 +47,25 @@
 | 2026-04-20 | Roadmap created | ROADMAP.md |
 | 2026-04-20 | Phase 1.1 complete | Build working, bundle.js generated |
 | 2026-04-20 | Phase 1.2 complete | Core components implemented and build verified |
+| 2026-04-28 | Gap audit completed | GAP-AUDIT.md — 27 issues identified across 5 source files |
+| 2026-04-28 | Phase 01.2.1 inserted | Wave 1 Critical Gap Fixes (INSERTED) between 1.2 and 1.3 |
 
 ## Next Actions
 
-1. **Phase 1.3: API Integration** - Implement REST API calls
-   - Fetch credentials from Splunk storage/passwords endpoint
-   - Implement CRUD operations
-   - Handle ACL controls
+**PREFERRED PATH (Option C — Hybrid):**
 
-2. **Verify Phase 1.2** - Validate component architecture
-   - Test component structure in Splunk dashboard
-   - Verify bundling works correctly
+1. ~~Insert Phase 1.2.5: Critical Gap Fixes~~ ✅ DONE → Inserted as Phase 01.2.1 between 1.2 and 1.3
+2. **Phase 01.2.1: Wave 1 Critical Gap Fixes** — Plan and execute Wave 1 items (ACL path, name format, app move, password API)
+    - Subagents can execute in parallel: GAP-C01, C06, C07, C09 are independent; C08 depends on C01
+3. **Phase 1.3: API Integration** — Proceed with Wave 2 fixes rolled into existing plan
+   - Form validation (V01–V04), field dropdowns (V18–V20), key fix (U04)
+3. **Phase 1.4: Advanced Features** — Wave 3 items fit naturally
+   - CSV import (F03/F04), bulk delete (F02), error handling (E01–E03)
 
 ## Blockers & Risks
 
-- None currently identified
+- **Wave 1 gaps are blocking:** ACL path mismatch (GAP-C01/C08) will cause 404 on every credential update. Name double-namespacing (GAP-C06) may corrupt created credentials. These must resolve before any Splunk deployment or testing.
+- See `.planning/GAP-AUDIT.md` for full dependency graph and execution plan
 
 ## Recent Decisions
 
@@ -63,9 +85,10 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-20
-**Stopped at:** Phase 1.2 (Core Components) - Build verified
-**Resume file:** None
+**Last session:** 2026-04-28
+**Stopped at:** Phase 01.2.1 inserted and awaiting plan
+**Resume file:** GAP-AUDIT.md (structured for orchestrator agent consumption)
+**Recommendation:** Plan Phase 01.2.1 via `/gsd-plan-phase 01.2.1`, using GAP-AUDIT.md Wave 1 items as source
 
 ## Recent Fixes
 
@@ -76,6 +99,12 @@
 | 2026-04-20 | Added debug logging | Added console.log statements to trace initialization |
 | 2026-04-20 | Phase 1.2 complete | Implemented Core Components: CredentialManager, CredentialTable, CredentialForm, Modal |
 | 2026-04-20 | API service created | api.js with CRUD operations for Splunk storage/passwords endpoint |
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 01.2.1 inserted after Phase 1.2: Wave 1 Critical Gap Fixes (URGENT) — addresses GAP-C01/C06/C07/C08/C09 blocking bugs from GAP-AUDIT.md
 
 ## Files
 
@@ -92,6 +121,7 @@
 | appserver/static/react/components/CredentialTable.jsx | Credentials table with pagination and filtering |
 | appserver/static/react/components/CredentialForm.jsx | Form for creating and updating credentials |
 | appserver/static/react/bundle.jsx | Main React application entry point |
+| GAP-AUDIT.md | Legacy-to-React gap audit — 27 issues with dependency graph and execution plan |
 
 ---
-*Last updated: 2026-04-20*
+*Last updated: 2026-04-28 (Phase 01.2.1 inserted)*
