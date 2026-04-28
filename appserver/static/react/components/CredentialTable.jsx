@@ -249,7 +249,7 @@ function CredentialTable({
                     ? paginatedCredentials.map((cred) =>
                           React.createElement(
                               'tr',
-                              { key: cred.name || cred.id, style: { borderBottom: '1px solid #e0e0e0' } },
+                              { key: cred.stanzaKey, style: { borderBottom: '1px solid #e0e0e0' } },
                               React.createElement(
                                   'td',
                                   { style: { padding: '0.75rem' } },
