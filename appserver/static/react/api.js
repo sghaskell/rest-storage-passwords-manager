@@ -191,7 +191,7 @@ async function getCredential(name, realm) {
  * Create a new credential, then set its ACL permissions.
  * Splunk requires two separate calls: POST to create, PUT /acl for permissions.
  */
-async function createCredential(username, password, realm, app, owner, readRoles, writeRoles) {
+async function createCredential(username, password, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
     try {
         // Step 1: Create credential
         const createUri = `/servicesNS/nobody/${app || 'search'}/storage/passwords`;
@@ -210,10 +210,25 @@ async function createCredential(username, password, realm, app, owner, readRoles
         const stanzaKey = (created.entry && created.entry.length > 0) ? created.entry[0].name : '';
         if (stanzaKey) {
             const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
+
+            // Two-step ACL write required by splunkd when sharing='user'
+            if (sharing === 'user') {
+                await splunkdRequest(aclPath, {
+                    method: 'PUT',
+                    body: {
+                        sharing: 'app',
+                        owner: owner || 'nobody',
+                        perms_read: readRoles ? readRoles.join(',') : '',
+                        perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
+                    },
+                });
+            }
+
+            // Final ACL with actual sharing value
             await splunkdRequest(aclPath, {
                 method: 'PUT',
                 body: {
-                    sharing: 'app',
+                    sharing: sharing,
                     owner: owner || 'nobody',
                     perms_read: readRoles ? readRoles.join(',') : '',
                     perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
