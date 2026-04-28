@@ -5,6 +5,7 @@
  */
 
 const React = require('react');
+const { getCredentialPassword } = require('../api');
 
 /**
  * PasswordRevealModal - Modal to securely display clear-text passwords
@@ -15,15 +16,13 @@ function PasswordRevealModal({ credential, onClose, children }) {
 
     React.useEffect(() => {
         if (credential) {
-            // Fetch the actual password from the API
-            // The password is stored encrypted and needs to be retrieved
             const fetchPassword = async () => {
                 try {
-                    // Note: This requires a separate API endpoint or method
-                    // For now, we'll show a placeholder
-                    setPassword('********');
+                    const clearPassword = await getCredentialPassword(credential.name, credential.realm);
+                    setPassword(clearPassword || '(unable to retrieve)');
                 } catch (error) {
                     console.error('Error fetching password:', error);
+                    setPassword('(error retrieving password)');
                 } finally {
                     setLoading(false);
                 }

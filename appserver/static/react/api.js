@@ -267,6 +267,41 @@ async function getCredentialACL(name, realm) {
     }
 }
 
+/**
+ * Get the clear-text password for a credential.
+ * Fetches the credential via storage/passwords and extracts clear_password from response.
+ */
+async function getCredentialPassword(name, realm) {
+    const encodedName = encodeURIComponent(name);
+    const encodedRealm = encodeURIComponent(realm);
+    const data = await apiRequest(`/${encodedRealm}:${encodedName}`);
+    return (data.entry && data.entry[0] && data.entry[0].content)
+        ? data.entry[0].content.clear_password || null
+        : null;
+}
+
+/**
+ * Move a credential to a different app.
+ * POSTs to the /move endpoint on the conf-passwords resource.
+ */
+async function moveCredential(name, realm, newApp) {
+    const encodedName = encodeURIComponent(name);
+    const encodedRealm = encodeURIComponent(realm);
+    const stanzaKey = `${encodedRealm}:${encodedName}:`;
+    const credId = encodeURIComponent(`credential:${stanzaKey}`);
+
+    await splunkdRequest(
+        `/servicesNS/nobody/${encodeURIComponent(newApp)}/configs/conf-passwords/${credId}/move`,
+        {
+            method: 'POST',
+            body: {
+                app: newApp,
+                user: 'nobody',
+            },
+        }
+    );
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     buildAclPath,
@@ -276,4 +311,6 @@ module.exports = {
     updateCredential,
     deleteCredential,
     getCredentialACL,
+    getCredentialPassword,
+    moveCredential,
 };
