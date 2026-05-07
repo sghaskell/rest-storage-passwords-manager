@@ -1,24 +1,43 @@
 /**
- * Modal.jsx - Modal component for password reveal and imports
- *
- * Provides a reusable modal dialog component using plain React
+ * Modal.jsx - Modal components for password reveal, CSV import, and confirm dialogs
  */
 
 const React = require('react');
-const { getCredentialPassword } = require('../api');
+const SplunkModalMod = require('@splunk/react-ui/Modal');
+var SplunkModal = SplunkModalMod.default;
+SplunkModalMod.Header && (SplunkModal.Header = SplunkModalMod.Header);
+SplunkModalMod.Body && (SplunkModal.Body = SplunkModalMod.Body);
+SplunkModalMod.Footer && (SplunkModal.Footer = SplunkModalMod.Footer);
+const ButtonMod = require('@splunk/react-ui/Button');
+var Button = ButtonMod.default;
 
 /**
  * PasswordRevealModal - Modal to securely display clear-text passwords
  */
-function PasswordRevealModal({ credential, onClose, children }) {
+function PasswordRevealModal({ credential, onClose }) {
     const [password, setPassword] = React.useState('');
     const [loading, setLoading] = React.useState(true);
 
-    React.useEffect(() => {
+    var prevRef = React.useRef(null);
+    React.useEffect(function() {
+        prevRef.current = document.activeElement;
+    }, [credential]);
+
+    function handleReturnFocus() {
+        if (prevRef.current && typeof prevRef.current.focus === 'function') {
+            prevRef.current.focus();
+        }
+    }
+
+    React.useEffect(function() {
         if (credential) {
-            const fetchPassword = async () => {
+            async function fetchPassword() {
                 try {
-                    const clearPassword = await getCredentialPassword(credential.name, credential.realm);
+                    const { getCredentialPassword } = require('../api');
+                    const clearPassword = await getCredentialPassword(
+                        credential.name, credential.realm,
+                        credential.app || 'search', credential.owner || 'nobody', credential.sharing || 'app'
+                    );
                     setPassword(clearPassword || '(unable to retrieve)');
                 } catch (error) {
                     console.error('Error fetching password:', error);
@@ -26,122 +45,74 @@ function PasswordRevealModal({ credential, onClose, children }) {
                 } finally {
                     setLoading(false);
                 }
-            };
+            }
             fetchPassword();
         }
     }, [credential]);
 
     if (!credential) return null;
 
-    return React.createElement(
-        'div',
-        {
-            style: {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1000,
-            },
-        },
-        React.createElement(
-            'div',
-            {
-                style: {
-                    backgroundColor: '#fff',
-                    borderRadius: '4px',
-                    width: '400px',
-                    maxWidth: '90%',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.33)',
-                },
-            },
-            React.createElement(
-                'div',
-                {
-                    style: {
-                        padding: '1rem 1.5rem',
-                        borderBottom: '1px solid #e0e0e0',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                    },
-                },
-                React.createElement('h3', { style: { margin: 0 } }, `Password for ${credential.name}`),
-                React.createElement(
-                    'button',
-                    {
-                        onClick: onClose,
-                        style: {
-                            background: 'none',
-                            border: 'none',
-                            fontSize: '1.5rem',
-                            cursor: 'pointer',
-                            color: '#666',
-                        },
-                    },
-                    '×'
+    return React.createElement(SplunkModal, {
+        open: true,
+        onRequestClose: function() { onClose && onClose(); },
+        returnFocus: handleReturnFocus,
+        divider: 'both',
+        style: { width: '500px', maxWidth: '90%' }
+    },
+        React.createElement('div', null,
+            React.createElement(SplunkModal.Header, null,
+                React.createElement('h3', { style: { margin: 0 } }, `Password for ${credential.name}`)
+            ),
+            React.createElement(SplunkModal.Body, null,
+                loading ? React.createElement('p', null, 'Loading...') : React.createElement(
+                    'div', { style: { marginBottom: '1rem' } },
+                    React.createElement('label', { style: { display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' } }, 'Password'),
+                    React.createElement('input', {
+                        type: 'password', value: password, readOnly: true,
+                        style: { width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontFamily: 'monospace' },
+                    })
                 )
             ),
-            React.createElement(
-                'div',
-                { style: { padding: '1.5rem' } },
-                // If children provided (for form), render them
-                children
-                    ? children
-                    : React.createElement('div', { style: { marginBottom: '1rem' } },
-                          React.createElement('label', { style: { display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' } }, 'Password'),
-                          React.createElement('input', {
-                              type: 'password',
-                              value: password,
-                              readOnly: true,
-                              style: {
-                                  width: '100%',
-                                  padding: '0.5rem',
-                                  border: '1px solid #ccc',
-                                  borderRadius: '4px',
-                                  fontFamily: 'monospace',
-                              },
-                          })
-                      ),
-                !children &&
-                    React.createElement(
-                        'div',
-                        { style: { display: 'flex', justifyContent: 'flex-end' } },
-                        React.createElement(
-                            'button',
-                            {
-                                onClick: onClose,
-                                style: {
-                                    padding: '0.5rem 1rem',
-                                    backgroundColor: '#f0f0f0',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                },
-                            },
-                            'Close'
-                        )
-                    )
+            React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
+                React.createElement(Button, { onClick: onClose, children: 'Close' })
             )
         )
     );
 }
 
+
 /**
- * ImportCSVModal - Modal for CSV import with drag/drop
+ * ImportCSVModal - Modal for CSV import with drag/drop + preview confirmation step.
+ * Two-step flow matching JS (password-crud.js L956-1071):
+ *   1) File selected → parse → show parsed table with per-row errors
+ *   2) User confirms Import or cancels before any API calls
  */
 function ImportCSVModal({ isOpen, onClose, onImport }) {
     const [dragActive, setDragActive] = React.useState(false);
     const [file, setFile] = React.useState(null);
-    const [preview, setPreview] = React.useState('');
     const [loading, setLoading] = React.useState(false);
+    const [fileError, setFileError] = React.useState('');
+    const fileInputRef = React.useRef(null);
 
-    const handleDrag = (e) => {
+    // Preview phase state
+    const [phase, setPhase] = React.useState('select'); // 'select' | 'preview'
+    const [parsedRows, setParsedRows] = React.useState([]);
+    const [parseErrors, setParseErrors] = React.useState([]);
+
+    const MAX_CSV_SIZE = 512 * 1024;
+
+    var prevRef = React.useRef(null);
+    React.useEffect(function() {
+        prevRef.current = document.activeElement;
+    }, [isOpen]);
+
+    function handleReturnFocus() {
+        if (prevRef.current && typeof prevRef.current.focus === 'function') {
+            prevRef.current.focus();
+        }
+    }
+
+    function handleDrag(e) {
         e.preventDefault();
         e.stopPropagation();
         if (e.type === 'dragenter' || e.type === 'dragover') {
@@ -149,186 +120,158 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
         } else if (e.type === 'dragleave') {
             setDragActive(false);
         }
-    };
+    }
 
-    const handleDrop = (e) => {
+    function handleDrop(e) {
         e.preventDefault();
         e.stopPropagation();
         setDragActive(false);
-
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFile(e.dataTransfer.files[0]);
+            pickFile(e.dataTransfer.files[0]);
         }
-    };
+    }
 
-    const handleChange = (e) => {
+    function handleChange(e) {
         if (e.target.files && e.target.files[0]) {
-            handleFile(e.target.files[0]);
+            pickFile(e.target.files[0]);
         }
-    };
+        if (e.target) e.target.value = '';
+    }
 
-    const handleFile = (fileObj) => {
+    function pickFile(fileObj) {
+        setFileError('');
+        setPhase('select');
+        if (fileObj.size > MAX_CSV_SIZE) {
+            setFileError(`File too large (${(fileObj.size / 1024).toFixed(0)} KB). Maximum allowed size is 512 KB.`);
+            return;
+        }
         setFile(fileObj);
 
-        // Read file content for preview
         const reader = new FileReader();
-        reader.onload = (e) => {
-            const content = e.target.result;
-            const lines = content.split('\n').slice(0, 5);
-            setPreview(lines.join('\n'));
+        reader.onload = function(e) {
+            var parsed = require('../api').parseCSV(e.target.result);
+            setParsedRows(parsed.rows);
+            setParseErrors(parsed.errors);
+            setPhase('preview');
         };
         reader.readAsText(fileObj);
-    };
+    }
 
-    const handleImport = async () => {
-        if (!file) return;
-
+    async function handleImport() {
+        if (parsedRows.length === 0) return;
         setLoading(true);
-        try {
-            const content = await file.text();
-            await onImport(content);
-            setLoading(false);
-            onClose();
-        } catch (error) {
-            console.error('Error importing CSV:', error);
-            setLoading(false);
-        }
-    };
+        await onImport(parsedRows, parseErrors);
+        setLoading(false);
+        onClose();
+    }
+
+    function resetState() {
+        setFile(null);
+        setParsedRows([]);
+        setParseErrors([]);
+        setFileError('');
+        setPhase('select');
+    }
 
     if (!isOpen) return null;
 
-    return React.createElement(
-        'div',
-        {
-            style: {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1000,
-            },
+    // ── Preview phase: parsed table with errors + Import/Back buttons ──
+    if (phase === 'preview') {
+        var headerLabels = ['Username', 'Realm', 'Password', 'App', 'Owner', 'Sharing', 'Read', 'Write'];
+        return React.createElement(SplunkModal, {
+            open: true,
+            onRequestClose: function() { resetState(); onClose(); },
+            returnFocus: handleReturnFocus,
+            divider: 'both',
+            style: { width: '900px', maxWidth: '95%' }
         },
-        React.createElement(
-            'div',
-            {
-                style: {
-                    backgroundColor: '#fff',
-                    borderRadius: '4px',
-                    width: '500px',
-                    maxWidth: '90%',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.33)',
-                },
-            },
-            React.createElement(
-                'div',
-                {
-                    style: {
-                        padding: '1rem 1.5rem',
-                        borderBottom: '1px solid #e0e0e0',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                    },
-                },
-                React.createElement('h3', { style: { margin: 0 } }, 'Import Credentials from CSV'),
+            React.createElement('div', null,
+                React.createElement(SplunkModal.Header, null,
+                    React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, `Import Preview \u2014 ${parsedRows.length} credential${parsedRows.length !== 1 ? 's' : ''}`)
+                ),
+                React.createElement(SplunkModal.Body, null,
+                    parseErrors.length > 0 && React.createElement(
+                        'div',
+                        { style: { backgroundColor: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem', color: '#856404' } },
+                        parseErrors.map(function(err, i) { return React.createElement('div', { key: i }, '\u26a0 ', err); })
+                    ),
+                    parsedRows.length > 0 ? React.createElement(
+                        'p', { style: { margin: '0 0 8px' } }, `<b>${parsedRows.length}</b> credential${parsedRows.length !== 1 ? 's' : ''} ready to import.`)
+                        : React.createElement('div', { style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem' } }, 'No valid rows to import.')
+                    ,
+                    parsedRows.length > 0 && React.createElement(
+                        'div', { style: { maxHeight: '300px', overflowY: 'auto', marginTop: '8px', border: '1px solid #e0e0e0' } },
+                        React.createElement('table', { style: { width: '100%', borderWidth: 0, fontSize: '12px', color: '#172b4d' } },
+                            React.createElement('thead', null,
+                                React.createElement('tr', { style: { textAlign: 'left', borderBottom: '2px solid #e0e0e0' } },
+                                    headerLabels.map(function(h) {
+                                        return React.createElement('th', { key: h, style: { padding: '6px 8px', fontWeight: 500, borderBottom: '1px solid #e0e0e0' } }, h);
+                                    })
+                                )
+                            ),
+                            React.createElement('tbody', null,
+                                parsedRows.map(function(row, idx) {
+                                    return React.createElement('tr', { key: idx, style: { textAlign: 'left', borderBottom: '1px solid #eee' } },
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.username || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.realm || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, '\u2022\u2022\u2022\u2022\u2022'),
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.app || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.owner || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.sharing || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.read || ''),
+                                        React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.write || '')
+                                    );
+                                })
+                            )
+                        )
+                    )
+                ),
+                React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
+                    React.createElement(Button, { onClick: function() { resetState(); }, children: 'Back' }),
+                    React.createElement(Button, {
+                        onClick: handleImport,
+                        disabled: parsedRows.length === 0 || loading,
+                        appearance: 'primary',
+                        children: loading ? 'Importing...' : `Import ${parsedRows.length} credential${parsedRows.length !== 1 ? 's' : ''}`
+                    })
+                )
+            )
+        );
+    }
+
+    // ── Select phase: drag/drop zone + browse button ──
+    return React.createElement(SplunkModal, {
+        open: true,
+        onRequestClose: function() { onClose && onClose(); },
+        returnFocus: handleReturnFocus,
+        divider: 'both',
+        style: { width: '550px', maxWidth: '90%' }
+    },
+        React.createElement('div', null,
+            React.createElement(SplunkModal.Header, null,
+                React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, 'Import Credentials from CSV')
+            ),
+            React.createElement(SplunkModal.Body, null,
+                React.createElement('p', null, 'Drag and drop your CSV file here, or click to select.'),
+                React.createElement('input', { ref: fileInputRef, type: 'file', accept: '.csv', onChange: handleChange, style: { display: 'none' }}),
                 React.createElement(
-                    'button',
+                    'div',
                     {
-                        onClick: onClose,
-                        style: {
-                            background: 'none',
-                            border: 'none',
-                            fontSize: '1.5rem',
-                            cursor: 'pointer',
-                            color: '#666',
-                        },
+                        onDragEnter: handleDrag, onDragLeave: handleDrag, onDragOver: handleDrag, onDrop: handleDrop,
+                        onClick: function() { if (fileInputRef.current) fileInputRef.current.click(); },
+                        style: { border: `${dragActive ? '2px solid #0066cc' : '2px dashed #ccc'}`, borderRadius: '4px', padding: '3rem 1.5rem', textAlign: 'center', backgroundColor: dragActive ? '#f0f7ff' : '#fff', marginTop: '1rem', cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s' }
                     },
-                    '×'
+                    file ? React.createElement('p', null, file.name) : React.createElement(React.Fragment, null,
+                        React.createElement('p', { style: { margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#555' } }, '\u2B07'),
+                        React.createElement('p', { style: { margin: '4px 0 0', fontSize: '13px', color: '#888' } }, 'Click to select or drag file')
+                    )
+                ),
+                fileError && React.createElement(
+                    'div', { style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginTop: '0.75rem' } }, fileError
                 )
             ),
-            React.createElement(
-                'div',
-                { style: { padding: '1.5rem' } },
-                React.createElement('p', null, 'Drag and drop your CSV file here, or click to select.'),
-
-                React.createElement('input', {
-                    type: 'file',
-                    accept: '.csv',
-                    onChange: handleChange,
-                    style: { display: 'none' },
-                    id: 'csv-file-input',
-                }),
-                React.createElement(
-                    'div',
-                    {
-                        onDragEnter: handleDrag,
-                        onDragLeave: handleDrag,
-                        onDragOver: handleDrag,
-                        onDrop: handleDrop,
-                        onClick: () => document.getElementById('csv-file-input').click(),
-                        style: {
-                            border: '2px dashed #ccc',
-                            borderRadius: '4px',
-                            padding: '2rem',
-                            textAlign: 'center',
-                            backgroundColor: dragActive ? '#f0f0f0' : '#fff',
-                            marginTop: '1rem',
-                            cursor: 'pointer',
-                        },
-                    },
-                    React.createElement('p', null, file ? file.name : 'Click to select or drag file')
-                ),
-
-                file &&
-                    React.createElement(
-                        'div',
-                        { style: { marginTop: '1rem' } },
-                        React.createElement('h4', null, 'Preview (first 5 lines):'),
-                        React.createElement('textarea', {
-                            value: preview,
-                            readOnly: true,
-                            rows: 5,
-                            style: {
-                                width: '100%',
-                                padding: '0.5rem',
-                                border: '1px solid #ccc',
-                                borderRadius: '4px',
-                                fontFamily: 'monospace',
-                                resize: 'vertical',
-                            },
-                        })
-                    ),
-
-                React.createElement(
-                    'div',
-                    { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' } },
-                    React.createElement(
-                        'button',
-                        { onClick: onClose, style: { padding: '0.5rem 1rem' } },
-                        'Cancel'
-                    ),
-                    React.createElement(
-                        'button',
-                        {
-                            onClick: handleImport,
-                            style: {
-                                padding: '0.5rem 1rem',
-                                backgroundColor: '#1565c0',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                            },
-                            disabled: !file || loading,
-                        },
-                        loading ? 'Importing...' : 'Import'
-                    )
-                )
+            React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
+                React.createElement(Button, { onClick: onClose, children: 'Cancel' })
             )
         )
     );
@@ -337,111 +280,45 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
 /**
  * ConfirmDeleteModal - Modal for confirming credential deletion
  */
-function ConfirmDeleteModal({ credential, isOpen, onClose, onDelete, children }) {
+function ConfirmDeleteModal({ credential, isOpen, onClose, onDelete }) {
     if (!isOpen) return null;
 
-    return React.createElement(
-        'div',
-        {
-            style: {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1000,
-            },
-        },
-        React.createElement(
-            'div',
-            {
-                style: {
-                    backgroundColor: '#fff',
-                    borderRadius: '4px',
-                    width: credential ? '400px' : '600px',
-                    maxWidth: '90%',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.33)',
-                },
-            },
-            React.createElement(
-                'div',
-                {
-                    style: {
-                        padding: '1rem 1.5rem',
-                        borderBottom: '1px solid #e0e0e0',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                    },
-                },
-                React.createElement('h3', { style: { margin: 0 } }, credential ? 'Delete Credential' : (children ? 'Create/Edit Credential' : '')),
+    var prevRef = React.useRef(null);
+    React.useEffect(function() {
+        prevRef.current = document.activeElement;
+    }, [credential]);
+
+    function handleReturnFocus() {
+        if (prevRef.current && typeof prevRef.current.focus === 'function') {
+            prevRef.current.focus();
+        }
+    }
+
+    return React.createElement(SplunkModal, {
+        open: isOpen,
+        onRequestClose: function() { onClose && onClose(); },
+        returnFocus: handleReturnFocus,
+        divider: 'both',
+        style: { width: credential ? '450px' : '650px', maxWidth: '90%' }
+    },
+        React.createElement('div', null,
+            React.createElement(SplunkModal.Header, null,
+                React.createElement('h3', { style: { margin: 0 } }, credential ? 'Delete Credential' : '')
+            ),
+            React.createElement(SplunkModal.Body, null,
                 React.createElement(
-                    'button',
-                    {
-                        onClick: onClose,
-                        style: {
-                            background: 'none',
-                            border: 'none',
-                            fontSize: '1.5rem',
-                            cursor: 'pointer',
-                            color: '#666',
-                        },
-                    },
-                    '×'
+                    'p', null,
+                    'Are you sure you want to delete the credential ',
+                    React.createElement('strong', null, credential ? credential.name : ''),
+                    '? This action cannot be undone.'
                 )
             ),
-            React.createElement(
-                'div',
-                { style: { padding: '1.5rem' } },
-                // If children provided (for form), render them
-                children
-                    ? children
-                    : React.createElement(
-                          'p',
-                          null,
-                          'Are you sure you want to delete the credential ',
-                          React.createElement('strong', null, credential ? credential.name : ''),
-                          '? This action cannot be undone.'
-                      ),
-                !children &&
-                    React.createElement(
-                        'div',
-                        { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' } },
-                        React.createElement(
-                            'button',
-                            { onClick: onClose, style: { padding: '0.5rem 1rem' } },
-                            'Cancel'
-                        ),
-                        React.createElement(
-                            'button',
-                            {
-                                onClick: onDelete,
-                                style: {
-                                    padding: '0.5rem 1rem',
-                                    backgroundColor: '#d32f2f',
-                                    color: '#fff',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                },
-                            },
-                            'Delete'
-                        )
-                    )
+            React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
+                React.createElement(Button, { onClick: onClose, children: 'Cancel' }),
+                React.createElement(Button, { onClick: onDelete, appearance: 'destructive', children: 'Delete' })
             )
         )
     );
 }
 
-/**
- * Export all modal components
- */
-module.exports = {
-    PasswordRevealModal,
-    ImportCSVModal,
-    ConfirmDeleteModal,
-};
+module.exports = { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal };
