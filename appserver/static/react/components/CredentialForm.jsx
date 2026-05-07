@@ -1,329 +1,375 @@
 /**
  * CredentialForm.jsx - Form component for creating and updating credentials
  *
- * Uses @splunk/react-ui components: ControlGroup, Select, Multiselect, Text, Button
- * All fields wrapped in ControlGroup for labels, errors, and accessibility
+ * Uses @splunk/react-ui Text / Select / Switch / ControlGroup components.
+ * Matches legacy password-crud.js field-group/input-text/build-select pattern exactly.
  */
 
 const React = require('react');
-const ControlGroup = require('@splunk/react-ui/ControlGroup').default;
-const Select = require('@splunk/react-ui/Select').default;
-const Multiselect = require('@splunk/react-ui/Multiselect').default;
-const Text = require('@splunk/react-ui/Text').default;
-const Button = require('@splunk/react-ui/Button').default;
 
-// Default sharing options — hoisted outside component (rerender-memo-with-default-value)
-const SHARING_OPTIONS = [
+// Splunk design system imports
+var TextMod = require('@splunk/react-ui/Text');
+var Text = TextMod.default;
+var SelectMod = require('@splunk/react-ui/Select');
+var SwitchMod = require('@splunk/react-ui/Switch');
+var Switch = SwitchMod.default;
+var ControlGroup = require('@splunk/react-ui/ControlGroup').default;
+var ButtonMod = require('@splunk/react-ui/Button');
+var Button = ButtonMod.default;
+
+// Default sharing options
+const SHARING_OPTIONS_LABELS = [
   { label: 'App-scoped', value: 'app' },
   { label: 'All Apps (Shared globally)', value: 'global' },
   { label: 'User-scoped (Specific users)', value: 'user' },
 ];
 
-// Container layout styles — minimal, not on individual form controls
-const CONTAINER_STYLE = {
-  padding: '1rem',
-};
+/** Helper — convert role array to Splunk data format [{ label, value }] */
+function toSelectData(roles) {
+    var allItem = { label: '* (all)', value: '* (all)' };
+    // Ensure '* (all)' is always present if not already
+    if (!roles.some(function(r) { return r === '* (all)'; })) {
+        roles = ['* (all)', ...roles];
+    }
+    var data = roles.map(function(r) { return { label: r, value: r }; });
+    return data;
+}
 
 /**
  * CredentialForm - Form component for credential management
- *
- * @param {Object} props - Component props
- * @param {Object|null} props.credential - Credential to edit (null for create)
- * @param {Function} props.onSave - Callback when form is submitted
- * @param {Function} props.onCancel - Callback when form is cancelled
- * @param {Array} props.availableApps - Array of {name} objects for app dropdown
- * @param {string} props.currentUserIdentity - Current user username string
- * @param {Array} props.availableRoles - Array of role name strings
- * @param {string} props.defaultReadRoles - Comma-separated default read roles
- * @param {string} props.defaultWriteRoles - Comma-separated default write roles
  */
 function CredentialForm({
   credential = null,
   onSave,
   onCancel,
   availableApps = [],
+  availableUsers = [],
   currentUserIdentity = 'nobody',
   availableRoles = [],
   defaultReadRoles = '',
   defaultWriteRoles = '',
 }) {
-  const [username, setUsername] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [realm, setRealm] = React.useState('');
-  const [app, setApp] = React.useState('search');
-  const [owner, setOwner] = React.useState('nobody');
-  const [readRolesArray, setReadRolesArray] = React.useState([]);
-  const [writeRolesArray, setWriteRolesArray] = React.useState([]);
-  const [sharing, setSharing] = React.useState('app');
-  const [isChangingPassword, setIsChangingPassword] = React.useState(false);
-  const [errors, setErrors] = React.useState({});
+    const [username, setUsername] = React.useState('');
+    const [password, setPassword] = React.useState('');
+    const [confirmPassword, setConfirmPassword] = React.useState('');
+    const [realm, setRealm] = React.useState('');
+    const [app, setApp] = React.useState('search');
+    const [owner, setOwner] = React.useState('nobody');
+    const [readRolesArray, setReadRolesArray] = React.useState([]);
+    const [writeRolesArray, setWriteRolesArray] = React.useState([]);
+    const [sharing, setSharing] = React.useState('app');
+    const [isChangingPassword, setIsChangingPassword] = React.useState(false);
+    const [errors, setErrors] = React.useState({});
 
-  // Initialize form when credential changes
-  React.useEffect(() => {
-    if (credential) {
-      setUsername(credential.name || '');
-      setRealm(credential.realm || '');
-      setApp(credential.app || 'search');
-      setOwner(credential.owner || 'nobody');
-      setSharing(credential.sharing || 'app');
+    // Initialize form when credential changes
+    React.useEffect(function() {
+        if (credential) {
+            setUsername(credential.name || '');
+            setRealm(credential.realm || '');
+            setApp(credential.app || 'search');
+            setOwner(credential.owner || 'nobody');
+            setSharing(credential.sharing || 'app');
 
-      // Parse comma-separated ACL strings into arrays for Multiselect
-      const aclRead = (credential.aclRead || '').split(',').map((r) => r.trim()).filter(Boolean);
-      const aclWrite = (credential.aclWrite || '').split(',').map((r) => r.trim()).filter(Boolean);
-      setReadRolesArray(aclRead);
-      setWriteRolesArray(aclWrite);
-      setPassword('');
-      setConfirmPassword('');
-      setIsChangingPassword(false);
-    } else {
-      // Reset form for new credential
-      setUsername('');
-      setPassword('');
-      setConfirmPassword('');
-      setRealm('');
-      setApp('search');
-      setOwner(currentUserIdentity);
-      setSharing('app');
+            var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
+            var aclRead = normalize((credential.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
+            var aclWrite = normalize((credential.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
+            setReadRolesArray(aclRead);
+            setWriteRolesArray(aclWrite);
+            setPassword('');
+            setConfirmPassword('');
+            setIsChangingPassword(false);
+        } else {
+            setUsername('');
+            setPassword('');
+            setConfirmPassword('');
+            setRealm('');
+            setApp('search');
+            setOwner(currentUserIdentity);
+            setSharing('app');
 
-      // Parse default roles from comma-separated strings into arrays
-      const defRead = (defaultReadRoles || '').split(',').map((r) => r.trim()).filter(Boolean);
-      const defWrite = (defaultWriteRoles || '').split(',').map((r) => r.trim()).filter(Boolean);
-      setReadRolesArray(defRead);
-      setWriteRolesArray(defWrite);
+            var defRead = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+            var defWrite = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+            setReadRolesArray(defRead);
+            setWriteRolesArray(defWrite);
+        }
+        setErrors({});
+    }, [credential, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
+
+    // Submit handler
+    function handleSubmit(e) {
+        e.preventDefault();
+
+        var newErrors = {};
+
+        if (!username.trim()) {
+            newErrors.username = 'Username is required';
+        }
+        if (!credential && !password) {
+            newErrors.password = 'Password is required';
+        }
+        if (isChangingPassword && !password) {
+            newErrors.password = 'Password is required';
+        }
+        if ((!credential || isChangingPassword) && password !== confirmPassword) {
+            newErrors.passwordMismatch = 'Passwords do not match';
+        }
+        if (!readRolesArray.length) {
+            newErrors.readRoles = 'Select at least one Read role (or * for all)';
+        }
+        if (!writeRolesArray.length) {
+            newErrors.writeRoles = 'Select at least one Write role (or * for all)';
+        }
+
+        setErrors(newErrors);
+        if (Object.keys(newErrors).length > 0) return;
+
+        if (onSave) {
+            onSave({
+                username: username.trim(),
+                password: password || null,
+                realm: realm.trim(),
+                app: app,
+                owner: owner,
+                readRoles: resolveRoles(readRolesArray),
+                writeRoles: resolveRoles(writeRolesArray),
+                sharing: sharing,
+            });
+        }
     }
-    setErrors({});
-  }, [credential, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
 
-  // Submit handler — validates password match before saving
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (!credential || isChangingPassword) {
-      if (password !== confirmPassword) {
-        setErrors({ passwordMismatch: 'Passwords do not match' });
-        return;
-      }
+    function handleTogglePasswordChange(data) {
+        var checked = data && typeof data.checked === 'boolean' ? data.checked : !isChangingPassword;
+        setIsChangingPassword(checked);
+        if (!isChangingPassword) {
+            setPassword('');
+            setConfirmPassword('');
+            setErrors({});
+        }
     }
 
-    if (onSave) {
-      onSave({
-        username: username.trim(),
-        password: password || null,
-        realm: realm.trim(),
-        app,
-        owner,
-        readRoles: readRolesArray,
-        writeRoles: writeRolesArray,
-        sharing,
-      });
+    function handlePasswordChange(data) {
+        var val = data && typeof data.value === 'string' ? data.value : (data || '');
+        setPassword(val);
+        clearError('password');
+        clearError('passwordMismatch');
     }
-  };
 
-  // Password toggle handler — clears confirm field and errors when disabled
-  const handleTogglePasswordChange = () => {
-    setIsChangingPassword((prev) => !prev);
-    if (!isChangingPassword) {
-      setPassword('');
-      setConfirmPassword('');
-      setErrors({});
+    function handleConfirmChange(data) {
+        var val = data && typeof data.value === 'string' ? data.value : (data || '');
+        setConfirmPassword(val);
+        clearError('passwordMismatch');
     }
-  };
 
-  // Confirm password handler — clears error on typing (rerender-move-effect-to-event)
-  const handleConfirmChange = (e, { value }) => {
-    setConfirmPassword(value);
-    if (errors.passwordMismatch) {
-      setErrors({});
+    function clearError(key) {
+        setErrors(function(prev) {
+            var next = Object.assign({}, prev);
+            delete next[key];
+            return Object.keys(next).length ? next : {};
+        });
     }
-  };
 
-  // Render shared form fields to avoid duplication between create/edit modes
-  const renderFormContent = () => {
-    const showPasswordFields = !credential || isChangingPassword;
+    // Handle Splunk Select change — data has { label, value, index }
+    function handleSingleSelectChange(target, data) {
+        var val = data && typeof data.value !== 'undefined' ? data.value : (data || '');
+        if (target === 'app') setApp(val);
+        else if (target === 'owner') setOwner(val);
+        else if (target === 'sharing') setSharing(val);
+    }
+
+    // Handle Splunk Select change for multi-select — data has { selectedItems: [{ label, value }] }
+    function handleMultiSelectChange(targetKey, data) {
+        var selected;
+        if (data && Array.isArray(data.selectedItems)) {
+            selected = data.selectedItems.map(function(item) { return item.value; });
+        } else {
+            selected = [];
+        }
+        // Mutual exclusion: if '* (all)' is picked, clear other roles
+        if (selected.length > 1 && selected.includes('* (all)')) {
+            selected = ['* (all)'];
+        }
+        if (targetKey === 'read') {
+            setReadRolesArray(selected);
+            clearError('readRoles');
+        } else {
+            setWriteRolesArray(selected);
+            clearError('writeRoles');
+        }
+    }
+
+    // Resolve role list for API: map '* (all)' → '*' (wildcard), or pass through normal roles
+    function resolveRoles(roles) {
+        if (!roles || roles.length === 0) return [];
+        if (roles.includes('* (all)')) return ['*'];
+        return roles;
+    }
+
+    // Build Select data arrays
+    var appData = availableApps.map(function(a) { return { label: a.name, value: a.name }; });
+    var ownerData = [
+        { label: 'Nobody (shared)', value: 'nobody' }
+    ].concat(availableUsers.map(function(u) {
+        return { label: (u.fullName ? u.fullName + ' (' + u.name + ')' : u.name), value: u.name };
+    }));
+    var sharingData = SHARING_OPTIONS_LABELS.map(function(opt) { return { label: opt.label, value: opt.value }; });
+
+    // Build roles data — ensure '* (all)' is present
+    var rolesList = availableRoles.slice();
+    if (!rolesList.includes('* (all)')) {
+        rolesList.unshift('* (all)');
+    }
+    var rolesData = toSelectData(rolesList);
+
+    // Active item helpers for Select
+    var activeAppItem = appData.find(function(a) { return a.value === app; }) || { label: app, value: app };
+    var activeOwnerItem = ownerData.find(function(u) { return u.value === owner; }) || { label: owner, value: owner };
+    var activeSharingItem = sharingData.find(function(s) { return s.value === sharing; }) || { label: 'App-scoped', value: 'app' };
+
+    // Active items for multi-select
+    var activeReadItems = readRolesArray.map(function(r) {
+        return rolesData.find(function(d) { return d.value === r; }) || { label: r, value: r };
+    });
+    var activeWriteItems = writeRolesArray.map(function(r) {
+        return rolesData.find(function(d) { return d.value === r; }) || { label: r, value: r };
+    });
+
+    var showPasswordFields = !credential || isChangingPassword;
+
+    // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
+    function formField(label, inputEl, opts) {
+        opts = opts || {};
+        var err = opts.errorText;
+        var help = !err && opts.helpText ? opts.helpText : undefined;
+        return React.createElement(ControlGroup, {
+            key: label,
+            label: label + (opts.required ? ' *' : ''),
+            error: err,
+            additionalInfo: help,
+            accessibilityLabel: err ? label + '. ' + err : undefined,
+        }, inputEl);
+    }
 
     return React.createElement(
-      'form',
-      { onSubmit: handleSubmit, style: CONTAINER_STYLE },
+        'form',
+        { onSubmit: handleSubmit },
 
-      // Title
-      React.createElement('h3', null, credential ? 'Edit Credential' : 'Create New Credential'),
-
-      // Username field
-      React.createElement(
-        ControlGroup,
-        { label: 'Username', required: true },
-        React.createElement(Text, {
-          value: username,
-          onChange: (e, props) => setUsername(props.value),
-          placeholder: 'Enter username',
-        })
-      ),
-
-      // Realm field
-      React.createElement(
-        ControlGroup,
-        { label: 'Realm (optional)' },
-        React.createElement(Text, {
-          value: realm,
-          onChange: (e, props) => setRealm(props.value),
-          placeholder: 'Enter realm (or leave empty)',
-        })
-      ),
-
-      // App field — Select dropdown populated from availableApps
-      React.createElement(
-        ControlGroup,
-        { label: 'App', required: true },
-        React.createElement(
-          Select,
-          {
-            value: app,
-            onChange: (e, props) => setApp(props.value),
-            error: !!errors.app,
-          },
-          availableApps.map((a) =>
-            React.createElement(Select.Option, {
-              key: a.name,
-              label: a.name,
-              value: a.name,
-            })
-          )
-        )
-      ),
-
-      // Sharing field — Select with predefined options
-      React.createElement(
-        ControlGroup,
-        { label: 'Sharing', helpText: 'How this credential is shared' },
-        React.createElement(
-          Select,
-          { value: sharing, onChange: (e, props) => setSharing(props.value) },
-          SHARING_OPTIONS.map((opt) =>
-            React.createElement(Select.Option, {
-              key: opt.value,
-              label: opt.label,
-              value: opt.value,
-            })
-          )
-        )
-      ),
-
-      // Owner field — Text input defaulting to current user
-      React.createElement(
-        ControlGroup,
-        { label: 'Owner' },
-        React.createElement(Text, {
-          value: owner,
-          onChange: (e, props) => setOwner(props.value),
-        })
-      ),
-
-      // Read Roles — Multiselect with chips and filtering
-      React.createElement(
-        ControlGroup,
-        { label: 'Read Roles', helpText: 'Roles that can view this credential' },
-        React.createElement(
-          Multiselect,
-          {
-            values: readRolesArray,
-            onChange: (e, props) => setReadRolesArray(props.values || []),
-            placeholder: 'Select read roles...',
-          },
-          availableRoles.map((role) =>
-            React.createElement(Multiselect.Option, {
-              key: role,
-              label: role,
-              value: role,
-            })
-          )
-        )
-      ),
-
-      // Write Roles — Multiselect with chips and filtering
-      React.createElement(
-        ControlGroup,
-        { label: 'Write Roles', helpText: 'Roles that can modify this credential' },
-        React.createElement(
-          Multiselect,
-          {
-            values: writeRolesArray,
-            onChange: (e, props) => setWriteRolesArray(props.values || []),
-            placeholder: 'Select write roles...',
-          },
-          availableRoles.map((role) =>
-            React.createElement(Multiselect.Option, {
-              key: role,
-              label: role,
-              value: role,
-            })
-          )
-        )
-      ),
-
-      // Password change toggle (edit mode only)
-      credential &&
-        React.createElement(
-          ControlGroup,
-          { label: '' },
-          React.createElement('label', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' } },
-            React.createElement('input', {
-              type: 'checkbox',
-              checked: isChangingPassword,
-              onChange: handleTogglePasswordChange,
+        // Username field
+        formField('Username',
+            React.createElement(Text, {
+                value: username,
+                onChange: function(data) { setUsername(data && typeof data.value === 'string' ? data.value : ''); clearError('username'); },
+                placeholder: 'Enter username',
+                error: !!errors.username,
             }),
-            'Change password'
-          )
+            { errorText: errors.username, required: true }
         ),
 
-      // Password field — shown on create or when changing password in edit mode
-      showPasswordFields &&
-        React.createElement(
-          ControlGroup,
-          { label: 'Password', required: true },
-          React.createElement(Text, {
-            type: 'password',
-            passwordVisibilityToggle: true,
-            value: password,
-            onChange: (e, props) => setPassword(props.value),
-            placeholder: 'Enter password',
-          })
+        // Realm field — disabled in edit mode per REST API limitation (realm immutable after creation)
+        formField('Realm',
+            React.createElement(Text, {
+                value: realm,
+                onChange: function(data) { setRealm(data && typeof data.value === 'string' ? data.value : ''); },
+                placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
+                disabled: !!credential,
+            }),
+            { helpText: credential ? undefined : 'Cannot be changed after creation' }
         ),
 
-      // Confirm Password field — shown on create or when changing password in edit mode
-      showPasswordFields &&
-        React.createElement(
-          ControlGroup,
-          {
-            label: 'Confirm Password',
-            required: true,
-            errorText: errors.passwordMismatch,
-          },
-          React.createElement(Text, {
-            type: 'password',
-            passwordVisibilityToggle: true,
-            value: confirmPassword,
-            onChange: handleConfirmChange,
-            placeholder: 'Confirm password',
-            error: !!errors.passwordMismatch,
-          })
+        // App field
+        formField('App',
+            React.createElement(SelectMod, {
+                data: appData,
+                activeItem: activeAppItem,
+                onSelect: function(data) { handleSingleSelectChange('app', data); },
+            }),
+            { required: true }
         ),
 
-      // Action buttons
-      React.createElement(
-        'div',
-        { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' } },
-        React.createElement(Button, { appearance: 'subtle', onClick: onCancel, children: 'Cancel' }),
+        // Sharing field
+        formField('Sharing',
+            React.createElement(SelectMod, {
+                data: sharingData,
+                activeItem: activeSharingItem,
+                onSelect: function(data) { handleSingleSelectChange('sharing', data); },
+            }),
+            { helpText: 'How this credential is shared' }
+        ),
+
+        // Owner field
+        formField('Owner',
+            React.createElement(SelectMod, {
+                data: ownerData,
+                activeItem: activeOwnerItem,
+                onSelect: function(data) { handleSingleSelectChange('owner', data); },
+            }),
+            { helpText: 'User who owns this credential' }
+        ),
+
+        // Read Roles
+        formField('Read Roles',
+            React.createElement(SelectMod, {
+                data: rolesData,
+                activeItems: activeReadItems,
+                onSelect: function(data) { handleMultiSelectChange('read', data); },
+              placeholderText: 'Select roles...',
+              multiple: true,
+           }),
+          { helpText: 'Roles that can view this credential', errorText: errors.readRoles, required: true }
+        ),
+
+        // Write Roles
+        formField('Write Roles',
+            React.createElement(SelectMod, {
+                data: rolesData,
+                activeItems: activeWriteItems,
+                onSelect: function(data) { handleMultiSelectChange('write', data); },
+              placeholderText: 'Select roles...',
+              multiple: true,
+           }),
+            { helpText: 'Roles that can modify this credential', errorText: errors.writeRoles, required: true }
+        ),
+
+    // Password change toggle (edit mode only)
+        credential && React.createElement(ControlGroup, {
+            key: 'toggle-password',
+            label: 'Change password',
+        }, React.createElement(Switch, {
+            checked: isChangingPassword,
+            onChange: handleTogglePasswordChange,
+        })),
+
+        // Password field
+       showPasswordFields && formField('Password',
+            React.createElement(Text, {
+                type: 'password',
+                value: password,
+                onChange: handlePasswordChange,
+                placeholder: 'Enter password',
+                error: !!errors.password,
+            }),
+            { errorText: errors.password, required: true }
+        ),
+
+        // Confirm Password field
+      showPasswordFields && formField('Confirm Password',
+            React.createElement(Text, {
+                type: 'password',
+                value: confirmPassword,
+                onChange: handleConfirmChange,
+                placeholder: 'Confirm password',
+                error: !!errors.passwordMismatch,
+            }),
+            { errorText: errors.passwordMismatch, required: true }
+        ),
+
+        // Action buttons
         React.createElement(
-          Button,
-          { appearance: 'primary', type: 'submit', children: credential ? 'Update' : 'Create' }
+      'div',
+            { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center' } },
+            React.createElement(Button, { onClick: onCancel, appearance: 'subtle', children: 'Cancel' }),
+            React.createElement(Button, { onClick: handleSubmit, appearance: 'primary', children: credential ? 'Update' : 'Create' })
         )
-      )
     );
-  };
-
-  return renderFormContent();
 }
 
-// Export component
 module.exports = CredentialForm;
