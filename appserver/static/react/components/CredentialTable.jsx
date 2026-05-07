@@ -1,25 +1,51 @@
 /**
  * CredentialTable.jsx - Table component for displaying credentials
  *
- * Displays credentials in a table with pagination, filtering, and sorting
+ * Displays credentials in a table with pagination, filtering, sorting, and selection
+ * Uses @splunk/react-ui Table, Paginator, and Chip components.
  */
 
 const React = require('react');
+
+// Splunk design system imports
+var TableMod = require('@splunk/react-ui/Table');
+var TableHead = TableMod.Head;
+var TableBody = TableMod.Body;
+var TableCell = TableMod.Cell;
+var TableRow = TableMod.Row;
+var TableHeadCell = TableMod.HeadCell;
+
+var PaginatorMod = require('@splunk/react-ui/Paginator');
+var Paginator = PaginatorMod.default;
+var ChipMod = require('@splunk/react-ui/Chip');
+var Chip = ChipMod.default;
+var ButtonMod = require('@splunk/react-ui/Button');
+var Button = ButtonMod.default;
 
 /**
  * CredentialTable - Table component for credential management
  *
  * @param {Object} props - Component props
  * @param {Array} props.credentials - Array of credential objects
+ * @param {Array} props.selectedRows - Currently selected rows for bulk operations
+ * @param {boolean} props.isAllSelected - Whether all rows are selected
  * @param {Function} props.onEdit - Callback when edit is clicked
  * @param {Function} props.onDelete - Callback when delete is clicked
  * @param {Function} props.onReveal - Callback when reveal password is clicked
+ * @param {Function} props.onSelectRow - Callback when row checkbox toggled
+ * @param {Function} props.onSelectAll - Callback when select-all checked
+ * @param {Function} props.onDeselectAll - Callback when select-all unchecked
  */
 function CredentialTable({
     credentials = [],
+    selectedRows = [],
+    isAllSelected = false,
     onEdit,
     onDelete,
     onReveal,
+    onSelectRow,
+    onSelectAll,
+    onDeselectAll,
 }) {
     const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
     const [currentPage, setCurrentPage] = React.useState(1);
@@ -29,14 +55,14 @@ function CredentialTable({
     const itemsPerPage = 10;
 
     // Filter credentials
-    const filteredCredentials = React.useMemo(() => {
+    const filteredCredentials = React.useMemo(function() {
         if (!filterText) return credentials;
 
-        return credentials.filter((credential) => {
-            const name = credential.name || '';
-            const realm = credential.realm || '';
-            const app = credential.app || '';
-            const owner = credential.owner || '';
+        return credentials.filter(function(credential) {
+            var name = credential.name || '';
+            var realm = credential.realm || '';
+            var app = credential.app || '';
+            var owner = credential.owner || '';
 
             if (filterType === 'all') {
                 return (
@@ -57,12 +83,12 @@ function CredentialTable({
     }, [credentials, filterText, filterType]);
 
     // Sort credentials
-    const sortedCredentials = React.useMemo(() => {
+    const sortedCredentials = React.useMemo(function() {
         if (!sortConfig.key) return filteredCredentials;
 
-        return [...filteredCredentials].sort((a, b) => {
-            const aValue = a[sortConfig.key] || '';
-            const bValue = b[sortConfig.key] || '';
+        return [...filteredCredentials].sort(function(a, b) {
+            var aValue = a[sortConfig.key] || '';
+            var bValue = b[sortConfig.key] || '';
 
             if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
             if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
@@ -71,68 +97,138 @@ function CredentialTable({
     }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
 
     // Paginate credentials
-    const paginatedCredentials = React.useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
+    const paginatedCredentials = React.useMemo(function() {
+        var startIndex = (currentPage - 1) * itemsPerPage;
         return sortedCredentials.slice(startIndex, startIndex + itemsPerPage);
     }, [sortedCredentials, currentPage]);
 
     const totalPages = Math.ceil(sortedCredentials.length / itemsPerPage);
 
     // Handle sort
-    const handleSort = (key) => {
-        let direction = 'asc';
+    function handleSort(key) {
+        var direction = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
         }
-        setSortConfig({ key, direction });
-    };
+        setSortConfig({ key: key, direction: direction });
+    }
 
-    // Handle page change
-    const handlePageChange = (page) => {
-        setCurrentPage(page);
-    };
+    // Handle page change — Splunk Paginator passes { index: zero-basedPage }
+    function handlePageChange(data) {
+        setCurrentPage((data.index || 0) + 1);
+    }
 
     // Handle filter change
-    const handleFilterChange = (value) => {
+    function handleFilterChange(value) {
         setFilterText(value);
         setCurrentPage(1); // Reset to first page on filter
-    };
+    }
 
     // Get sort indicator
-    const getSortIndicator = (key) => {
-        if (sortConfig.key !== key) return '\u2192';
+    function getSortIndicator(key) {
+        if (sortConfig.key !== key) return '\u2195';
         return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
-    };
+    }
 
-    // Render realm badge
-    const renderRealmBadge = (realm) => {
-        if (!realm || realm === 'nobody') {
-            return React.createElement(
-                'span',
-                { style: { backgroundColor: '#e0e0e0', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' } },
-                'global'
-            );
+    // Check if a row is selected
+    function isSelected(cred) {
+        return selectedRows.some(function(r) { return r.stanzaKey === cred.stanzaKey; });
+    }
+
+    // Toggle row selection
+    function handleToggleSelect(cred, e) {
+        e.stopPropagation();
+        onSelectRow && onSelectRow(cred);
+    }
+
+    // Toggle select-all for visible page
+    function handlePageSelectAll(e) {
+        e.stopPropagation();
+        if (isAllSelected || paginatedCredentials.every(function(c) { return isSelected(c); })) {
+            onDeselectAll && onDeselectAll();
+        } else {
+            onSelectAll && onSelectAll();
         }
-        return React.createElement(
-            'span',
-            { style: { backgroundColor: '#e3f2fd', color: '#1565c0', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' } },
-            realm
-        );
-    };
+    }
 
-    // Render app badge
-    const renderAppBadge = (app) => {
-        return React.createElement(
-            'span',
-            { style: { backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' } },
-            app
+    // Check if all visible rows on current page are selected (for checkbox state)
+    const pageAllSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
+
+    // Any row on current page is partially selected (for indeterminate header checkbox)
+    const pagePartiallySelected = !pageAllSelected && paginatedCredentials.some(function(c) { return isSelected(c); });
+
+    // Build pagination data array for Splunk Paginator (label per page)
+    var pageNumberData = [];
+    for (var p = 1; p <= totalPages; p++) {
+        pageNumberData.push({ label: String(p), value: String(p), index: p - 1 });
+    }
+
+    // Create checkbox cell factory
+    function createCheckboxCell(cred) {
+        return React.createElement(TableCell, null,
+            React.createElement('input', {
+                type: 'checkbox',
+                checked: isSelected(cred),
+                onChange: function(e) { handleToggleSelect(cred, e); },
+                style: { cursor: 'pointer' },
+            })
         );
-    };
+    }
+
+    // Create action cell factory — uses Splunk Button with minimal styling for row actions
+    function createActionCell(cred) {
+        return React.createElement(TableCell, null,
+            React.createElement(
+                'div',
+                { style: { display: 'flex', gap: '0.25rem' } },
+                React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, children: 'Edit' }),
+                React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, children: 'Reveal' }),
+                React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'destructive', children: 'Delete' })
+            )
+        );
+    }
+
+    // Build header cells with sorting
+    var headerCells = [
+        React.createElement(TableHeadCell, { key: 'select', onClick: handlePageSelectAll, style: { cursor: 'pointer', textAlign: 'left' } },
+            React.createElement('input', {
+                type: 'checkbox',
+                checked: pageAllSelected,
+                ref: function(el) { if (el) el.indeterminate = pagePartiallySelected; },
+                style: { cursor: 'pointer' },
+            })
+        ),
+        React.createElement(TableHeadCell, { key: 'username', onClick: function() { handleSort('name'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Username ', getSortIndicator('name')),
+        React.createElement(TableHeadCell, { key: 'realm', onClick: function() { handleSort('realm'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Realm ', getSortIndicator('realm')),
+        React.createElement(TableHeadCell, { key: 'app', onClick: function() { handleSort('app'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'App ', getSortIndicator('app')),
+        React.createElement(TableHeadCell, { key: 'owner', onClick: function() { handleSort('owner'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Owner ', getSortIndicator('owner')),
+        React.createElement(TableHeadCell, { key: 'actions', style: { textAlign: 'left' } }, 'Actions')
+    ];
+
+    // Build data rows
+    var dataRows = paginatedCredentials.length > 0
+        ? paginatedCredentials.map(function(cred) {
+            return React.createElement(TableRow, { key: cred.stanzaKey },
+                createCheckboxCell(cred),
+                React.createElement(TableCell, null, cred.name || cred.realm),
+                React.createElement(TableCell, null,
+                    React.createElement(Chip, { label: (!cred.realm || cred.realm === 'nobody') ? 'global' : (cred.realm || ''), backgroundColor: (!cred.realm || cred.realm === 'nobody') ? '#e0e0e0' : '#e3f2fd', color: (!cred.realm || cred.realm === 'nobody') ? 'inherit' : '#1565c0' })
+                ),
+                React.createElement(TableCell, null,
+                    React.createElement(Chip, { label: cred.app || 'search', backgroundColor: '#e8f5e9', color: '#2e7d32' })
+                ),
+                React.createElement(TableCell, null, cred.owner || 'nobody'),
+                createActionCell(cred)
+            );
+        })
+        : [React.createElement(TableRow, { key: 'empty' },
+            React.createElement(TableCell, { colSpan: 6, style: { textAlign: 'center', padding: '2rem', color: '#666' } }, 'No credentials found')
+        )];
 
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
-        // Filter bar
+        // Filter bar (keeps native filter+select — Splunk Text + Select would be Task 8 territory)
         React.createElement(
             'div',
             { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -140,7 +236,7 @@ function CredentialTable({
             React.createElement('input', {
                 type: 'text',
                 value: filterText,
-                onChange: (e) => handleFilterChange(e.target.value),
+                onChange: function(e) { handleFilterChange(e.target.value); },
                 placeholder: 'Search credentials...',
                 style: {
                     padding: '0.25rem 0.5rem',
@@ -151,7 +247,7 @@ function CredentialTable({
             }),
             React.createElement('select', {
                 value: filterType,
-                onChange: (e) => setFilterType(e.target.value),
+                onChange: function(e) { setFilterType(e.target.value); },
                 style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
             },
                 React.createElement('option', { value: 'all' }, 'All Fields'),
@@ -161,220 +257,27 @@ function CredentialTable({
             )
         ),
 
-        // Credentials table
-        React.createElement(
-            'table',
-            {
-                style: {
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    marginBottom: '1rem',
-                },
-            },
-            React.createElement(
-                'thead',
-                null,
-                React.createElement(
-                    'tr',
-                    null,
-                    React.createElement(
-                        'th',
-                        {
-                            style: {
-                                textAlign: 'left',
-                                padding: '0.75rem',
-                                borderBottom: '2px solid #e0e0e0',
-                                cursor: 'pointer',
-                            },
-                            onClick: () => handleSort('name'),
-                        },
-                        'Username ', getSortIndicator('name')
-                    ),
-                    React.createElement(
-                        'th',
-                        {
-                            style: {
-                                textAlign: 'left',
-                                padding: '0.75rem',
-                                borderBottom: '2px solid #e0e0e0',
-                                cursor: 'pointer',
-                            },
-                            onClick: () => handleSort('realm'),
-                        },
-                        'Realm ', getSortIndicator('realm')
-                    ),
-                    React.createElement(
-                        'th',
-                        {
-                            style: {
-                                textAlign: 'left',
-                                padding: '0.75rem',
-                                borderBottom: '2px solid #e0e0e0',
-                                cursor: 'pointer',
-                            },
-                            onClick: () => handleSort('app'),
-                        },
-                        'App ', getSortIndicator('app')
-                    ),
-                    React.createElement(
-                        'th',
-                        {
-                            style: {
-                                textAlign: 'left',
-                                padding: '0.75rem',
-                                borderBottom: '2px solid #e0e0e0',
-                                cursor: 'pointer',
-                            },
-                            onClick: () => handleSort('owner'),
-                        },
-                        'Owner ', getSortIndicator('owner')
-                    ),
-                    React.createElement(
-                        'th',
-                        {
-                            style: {
-                                textAlign: 'left',
-                                padding: '0.75rem',
-                                borderBottom: '2px solid #e0e0e0',
-                            },
-                        },
-                        'Actions'
-                    )
-                )
+        // Credentials table — Splunk Table component
+        React.createElement(TableMod, { style: { width: '100%', marginBottom: '1rem' } },
+            React.createElement(TableHead, null,
+                React.createElement(TableRow, null, ...headerCells)
             ),
-            React.createElement(
-                'tbody',
-                null,
-                paginatedCredentials.length > 0
-                    ? paginatedCredentials.map((cred) =>
-                          React.createElement(
-                              'tr',
-                              { key: cred.stanzaKey, style: { borderBottom: '1px solid #e0e0e0' } },
-                              React.createElement(
-                                  'td',
-                                  { style: { padding: '0.75rem' } },
-                                  cred.name || cred.realm
-                              ),
-                              React.createElement(
-                                  'td',
-                                  { style: { padding: '0.75rem' } },
-                                  renderRealmBadge(cred.realm || 'nobody')
-                              ),
-                              React.createElement(
-                                  'td',
-                                  { style: { padding: '0.75rem' } },
-                                  renderAppBadge(cred.app || 'search')
-                              ),
-                              React.createElement(
-                                  'td',
-                                  { style: { padding: '0.75rem' } },
-                                  cred.owner || 'nobody'
-                              ),
-                              React.createElement(
-                                  'td',
-                                  { style: { padding: '0.75rem' } },
-                                  React.createElement(
-                                      'div',
-                                      { style: { display: 'flex', gap: '0.25rem' } },
-                                      React.createElement(
-                                          'button',
-                                          {
-                                              onClick: () => onEdit && onEdit(cred),
-                                              style: {
-                                                  padding: '0.25rem 0.5rem',
-                                                  backgroundColor: '#f0f0f0',
-                                                  border: 'none',
-                                                  borderRadius: '4px',
-                                                  cursor: 'pointer',
-                                              },
-                                          },
-                                          'Edit'
-                                      ),
-                                      React.createElement(
-                                          'button',
-                                          {
-                                              onClick: () => onReveal && onReveal(cred),
-                                              style: {
-                                                  padding: '0.25rem 0.5rem',
-                                                  backgroundColor: '#f0f0f0',
-                                                  border: 'none',
-                                                  borderRadius: '4px',
-                                                  cursor: 'pointer',
-                                              },
-                                          },
-                                          'Reveal'
-                                      ),
-                                      React.createElement(
-                                          'button',
-                                          {
-                                              onClick: () => onDelete && onDelete(cred),
-                                              style: {
-                                                  padding: '0.25rem 0.5rem',
-                                                  backgroundColor: '#ffebee',
-                                                  color: '#d32f2f',
-                                                  border: 'none',
-                                                  borderRadius: '4px',
-                                                  cursor: 'pointer',
-                                              },
-                                          },
-                                          'Delete'
-                                      )
-                                  )
-                              )
-                          )
-                      )
-                    : React.createElement(
-                          'tr',
-                          null,
-                          React.createElement(
-                              'td',
-                              {
-                                  colSpan: 5,
-                                  style: {
-                                      textAlign: 'center',
-                                      padding: '2rem',
-                                      color: '#666',
-                                  },
-                              },
-                              'No credentials found'
-                          )
-                      )
-            )
+            React.createElement(TableBody, null, ...dataRows)
         ),
 
-        // Pagination
-        totalPages > 1 &&
-            React.createElement(
-                'div',
-                { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },
-                React.createElement(
-                    'button',
-                    {
-                        onClick: () => handlePageChange(Math.max(1, currentPage - 1)),
-                        disabled: currentPage === 1,
-                        style: {
-                            padding: '0.25rem 0.5rem',
-                            cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                            opacity: currentPage === 1 ? 0.5 : 1,
-                        },
-                    },
-                    '\u2190 Previous'
-                ),
-                React.createElement('span', null, `Page ${currentPage} of ${totalPages}`),
-                React.createElement(
-                    'button',
-                    {
-                        onClick: () => handlePageChange(Math.min(totalPages, currentPage + 1)),
-                        disabled: currentPage === totalPages,
-                        style: {
-                            padding: '0.25rem 0.5rem',
-                            cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                            opacity: currentPage === totalPages ? 0.5 : 1,
-                        },
-                    },
-                    'Next \u2192'
-                )
-            )
+        // Pagination — Splunk Paginator component (or native fallback for <2 pages)
+        totalPages > 1 ? React.createElement(
+            'div',
+            { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },
+            pageNumberData.length <= 0
+                ? null
+                : React.createElement(Paginator, {
+                    pageLabel: 'Pages',
+                    data: pageNumberData,
+                    activeItem: { label: String(currentPage), value: String(currentPage) },
+                    onSelect: handlePageChange,
+                })
+        ) : null
     );
 }
 
