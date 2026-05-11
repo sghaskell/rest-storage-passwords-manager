@@ -31,6 +31,9 @@ Reading to **edit** → reading correct. Reading to **analyze/explore/summarize*
 ### grep / search (large results)
 Use `context-mode_ctx_execute(language: "shell", code: "grep ...")` in sandbox.
 
+### Multi-agent outputs — MANDATORY sandbox routing
+When spawning multiple agents, route output through `ctx_batch_execute` or `ctx_execute` sandbox — `console.log` only summaries. Never let full reports land in context.
+
 ## Tool selection
 
 0. **MEMORY**: `context-mode_ctx_search(sort: "timeline")` — after resume, check prior context before asking user.
@@ -74,6 +77,10 @@ Session history is persistent and searchable. On resume, search BEFORE asking th
 
 DO NOT ask "what were we working on?" — SEARCH FIRST.
 If search returns 0 results, proceed as a fresh session.
+
+## Documented Solutions
+
+`docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 ## ctx commands
 

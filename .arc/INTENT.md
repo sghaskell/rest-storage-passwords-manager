@@ -26,6 +26,10 @@ To have it be a Splunk native react app instead of custom Javascript.
 - Splunk REST ACL behavior fully understood from reverse-engineering JS version
 - Update sequence: ACL bump sharing=app → POST password only → `/move` if app changed → final ACL
 - Delete sequence: per-credential ACL bump → DELETE via explicit owner/app path
+ - Splunk v5.9.1 API details verified from `.d.ts`:
+    * `ControlGroup` component wraps labeled form fields with aria attributes, error/help text, and required indicators — use this for form fields
+    * `Text` props: uses `type` attribute (not `typeReact`), `error` prop for validation state (not `invalid`)
+    * CJS import pattern: `var Mod = require('@splunk/react-ui/X'); var Comp = Mod.default;`
 
 ## What I'm still uncertain about
 - Dark theme CSS overrides — only minimal inline styles exist currently
