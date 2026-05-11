@@ -16,6 +16,7 @@ var Modal = ModalMod.default;
 ModalMod.Header && (Modal.Header = ModalMod.Header);
 ModalMod.Body && (Modal.Body = ModalMod.Body);
 ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
+var SplunkThemeProvider = require('@splunk/themes').SplunkThemeProvider;
 
 // Import self-contained application components
 const CredentialTable = require('./components/CredentialTable');
@@ -356,8 +357,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             });
         }
 
-        function handleSelectAll() {
-            setSelectedRows(credentials);
+        function handleSelectAll(filtered) {
+            setSelectedRows(filtered || credentials);
         }
 
         function handleDeselectAll() {
@@ -561,7 +562,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 return;
             }
             const root = ReactDOM.createRoot(container);
-            root.render(React.createElement(CredentialManager));
+            root.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' }, React.createElement(CredentialManager)));
             console.log('Credential Manager: Render complete');
         }
     };

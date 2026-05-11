@@ -48,6 +48,9 @@ function PasswordRevealModal({ credential, onClose }) {
             }
             fetchPassword();
         }
+        return function() {
+            setPassword('');
+        };
     }, [credential]);
 
     if (!credential) return null;
@@ -286,7 +289,7 @@ function ConfirmDeleteModal({ credential, isOpen, onClose, onDelete }) {
     var prevRef = React.useRef(null);
     React.useEffect(function() {
         prevRef.current = document.activeElement;
-    }, [credential]);
+    }, [isOpen]);
 
     function handleReturnFocus() {
         if (prevRef.current && typeof prevRef.current.focus === 'function') {

@@ -6,21 +6,31 @@
  */
 
 const API_ENDPOINT = '/en-US/splunkd/__raw/servicesNS/-/-/storage/passwords';
+const DEFAULT_FETCH_TIMEOUT_MS = 30000;
 
 /**
- * Parse Splunk XML error responses to extract human-readable messages.
- * Strips HTML entities and extracts content between <msg> tags.
+ * Parse Splunk error responses — handles both XML (<msg>) and JSON formats.
+ * Splunk web proxy may return either depending on context.
  */
 function parseError(errorText) {
     if (!errorText || typeof errorText !== 'string') return '';
+
+    // Try JSON format first: {"messages":[{"type":"WARN","text":"..."}]}
+    try {
+        const j = JSON.parse(errorText);
+        if (j.messages && Array.isArray(j.messages)) {
+            const msgs = j.messages.map(m => m.text || '').filter(Boolean);
+            if (msgs.length) return msgs.join('; ');
+        }
+        // Try {"error":"..."} format
+        if (j.error && typeof j.error === 'string') return j.error;
+    } catch (_) {}
+
+    // Fall back to XML <msg> tag extraction
     const match = errorText.match(/<msg[^>]*>([\s\S]*?)<\/msg>/i);
-    // Extract message text from XML <msg> tag
-    let extracted = (match && match[1])
-        ? match[1].trim()
-        : null;
+    let extracted = (match && match[1]) ? match[1].trim() : null;
 
     if (extracted) {
-        // Strip common HTML entities
         return extracted
             .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
@@ -42,45 +52,94 @@ function getCSRFToken() {
 }
 
 /**
+ * Serialize an object to application/x-www-form-urlencoded.
+ * Skips null/undefined values. Empty strings are encoded as key= (valid for Splunk).
+ * Arrays are encoded as repeated keys (key=value&key=value).
+ */
+function formEncode(data) {
+    if (!data || typeof data !== 'object') return '';
+    const parts = [];
+    Object.entries(data).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        if (Array.isArray(value)) {
+            value.forEach(v => {
+                parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`);
+            });
+        } else {
+            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+        }
+    });
+    return parts.join('&');
+}
+
+/**
  * Make authenticated API request to Splunk via splunkd/__raw proxy.
  * Uses cookie-based auth and form-urlencoded body for mutations.
+ * Body is serialized unconditionally for mutations (POST/PUT/PATCH), matching legacy behavior.
  */
 async function apiRequest(endpoint, options = {}) {
     const method = options.method || 'GET';
     let url = `${API_ENDPOINT}${endpoint}`;
 
-    // Append output_mode=json for GET requests (Splunk returns XML by default)
-    if (method === 'GET') {
-        const separator = url.includes('?') ? '&' : '?';
-        url += `${separator}output_mode=json`;
-    }
+    // Always append output_mode=json — Splunk web proxy converts to JSON reliably.
+    // GET: required because Splunk defaults to XML responses.
+    // POST/PUT/PATCH: included in body via formEncode, ensuring JSON responses for .json() parsing.
+    const separator = url.includes('?') ? '&' : '?';
+    url += `${separator}output_mode=json`;
 
-    const headers = {};
+    // Replicate exact header set from password-crud.js splunkdFetch().
+    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
     let body = undefined;
+    const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
+    // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
     const csrfToken = getCSRFToken();
-    if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (csrfToken && isMutation) {
         headers['X-Splunk-Form-Key'] = csrfToken;
+    }
+
+    // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
+    if (isMutation && options.body) {
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        body = new URLSearchParams(options.body).toString();
+        // Inject output_mode=json into body so mutation responses are JSON (fixes .json() parsing)
+        const bodyData = { ...options.body, output_mode: 'json' };
+        body = formEncode(bodyData);
     }
 
-    const response = await fetch(url, {
-        method: method,
-        headers: headers,
-        body: body,
-        credentials: 'include',
-    });
+    const timeout = options.timeout || DEFAULT_FETCH_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timerId = setTimeout(() => controller.abort(), timeout);
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        const parsedMsg = parseError(errorText);
-        const error = new Error(parsedMsg || `API Error ${response.status}`);
-        error.status = response.status; // Preserve for createCredential conflict detection
-        throw error;
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: headers,
+            body: body,
+            credentials: 'include',
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            const parsedMsg = parseError(errorText);
+            const error = new Error(parsedMsg || `API Error ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('json') && !contentType.includes('javascript')) {
+            const text = await response.text();
+            if (!text || text.trim().length === 0) {
+                return {};
+            }
+            console.warn(`apiRequest: non-JSON response (${contentType}), status ${response.status}`);
+            return { error: 'Invalid response — expected JSON' };
+        }
+        return response.json().catch(() => ({ error: 'Invalid response — failed to parse JSON' }));
+    } finally {
+        clearTimeout(timerId);
     }
-
-    return response.json().catch(() => ({}));
 }
 
 /**
@@ -90,37 +149,69 @@ async function splunkdRequest(path, options = {}) {
     const method = options.method || 'GET';
     let url = `/en-US/splunkd/__raw${path}`;
 
+    // Always append output_mode=json for GET — Splunk defaults to XML.
     if (method === 'GET') {
         const separator = url.includes('?') ? '&' : '?';
         url += `${separator}output_mode=json`;
     }
 
-    const headers = {};
+    // Replicate exact header set from password-crud.js splunkdFetch().
+    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
     let body = undefined;
+    const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
+    // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
     const csrfToken = getCSRFToken();
-    if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (csrfToken && isMutation) {
         headers['X-Splunk-Form-Key'] = csrfToken;
+    }
+
+    // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
+    if (isMutation && options.body) {
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        body = new URLSearchParams(options.body).toString();
+        // Inject output_mode=json into mutation bodies so Splunk returns JSON instead of XML.
+        // This fixes .json() parsing on POST/PUT/PATCH responses across all callers:
+        // - createCredential (splunkdRequest for POST /storage/passwords and /configs/.../acl)
+        // - updateCredential (apiRequest for /storage/passwords, splunkdRequest for ACL)
+        // - deleteCredential (pre-delete ACL bump via splunkdRequest)
+        const bodyData = { ...options.body, output_mode: 'json' };
+        body = formEncode(bodyData);
     }
 
-    const response = await fetch(url, {
-        method: method,
-        headers: headers,
-        body: body,
-        credentials: 'include',
-    });
+    const timeout = options.timeout || DEFAULT_FETCH_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timerId = setTimeout(() => controller.abort(), timeout);
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        const parsedMsg = parseError(errorText);
-        const error = new Error(parsedMsg || `API Error ${response.status}`);
-        error.status = response.status; // Preserve for createCredential conflict detection
-        throw error;
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: headers,
+            body: body,
+            credentials: 'include',
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            const parsedMsg = parseError(errorText);
+            const error = new Error(parsedMsg || `API Error ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('json') && !contentType.includes('javascript')) {
+            const text = await response.text();
+            if (!text || text.trim().length === 0) {
+                return {};
+            }
+            console.warn(`splunkdRequest: non-JSON response (${contentType}), status ${response.status}`);
+            return { error: 'Invalid response — expected JSON' };
+        }
+        return response.json().catch(() => ({ error: 'Invalid response — failed to parse JSON' }));
+    } finally {
+        clearTimeout(timerId);
     }
-
-    return response.json().catch(() => ({}));
 }
 
 /**
@@ -193,48 +284,46 @@ async function getCredential(name, realm) {
  */
 async function createCredential(username, password, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
     try {
-        // Step 1: Create credential
-        const createUri = `/servicesNS/nobody/${app || 'search'}/storage/passwords`;
+        // Step 1: Create credential — uses actual owner in URI (matches legacy createSingleCredential L472-476)
+        const resolvedOwner = encodeURIComponent(owner || 'nobody');
+        const resolvedApp = encodeURIComponent(app || 'search');
+        const createUri = `/servicesNS/${resolvedOwner}/${resolvedApp}/storage/passwords`;
         const created = await splunkdRequest(createUri, {
             method: 'POST',
             body: {
                 name: username,
                 password: password,
                 realm: realm || '',
-                owner: owner || 'nobody',
-                app: app || 'search',
             },
         });
 
-        // Step 2: Set ACL permissions using buildAclPath
-        const stanzaKey = (created.entry && created.entry.length > 0) ? created.entry[0].name : '';
-        if (stanzaKey) {
-            const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
+        // Step 2: Set ACL — build explicit path using credential:${realm}:${username}:
+        // Matches legacy line 477: hardcoded credential%3A${realm}%3A${username}%3A/acl
+        const aclPath = `/servicesNS/${resolvedOwner}/${resolvedApp}/configs/conf-passwords/credential%3A${encodeURIComponent(realm || '')}%3A${encodeURIComponent(username)}%3A/acl`;
 
-            // Two-step ACL write required by splunkd when sharing='user'
-            if (sharing === 'user') {
-                await splunkdRequest(aclPath, {
-                    method: 'PUT',
-                    body: {
-                        sharing: 'app',
-                        owner: owner || 'nobody',
-                        perms_read: readRoles ? readRoles.join(',') : '',
-                        perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
-                    },
-                });
-            }
-
-            // Final ACL with actual sharing value
+        // Two-step ACL write required by splunkd when sharing='user' (legacy L479-481)
+        if (sharing === 'user') {
             await splunkdRequest(aclPath, {
-                method: 'PUT',
+                method: 'POST',
                 body: {
-                    sharing: sharing,
+                    'perms.read': readRoles ? readRoles.join(',') : '',
+                    'perms.write': writeRoles ? writeRoles.join(',') : '',
+                    sharing: 'app',
                     owner: owner || 'nobody',
-                    perms_read: readRoles ? readRoles.join(',') : '',
-                    perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
                 },
             });
         }
+
+        // Final ACL with actual sharing value
+        await splunkdRequest(aclPath, {
+            method: 'POST',
+            body: {
+                'perms.read': readRoles ? readRoles.join(',') : '',
+                'perms.write': writeRoles ? writeRoles.join(',') : '',
+                sharing: sharing,
+                owner: owner || 'nobody',
+            },
+        });
 
         return created.entry || null;
     } catch (error) {
@@ -245,47 +334,57 @@ async function createCredential(username, password, realm, app, owner, readRoles
 
 /**
  * Update an existing credential password, then set ACL permissions.
+ * Mirrors legacy handleUpdateCredential exactly (password-crud.js L511-554):
+1. ACL bump: sharing=app for predictable splunkd URI behaviour
+2. POST password only to nobody/{sourceApp}/storage/passwords/{stanza}
+3. If app changed, POST /move endpoint
+4. Final ACL with actual sharing value against target app
  */
-async function updateCredential(name, realm, password, readRoles, writeRoles, owner, app, sharing = 'app') {
+async function updateCredential(name, realm, password, readRoles, writeRoles, owner, newApp, sharing = 'app', sourceApp) {
     try {
-        const encodedName = encodeURIComponent(name);
-        const encodedRealm = encodeURIComponent(realm);
-        const endpoint = `/${encodedRealm}:${encodedName}`;
+        const stanzaKey = `${(realm || '')}:${name}:`;
+        const encodedStanza = encodeURIComponent(stanzaKey);
+        const actualSourceApp = sourceApp || (owner === 'nobody' ? getCurrentApp() : 'search');
+        const targetApp = newApp || actualSourceApp;
 
-        // Update credential (password + owner + app)
-        const body = {};
-        if (password) body.password = password;
-        if (owner) body.owner = owner;
-        if (app) body.app = app;
-
-        await apiRequest(endpoint, {
+        // Step 1: ACL bump to app scope first (legacy L522-523)
+        const sourceAclPath = buildAclPath(stanzaKey, owner || 'nobody', actualSourceApp);
+        await splunkdRequest(sourceAclPath, {
             method: 'POST',
-            body: body,
-        });
-
-        // Update ACL separately using buildAclPath
-        const stanzaKey = `${realm}:${name}:`;
-        const aclPath = buildAclPath(stanzaKey, owner || 'nobody', app || 'search');
-
-        // Pre-set sharing=app for predictable splunkd URI behaviour (legacy L522-523)
-        await splunkdRequest(aclPath, {
-            method: 'PUT',
             body: {
+                'perms.read': readRoles ? readRoles.join(',') : '',
+                'perms.write': writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
                 sharing: 'app',
                 owner: owner || 'nobody',
-                perms_read: readRoles ? readRoles.join(',') : '',
-                perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
             },
         });
 
-        // Final ACL with actual sharing value
-        await splunkdRequest(aclPath, {
-            method: 'PUT',
+        // Step 2: Update password only — nobody/{sourceApp} path per legacy L526-529
+        if (password) {
+            await splunkdRequest(
+                `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/storage/passwords/${encodedStanza}`,
+                { method: 'POST', body: { password } }
+            );
+        }
+
+        // Step 3: Move if app changed — legacy L532-538
+        if (actualSourceApp !== targetApp) {
+            const moveCredId = encodeURIComponent(`credential:${stanzaKey}`);
+            await splunkdRequest(
+                `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/configs/conf-passwords/${moveCredId}/move`,
+                { method: 'POST', body: { app: targetApp, user: 'nobody' } }
+            );
+        }
+
+        // Step 4: Final ACL with actual sharing value against target app (legacy L541-546)
+        const finalAclPath = buildAclPath(stanzaKey, owner || 'nobody', targetApp);
+        await splunkdRequest(finalAclPath, {
+            method: 'POST',
             body: {
+                'perms.read': readRoles ? readRoles.join(',') : '',
+                'perms.write': writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
                 sharing: sharing,
                 owner: owner || 'nobody',
-                perms_read: readRoles ? readRoles.join(',') : '',
-                perms_write: writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
             },
         });
     } catch (error) {
@@ -295,31 +394,36 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
 }
 
 /**
- * Delete a credential
+ * Delete a credential.
+ * Mirrors legacy executeDelete exactly (password-crud.js L569-582):
+1. ACL bump using row's actual owner/app/acl_read/acl_write
+2. DELETE via /servicesNS/{owner}/{app}/storage/passwords/{stanza}
  */
-async function deleteCredential(name, realm, app, sharing = 'app') {
+async function deleteCredential(name, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
     try {
-        // Pre-delete ACL bump for user-scoped credentials (legacy L572-576)
-        if (sharing === 'user') {
-            const stanzaKey = `${realm}:${name}:`;
-            const aclPath = buildAclPath(stanzaKey, 'nobody', app || 'search');
-            await splunkdRequest(aclPath, {
-                method: 'PUT',
-                body: {
-                    sharing: 'app',
-                    owner: 'nobody',
-                    perms_read: '*',
-                    perms_write: 'admin,power',
-                },
-            });
-        }
+        const stanzaKey = `${(realm || '')}:${name}:`;
+        const resolvedOwner = owner || 'nobody';
+        const resolvedApp = app || getCurrentApp() || 'search';
 
-        const encodedName = encodeURIComponent(name);
-        const encodedRealm = encodeURIComponent(realm);
-        await apiRequest(`/${encodedRealm}:${encodedName}`, {
-            method: 'DELETE',
-            body: {},
+        // Pre-delete ACL bump using per-credential ownership (legacy L572-576)
+        const effectiveSharing = sharing === 'user' ? 'app' : sharing;
+        const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
+        await splunkdRequest(aclPath, {
+            method: 'POST',
+            body: {
+                'perms.read': readRoles ? (Array.isArray(readRoles) ? readRoles.join(',') : readRoles) : '*',
+                'perms.write': writeRoles ? (Array.isArray(writeRoles) ? writeRoles.join(',') : writeRoles) : (resolvedOwner),
+                sharing: effectiveSharing,
+                owner: resolvedOwner,
+            },
         });
+
+        // DELETE via explicit splunkd path (legacy L578-580)
+        const encodedStanza = encodeURIComponent(stanzaKey);
+        await splunkdRequest(
+            `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`,
+            { method: 'DELETE' }
+        );
     } catch (error) {
         console.error(`Error deleting credential ${realm}:${name}:`, error);
         throw error;
@@ -343,15 +447,50 @@ async function getCredentialACL(name, realm) {
 
 /**
  * Get the clear-text password for a credential.
- * Fetches the credential via storage/passwords and extracts clear_password from response.
+ * For user-scoped credentials, temporarily bumps sharing to 'app' so the fetch succeeds,
+ * then restores original sharing — mirrors legacy L425-433 exactly.
  */
-async function getCredentialPassword(name, realm) {
-    const encodedName = encodeURIComponent(name);
-    const encodedRealm = encodeURIComponent(realm);
-    const data = await apiRequest(`/${encodedRealm}:${encodedName}`);
-    return (data.entry && data.entry[0] && data.entry[0].content)
-        ? data.entry[0].content.clear_password || null
-        : null;
+async function getCredentialPassword(name, realm, app, owner, sharing) {
+    const resolvedOwner = owner || 'nobody';
+    const resolvedApp = app || getCurrentApp() || 'search';
+    const stanzaKey = `${(realm || '')}:${name}:`;
+    let didBumpSharing = false;
+
+    // Temporary sharing bump for user-scoped credentials (legacy L427-429)
+    if (sharing === 'user') {
+        const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
+        await splunkdRequest(aclPath, {
+            method: 'POST',
+            body: {
+                sharing: 'app',
+                owner: resolvedOwner,
+            },
+        });
+        didBumpSharing = true;
+    }
+
+    try {
+        const encodedStanza = encodeURIComponent(stanzaKey);
+        const data = await splunkdRequest(
+            `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`
+        );
+        const pwd = (data.entry && data.entry[0] && data.entry[0].content)
+            ? data.entry[0].content.clear_password || null
+            : null;
+        return pwd;
+    } finally {
+        // Restore user sharing (legacy L431-432)
+        if (didBumpSharing) {
+            const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
+            await splunkdRequest(aclPath, {
+                method: 'POST',
+                body: {
+                    sharing: 'user',
+                    owner: resolvedOwner,
+                },
+            }).catch(() => console.warn('Failed to restore user-scoped sharing after password reveal'));
+        }
+    }
 }
 
 /**
@@ -392,37 +531,53 @@ async function getApps() {
 }
 
 /**
- * Fetch current authenticated user from /authentication/current-context endpoint.
- * Returns { username, fullName, email } object. Defaults to { username: 'nobody' } on failure.
+ * Fetch list of all users from /authentication/users endpoint.
+ * Returns array of { name, fullName, email } objects. Defaults to [] on failure.
+ * Mirrors legacy password-crud.js fetchUsers() exactly.
  */
 async function getUsers() {
     try {
-        const data = await splunkdRequest('/servicesNS/nobody/system/authentication/current-context', { method: 'GET' });
-        const entry = (data.entry || [])[0];
-        if (!entry) return { username: 'nobody' };
-        return {
-            username: entry.content?.name || entry.name || 'nobody',
-            fullName: entry.content?.fullName || '',
-            email: entry.content?.email || '',
-        };
+        const data = await splunkdRequest('/servicesNS/-/-/authentication/users', { method: 'GET' });
+        return (data.entry || []).map(e => ({
+            name: e.name,
+            fullName: e.content?.fullName || '',
+            email: e.content?.email || '',
+        }));
     } catch (err) {
-        console.warn('Failed to fetch current user:', err.message);
-        return { username: 'nobody' };
+        console.warn('Failed to fetch users:', err.message);
+        return [];
     }
 }
 
 /**
+ * Fetch current authenticated user. Uses Splunk.util if available, falls back to 'nobody'.
+ * Mirrors legacy password-crud.js currentUser() which uses Splunk.util.getConfigValue('USERNAME').
+ */
+function getCurrentUser() {
+    try {
+        if (typeof window !== 'undefined' && window.Splunk && window.Splunk.util) {
+            return window.Splunk.util.getConfigValue('USERNAME') || 'nobody';
+        }
+    } catch (err) {
+        // Splunk.util not available
+    }
+    return 'nobody';
+}
+
+/**
  * Fetch available roles from /authorization/roles endpoint.
- * Returns array of role name strings for role dropdowns.
+ * Returns array of role name strings for role dropdowns, with '* (all)' sentinel prepended.
  * Gracefully returns empty array on failure.
  */
 async function getRoles() {
     try {
         const data = await splunkdRequest('/servicesNS/-/-/authorization/roles', { method: 'GET' });
-        return (data.entry || []).map(e => e.name);
+        const roles = (data.entry || []).map(e => e.name);
+        // Prepend '* (all)' sentinel — selecting * grants access to all roles (legacy password-crud.js behavior)
+        return ['* (all)', ...roles];
     } catch (err) {
         console.warn('Failed to fetch roles:', err.message);
-        return [];
+        return ['* (all)'];
     }
 }
 
@@ -431,8 +586,8 @@ async function getRoles() {
  * Returns { isDuplicate, conflictName, message } for user-friendly feedback.
  */
 function parseCreateError(error) {
-    const isDuplicate = error.status === 409 ||
-        (error.message && /already exists/i.test(error.message));
+    const isDuplicate = !!(error.status === 409 ||
+        (error.message && /already exists/i.test(error.message)));
     return {
         isDuplicate,
         conflictName: null,
@@ -441,6 +596,127 @@ function parseCreateError(error) {
             : (error.message || 'Failed to create credential'),
     };
 }
+
+/**
+ * Get current app context from URL path (/app/{appname}/...)
+ */
+function getCurrentApp() {
+    const match = window.location.pathname.match(/\/app\/([^/]+)/);
+    return match ? match[1] : 'search';
+}
+
+/**
+ * RFC 4180-compliant CSV parser — ported from legacy password-crud.js.
+ * Handles quoted fields, escaped quotes, and comment lines (# prefix).
+ * Returns { rows, errors } where each row has username, password, realm, app, owner, sharing, read, write.
+ */
+function parseCSV(text) {
+    // Strip UTF-8 BOM (Excel/save-as adds this, breaks header detection)
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim() && !l.trimStart().startsWith('#'));
+    if (lines.length < 2) return { rows: [], errors: ['File is empty or has no data rows.'] };
+
+    // RFC 4180-compliant field splitter
+    function splitLine(line) {
+        const fields = [];
+        let cur = '', inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (inQuote) {
+                if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+                else if (ch === '"') inQuote = false;
+                else cur += ch;
+            } else {
+                if (ch === '"') inQuote = true;
+                else if (ch === ',') { fields.push(cur); cur = ''; }
+                else cur += ch;
+            }
+        }
+        fields.push(cur);
+        return fields;
+    }
+
+    const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
+    if (!headers.includes('username') || !headers.includes('password')) {
+        return { rows: [], errors: ['Invalid CSV: the header row must contain "username" and "password" columns. Please download the template for the correct format.'] };
+    }
+    const MAX_CSV_ROWS = 500;
+    const defaultApp = getCurrentApp();
+    const currentOwner = getCurrentUser();
+    const rows = [], errors = [];
+
+    let limitReached = false;
+    lines.slice(1).forEach((line, i) => {
+        if (!line.trim()) return;
+        if (limitReached) return;
+        if (rows.length >= MAX_CSV_ROWS) {
+            errors.push(`Row limit of ${MAX_CSV_ROWS} reached — remaining rows skipped.`);
+            limitReached = true;
+            return;
+        }
+        const vals = splitLine(line);
+        const row = {};
+        headers.forEach((h, j) => { row[h] = (vals[j] || '').trim(); });
+
+        const sanitize = function(s) {
+            if (typeof s !== 'string') return '';
+            return s.replace(/\0/g, '').trim();
+        };
+
+        const MAX_FIELD_LEN = 1024;
+        const username = sanitize(row.username);
+        const password = sanitize(row.password);
+        if (!username || !password) {
+            errors.push(`Row ${i + 2}: ${!username ? 'username' : 'password'} is required — skipped.`);
+            return;
+        }
+        if (username.length > MAX_FIELD_LEN || password.length > MAX_FIELD_LEN) {
+            errors.push(`Row ${i + 2}: field exceeds ${MAX_FIELD_LEN} characters — skipped.`);
+            return;
+        }
+        rows.push({
+            username,
+            password,
+            realm: sanitize(row.realm),
+            app: sanitize(row.app) || defaultApp,
+            owner: (row.owner && row.owner !== '*') ? sanitize(row.owner) : currentOwner,
+            sharing: ['global', 'app', 'user'].includes(sanitize(row.sharing)) ? sanitize(row.sharing) : 'app',
+            read: sanitize(row.read) || DEFAULT_READ_ROLES.join(','),
+            write: sanitize(row.write) || DEFAULT_WRITE_ROLES.join(','),
+        });
+    });
+    return { rows, errors };
+}
+
+/**
+  * Generate CSV template for download — all 8 columns with comments and example row.
+  * Matches JS version downloadCSVTemplate() exactly (password-crud.js L926-1101).
+  */
+ function generateCSVTemplate() {
+     const app = getCurrentApp();
+     const owner = getCurrentUser();
+     return [
+        '# REST storage/passwords Manager — Bulk Import Template',
+         '# Required columns : username, password',
+         '# Optional columns : realm, app, owner, sharing, read, write',
+         '#',
+         '# Column notes:',
+         '#   username : the credential username (required)',
+         '#   password : the credential password (required)',
+         '#   realm    : optional descriptor, e.g. prod or dev (default: empty)',
+        `#   app      : Splunk app context to store the credential in (default: ${app})`,
+        `#   owner    : a Splunk username — must be a real user, NOT * (default: ${owner})`,
+         '#   sharing  : one of: global, app, user (default: app)',
+         '#   read     : comma-separated roles that can read, or * for all — enclose in quotes if multiple, e.g. "admin,power" (default: admin,power)',
+         '#   write    : comma-separated roles that can write, or * for all — enclose in quotes if multiple, e.g. "admin,power" (default: admin,power)',
+         '#',
+         '# Lines starting with # are ignored during import.',
+         '#',
+         'username,password,realm,app,owner,sharing,read,write',
+        `example-user,example-password,example-realm,${app},${owner},app,"admin,power","admin,power"`,
+     ].join('\n') + '\n';
+ }
 
 // Default role constants for form defaults — prevents empty ACL stripping access (GAP-V03/V04)
 const DEFAULT_READ_ROLES = ['admin', 'power'];
@@ -451,6 +727,10 @@ module.exports = {
     parseError,
     parseCreateError,
     buildAclPath,
+    getCurrentApp,
+    getCurrentUser,
+    parseCSV,
+    generateCSVTemplate,
     getAllCredentials,
     getCredential,
     createCredential,
