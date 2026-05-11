@@ -42,6 +42,25 @@ test.describe('Splunk App Smoke Test', () => {
     await expect(table).toBeVisible({ timeout: 15000 });
   }
 
+  /**
+   * Helper: Wait for a modal dialog to be visible and stable.
+   * Headless Chromium needs extra time for Splunk Modal's focus trap to initialize.
+   */
+  async function waitForModal(page) {
+    const dialog = page.locator('[role="dialog"]').first();
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    // Extra settle time for Splunk Modal's internal state in headless mode
+    await page.waitForTimeout(500);
+    return dialog;
+  }
+
+  /**
+   * Helper: Wait for modal to close completely.
+   */
+  async function waitForModalClose(page) {
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 10000 });
+  }
+
   // --------------------------------------------------
   // TEST 1: Existing table load test (preserved)
   // --------------------------------------------------
@@ -174,64 +193,58 @@ test.describe('Splunk App Smoke Test', () => {
     const testPassword = 'TestPass123!';
 
     // Click "Add Credential" or equivalent button to open the create form
-    const addButton = page.locator('button:has-text("Add"), button:has-text("Create"), [data-testid="add-credential"]');
-    if (await addButton.isVisible()) {
-      await addButton.click();
-    } else {
-      // Fallback: look for any button with text containing "Add" or "+"
-      const addBtn = page.getByRole('button', { name: /add|create/i }).first();
-      await expect(addBtn).toBeVisible({ timeout: 5000 });
-      await addBtn.click();
-    }
+    const addBtn = page.getByRole('button', { name: /add|create/i }).first();
+    await expect(addBtn).toBeVisible({ timeout: 5000 });
+    await addBtn.click();
 
-    // Wait for form to appear (modal or inline)
-    const formContainer = page.locator('form, [role="dialog"], .credential-form');
-    await expect(formContainer.first()).toBeVisible({ timeout: 5000 });
+    // Wait for modal dialog to appear and stabilize in headless mode
+    const dialog = await waitForModal(page);
 
-    // Fill in the credential form fields
-    const usernameInput = page.locator('input[name="username"], input[placeholder*="Username"], input[placeholder*="username"]').first();
+    // Fill form fields scoped within the modal
+    const usernameInput = dialog.locator('input[type="text"], input[name="username"]').first();
+    await expect(usernameInput).toBeVisible({ timeout: 5000 });
     await usernameInput.fill(testCredName);
 
-    const passwordInput = page.locator('input[type="password"]').first();
+    const passwordInput = dialog.locator('input[type="password"]').first();
+    await expect(passwordInput).toBeVisible({ timeout: 5000 });
     await passwordInput.fill(testPassword);
 
-    // Submit the form
-    const submitButton = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save"), [data-testid="submit-credential"]');
-    if (await submitButton.isVisible()) {
-      await Promise.all([
-        page.waitForResponse(response => response.url().includes('storage/passwords') && response.status() === 200),
-        submitButton.first().click(),
-      ]);
+    // Submit the form — wait for the API response
+    const submitButton = dialog.locator('button:has-text("Create"), button[type="submit"]').first();
+    await expect(submitButton).toBeVisible({ timeout: 5000 });
 
-      // Verify new credential appears in table
-      const credInTable = page.getByText(testCredName);
-      await expect(credInTable).toBeVisible({ timeout: 10000 });
+    await Promise.all([
+      page.waitForResponse(response =>
+        response.url().includes('storage/passwords') && response.status() === 200,
+        { timeout: 15000 }
+      ),
+      submitButton.click(),
+    ]);
 
-      console.log(`\u2713 Created credential: ${testCredName}`);
-    } else {
-      // If no visible form, the test can still validate via a soft assertion
-      console.log('Form UI elements not found; skipping DOM interaction portion');
-    }
+    // Wait for modal to close after successful creation
+    await waitForModalClose(page);
+
+    // Verify new credential appears in table
+    const credInTable = page.getByText(testCredName);
+    await expect(credInTable).toBeVisible({ timeout: 10000 });
+
+    console.log(`\u2713 Created credential: ${testCredName}`);
 
     // Cleanup: delete the test credential if it was created
     try {
-      const deleteBtn = page.getByRole('button', { name: /delete|remove/i }).filter({ hasText: testCredName });
-      if (await deleteBtn.isVisible({ timeout: 3000 })) {
-        // Find and click the delete button for this specific row
-        const row = page.locator('tr').filter({ hasText: testCredName });
-        const rowDeleteBtn = row.getByRole('button', { name: /delete/i }).first();
-        if (await rowDeleteBtn.isVisible()) {
-          await rowDeleteBtn.click();
+      const row = page.locator('tr').filter({ hasText: testCredName });
+      const rowDeleteBtn = row.getByRole('button', { name: /delete/i }).first();
+      if (await rowDeleteBtn.isVisible({ timeout: 3000 })) {
+        await rowDeleteBtn.click();
 
-          // Confirm deletion in modal if it appears
-          const confirmBtn = page.locator('[role="dialog"] button:has-text("Confirm"), [role="dialog"] button:has-text("Delete")');
-          if (await confirmBtn.isVisible({ timeout: 3000 })) {
-            await confirmBtn.first().click();
-          }
+        // Confirm deletion in modal
+        const confirmDialog = await waitForModal(page);
+        const confirmBtn = confirmDialog.locator('button:has-text("Delete")').first();
+        await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+        await confirmBtn.click();
 
-          // Verify removed from table
-          await expect(page.getByText(testCredName)).not.toBeVisible({ timeout: 5000 });
-        }
+        // Verify removed from table
+        await expect(page.getByText(testCredName)).not.toBeVisible({ timeout: 10000 });
       }
     } catch (e) {
       console.log('Cleanup note: could not auto-delete test credential:', e.message);
@@ -247,70 +260,74 @@ test.describe('Splunk App Smoke Test', () => {
 
     const testCredName = `test-edit-${Date.now()}`;
 
-    // First, create a credential to edit (via direct DOM interaction)
+    // First, create a credential to edit
     try {
-      // Click add/create button
       const addBtn = page.getByRole('button', { name: /add|create/i }).first();
-      if (await addBtn.isVisible({ timeout: 5000 })) {
-        await addBtn.click();
+      await expect(addBtn).toBeVisible({ timeout: 5000 });
+      await addBtn.click();
 
-        const formContainer = page.locator('form, [role="dialog"], .credential-form').first();
-        await expect(formContainer).toBeVisible({ timeout: 5000 });
+      const dialog = await waitForModal(page);
 
-        const usernameInput = page.locator('input[name="username"], input[placeholder*="Username"], input[placeholder*="username"]').first();
-        await usernameInput.fill(testCredName);
+      const usernameInput = dialog.locator('input[type="text"], input[name="username"]').first();
+      await expect(usernameInput).toBeVisible({ timeout: 5000 });
+      await usernameInput.fill(testCredName);
 
-        const passwordInput = page.locator('input[type="password"]').first();
-        await passwordInput.fill('InitialPass123!');
+      const passwordInput = dialog.locator('input[type="password"]').first();
+      await expect(passwordInput).toBeVisible({ timeout: 5000 });
+      await passwordInput.fill('InitialPass123!');
 
-        const submitButton = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save")').first();
-        if (await submitButton.isVisible()) {
-          await submitButton.click();
-          await page.waitForTimeout(3000); // Wait for creation response
-        }
+      const submitButton = dialog.locator('button:has-text("Create"), button[type="submit"]').first();
+      await expect(submitButton).toBeVisible({ timeout: 5000 });
 
-        // Now find and edit the credential
-        const row = page.locator('tr').filter({ hasText: testCredName });
-        if (await row.isVisible({ timeout: 10000 })) {
-          console.log(`\u2713 Created credential for edit test: ${testCredName}`);
+      await Promise.all([
+        page.waitForResponse(response =>
+          response.url().includes('storage/passwords') && response.status() === 200,
+          { timeout: 15000 }
+        ),
+        submitButton.click(),
+      ]);
 
-          // Click edit button in the row
-          const editBtn = row.getByRole('button', { name: /edit/i }).first();
-          if (await editBtn.isVisible({ timeout: 5000 })) {
-            await editBtn.click();
+      await waitForModalClose(page);
 
-            // Wait for edit form to appear
-            const editForm = page.locator('[role="dialog"], .credential-form').last();
-            await expect(editForm).toBeVisible({ timeout: 5000 });
+      // Now find and edit the credential
+      const row = page.locator('tr').filter({ hasText: testCredName });
+      await expect(row).toBeVisible({ timeout: 10000 });
+      console.log(`\u2713 Created credential for edit test: ${testCredName}`);
 
-            console.log('\u2713 Edit form opened for credential');
+      // Click edit button in the row
+      const editBtn = row.getByRole('button', { name: /edit/i }).first();
+      await expect(editBtn).toBeVisible({ timeout: 5000 });
+      await editBtn.click();
 
-            // Save without changes
-            const saveBtn = page.locator('button[type="submit"], button:has-text("Save")').first();
-            if (await saveBtn.isVisible()) {
-              await saveBtn.click();
-              await page.waitForTimeout(2000);
-            }
+      // Wait for edit modal to appear
+      const editDialog = await waitForModal(page);
+      console.log('\u2713 Edit form opened for credential');
 
-            console.log('\u2713 Edit flow completed');
-          } else {
-            console.log('Edit button not visible; edit UI may use a different selector');
-          }
+      // Save without changes
+      const saveBtn = editDialog.locator('button:has-text("Update"), button:has-text("Save")').first();
+      await expect(saveBtn).toBeVisible({ timeout: 5000 });
 
-          // Cleanup: delete test credential
-          const rowAfter = page.locator('tr').filter({ hasText: testCredName });
-          const deleteBtn = rowAfter.getByRole('button', { name: /delete/i }).first();
-          if (await deleteBtn.isVisible()) {
-            await deleteBtn.click();
+      await Promise.all([
+        page.waitForResponse(response =>
+          response.url().includes('storage/passwords') && (response.status() === 200 || response.status() === 201),
+          { timeout: 15000 }
+        ),
+        saveBtn.click(),
+      ]);
 
-            const confirmBtn = page.locator('[role="dialog"] button:has-text("Confirm"), [role="dialog"] button:has-text("Delete")');
-            if (await confirmBtn.isVisible({ timeout: 3000 })) {
-              await confirmBtn.first().click();
-            }
-          }
-        }
-      } else {
-        console.log('Add button not found; skipping create→edit flow');
+      await waitForModalClose(page);
+      console.log('\u2713 Edit flow completed');
+
+      // Cleanup: delete test credential
+      const rowAfter = page.locator('tr').filter({ hasText: testCredName });
+      const deleteBtn = rowAfter.getByRole('button', { name: /delete/i }).first();
+      if (await deleteBtn.isVisible({ timeout: 3000 })) {
+        await deleteBtn.click();
+
+        const confirmDialog = await waitForModal(page);
+        const confirmBtn = confirmDialog.locator('button:has-text("Delete")').first();
+        await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+        await confirmBtn.click();
       }
     } catch (e) {
       console.log(`Edit test note: ${e.message}`);
@@ -329,45 +346,51 @@ test.describe('Splunk App Smoke Test', () => {
     try {
       // Create a credential to delete
       const addBtn = page.getByRole('button', { name: /add|create/i }).first();
-      if (await addBtn.isVisible({ timeout: 5000 })) {
-        await addBtn.click();
+      await expect(addBtn).toBeVisible({ timeout: 5000 });
+      await addBtn.click();
 
-        const usernameInput = page.locator('input[name="username"], input[placeholder*="Username"], input[placeholder*="username"]').first();
-        await usernameInput.fill(testCredName);
+      const dialog = await waitForModal(page);
 
-        const passwordInput = page.locator('input[type="password"]').first();
-        await passwordInput.fill('DelPass123!');
+      const usernameInput = dialog.locator('input[type="text"], input[name="username"]').first();
+      await expect(usernameInput).toBeVisible({ timeout: 5000 });
+      await usernameInput.fill(testCredName);
 
-        const submitButton = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save")').first();
-        if (await submitButton.isVisible()) {
-          await submitButton.click();
-          await page.waitForTimeout(2000);
-        }
+      const passwordInput = dialog.locator('input[type="password"]').first();
+      await expect(passwordInput).toBeVisible({ timeout: 5000 });
+      await passwordInput.fill('DelPass123!');
 
-        // Verify credential exists
-        const credRow = page.locator('tr').filter({ hasText: testCredName });
-        await expect(credRow).toBeVisible({ timeout: 10000 });
-        console.log(`\u2713 Created credential for delete test: ${testCredName}`);
+      const submitButton = dialog.locator('button:has-text("Create"), button[type="submit"]').first();
+      await expect(submitButton).toBeVisible({ timeout: 5000 });
 
-        // Delete the credential
-        const rowDeleteBtn = credRow.getByRole('button', { name: /delete/i }).first();
-        if (await rowDeleteBtn.isVisible({ timeout: 5000 })) {
-          await rowDeleteBtn.click();
+      await Promise.all([
+        page.waitForResponse(response =>
+          response.url().includes('storage/passwords') && response.status() === 200,
+          { timeout: 15000 }
+        ),
+        submitButton.click(),
+      ]);
 
-          // Confirm in modal
-          const confirmBtn = page.locator('[role="dialog"] button:has-text("Confirm"), [role="dialog"] button:has-text("Delete")');
-          if (await confirmBtn.isVisible({ timeout: 5000 })) {
-            await confirmBtn.first().click();
-            await page.waitForTimeout(2000);
-          }
+      await waitForModalClose(page);
 
-          // Verify credential no longer in table
-          await expect(page.getByText(testCredName)).not.toBeVisible({ timeout: 10000 });
-          console.log(`\u2713 Credential ${testCredName} deleted and confirmed removal from table`);
-        } else {
-          console.log('Delete button not found on row');
-        }
-      }
+      // Verify credential exists
+      const credRow = page.locator('tr').filter({ hasText: testCredName });
+      await expect(credRow).toBeVisible({ timeout: 10000 });
+      console.log(`\u2713 Created credential for delete test: ${testCredName}`);
+
+      // Delete the credential
+      const rowDeleteBtn = credRow.getByRole('button', { name: /delete/i }).first();
+      await expect(rowDeleteBtn).toBeVisible({ timeout: 5000 });
+      await rowDeleteBtn.click();
+
+      // Confirm in modal
+      const confirmDialog = await waitForModal(page);
+      const confirmBtn = confirmDialog.locator('button:has-text("Delete")').first();
+      await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+      await confirmBtn.click();
+
+      // Verify credential no longer in table
+      await expect(page.getByText(testCredName)).not.toBeVisible({ timeout: 10000 });
+      console.log(`\u2713 Credential ${testCredName} deleted and confirmed removal from table`);
     } catch (e) {
       console.log(`Delete test note: ${e.message}`);
     }
@@ -405,63 +428,83 @@ test.describe('Splunk App Smoke Test', () => {
     try {
       // Create first credential
       const addBtn = page.getByRole('button', { name: /add|create/i }).first();
-      if (await addBtn.isVisible({ timeout: 5000 })) {
-        await addBtn.click();
+      await expect(addBtn).toBeVisible({ timeout: 5000 });
+      await addBtn.click();
 
-        const usernameInput = page.locator('input[name="username"], input[placeholder*="Username"], input[placeholder*="username"]').first();
-        await usernameInput.fill(testCredName);
+      const dialog = await waitForModal(page);
 
-        const passwordInput = page.locator('input[type="password"]').first();
-        await passwordInput.fill('ConflictPass1!');
+      const usernameInput = dialog.locator('input[type="text"], input[name="username"]').first();
+      await expect(usernameInput).toBeVisible({ timeout: 5000 });
+      await usernameInput.fill(testCredName);
 
-        const submitButton = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save")').first();
-        if (await submitButton.isVisible()) {
-          await submitButton.click();
-          await page.waitForTimeout(2000);
-        }
+      const passwordInput = dialog.locator('input[type="password"]').first();
+      await expect(passwordInput).toBeVisible({ timeout: 5000 });
+      await passwordInput.fill('ConflictPass1!');
 
-        // Verify first credential was created
-        const credExists = page.getByText(testCredName);
-        await expect(credExists).toBeVisible({ timeout: 10000 });
-        console.log(`\u2713 First credential created: ${testCredName}`);
+      const submitButton = dialog.locator('button:has-text("Create"), button[type="submit"]').first();
+      await expect(submitButton).toBeVisible({ timeout: 5000 });
 
-        // Attempt to create duplicate
-        if (await addBtn.isVisible({ timeout: 5000 })) {
-          await addBtn.click();
+      await Promise.all([
+        page.waitForResponse(response =>
+          response.url().includes('storage/passwords') && response.status() === 200,
+          { timeout: 15000 }
+        ),
+        submitButton.click(),
+      ]);
 
-          const usernameInput2 = page.locator('input[name="username"], input[placeholder*="Username"], input[placeholder*="username"]').first();
-          await usernameInput2.fill(testCredName);
+      await waitForModalClose(page);
 
-          const passwordInput2 = page.locator('input[type="password"]').first();
-          await passwordInput2.fill('ConflictPass2!');
+      // Verify first credential was created
+      const credExists = page.getByText(testCredName);
+      await expect(credExists).toBeVisible({ timeout: 10000 });
+      console.log(`\u2713 First credential created: ${testCredName}`);
 
-          const submitButton2 = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save")').first();
-          if (await submitButton2.isVisible()) {
-            await submitButton2.click();
-            await page.waitForTimeout(3000);
+      // Attempt to create duplicate
+      await expect(addBtn).toBeVisible({ timeout: 5000 });
+      await addBtn.click();
 
-            // Look for error/conflict message
-            const errorMessage = page.locator('[role="alert"], .error, .error-message, [data-testid="error"], text=/already exists|conflict|duplicate/i');
-            if (await errorMessage.isVisible({ timeout: 5000 })) {
-              console.log('\u2713 Conflict error message displayed for duplicate credential');
-            } else {
-              // Alternative: the API returns 409 which might show inline
-              console.log('Error message selector not matched; conflict handling may use a different UI pattern');
-            }
-          }
-        }
+      const dialog2 = await waitForModal(page);
 
-        // Cleanup: delete the test credential
-        const row = page.locator('tr').filter({ hasText: testCredName });
-        const deleteBtn = row.getByRole('button', { name: /delete/i }).first();
-        if (await deleteBtn.isVisible()) {
-          await deleteBtn.click();
+      const usernameInput2 = dialog2.locator('input[type="text"], input[name="username"]').first();
+      await expect(usernameInput2).toBeVisible({ timeout: 5000 });
+      await usernameInput2.fill(testCredName);
 
-          const confirmBtn = page.locator('[role="dialog"] button:has-text("Confirm"), [role="dialog"] button:has-text("Delete")');
-          if (await confirmBtn.isVisible({ timeout: 3000 })) {
-            await confirmBtn.first().click();
-          }
-        }
+      const passwordInput2 = dialog2.locator('input[type="password"]').first();
+      await expect(passwordInput2).toBeVisible({ timeout: 5000 });
+      await passwordInput2.fill('ConflictPass2!');
+
+      const submitButton2 = dialog2.locator('button:has-text("Create"), button[type="submit"]').first();
+      await expect(submitButton2).toBeVisible({ timeout: 5000 });
+      await submitButton2.click();
+
+      // Wait for API response (should be 409 conflict)
+      await page.waitForResponse(response =>
+        response.url().includes('storage/passwords') && response.status() === 409,
+        { timeout: 15000 }
+      );
+
+      // Look for error/conflict message
+      const errorMessage = page.locator('[role="alert"], .error, .error-message, [data-testid="error"], text=/already exists|conflict|duplicate/i');
+      if (await errorMessage.isVisible({ timeout: 5000 }).catch(() => false)) {
+        console.log('\u2713 Conflict error message displayed for duplicate credential');
+      } else {
+        console.log('Error message selector not matched; conflict handling may use a different UI pattern');
+      }
+
+      // Cleanup: close modal if still open, then delete the test credential
+      if (await page.locator('[role="dialog"]').first().isVisible({ timeout: 2000 }).catch(() => false)) {
+        await waitForModalClose(page);
+      }
+
+      const row = page.locator('tr').filter({ hasText: testCredName });
+      const deleteBtn = row.getByRole('button', { name: /delete/i }).first();
+      if (await deleteBtn.isVisible({ timeout: 3000 })) {
+        await deleteBtn.click();
+
+        const confirmDialog = await waitForModal(page);
+        const confirmBtn = confirmDialog.locator('button:has-text("Delete")').first();
+        await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+        await confirmBtn.click();
       }
     } catch (e) {
       console.log(`Conflict error test note: ${e.message}`);
