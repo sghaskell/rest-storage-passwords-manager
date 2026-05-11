@@ -31,13 +31,9 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx'],
     },
-    // Splunk does NOT provide React/ReactDOM as globals — they must be bundled.
-    // splunkjs/mvc is loaded at runtime via window.require(), not during webpack bundling.
-    // styled-components IS provided by Splunk globally — externalize to avoid duplicate instance
-    // breaking @splunk/react-ui component styling (duplicate context issue).
-    externals: {
-      'styled-components': 'styled-components',
-    },
+    // No externals — React, ReactDOM, and styled-components must all be bundled.
+    // Splunk does not provide these as globals.
+    externals: {},
     plugins: [
       new TerserPlugin({
         terserOptions: {

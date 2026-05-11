@@ -248,7 +248,7 @@ function CredentialTable({
         ),
 
         // Credentials table — Splunk Table component
-        React.createElement(Table, { style: { width: '100%', marginBottom: '1rem' } },
+        React.createElement(Table, { outerStyle: { width: '100%', marginBottom: '1rem' }, tableStyle: { width: '100%' } },
             React.createElement(TableHead, null,
                 React.createElement(TableRow, null, ...headerCells)
             ),
@@ -262,7 +262,7 @@ function CredentialTable({
             React.createElement(Paginator, {
                 current: currentPage,
                 totalPages: totalPages,
-                onChange: function(page) { setCurrentPage(page); },
+                onChange: function(event, data) { setCurrentPage(data.page); },
             })
         ) : null
     );
