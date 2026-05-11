@@ -11,6 +11,11 @@ const React = require('react');
 var TextMod = require('@splunk/react-ui/Text');
 var Text = TextMod.default;
 var SelectMod = require('@splunk/react-ui/Select');
+var Selector = SelectMod.default;
+var SelectOption = SelectMod.Option;
+var MultiSelectMod = require('@splunk/react-ui/Multiselect');
+var MultiSelector = MultiSelectMod.default;
+var MultiSelectOption = MultiSelectMod.Option;
 var SwitchMod = require('@splunk/react-ui/Switch');
 var Switch = SwitchMod.default;
 var ControlGroup = require('@splunk/react-ui/ControlGroup').default;
@@ -137,9 +142,9 @@ function CredentialForm({
         }
     }
 
-    function handleTogglePasswordChange(data) {
-        var checked = data && typeof data.checked === 'boolean' ? data.checked : !isChangingPassword;
-        setIsChangingPassword(checked);
+    function handleTogglePasswordChange(e) {
+        var newState = !isChangingPassword;
+        setIsChangingPassword(newState);
         if (!isChangingPassword) {
             setPassword('');
             setConfirmPassword('');
@@ -147,15 +152,15 @@ function CredentialForm({
         }
     }
 
-    function handlePasswordChange(data) {
-        var val = data && typeof data.value === 'string' ? data.value : (data || '');
+    function handlePasswordChange(e, data) {
+        var val = data && typeof data.value === 'string' ? data.value : '';
         setPassword(val);
         clearError('password');
         clearError('passwordMismatch');
     }
 
-    function handleConfirmChange(data) {
-        var val = data && typeof data.value === 'string' ? data.value : (data || '');
+    function handleConfirmChange(e, data) {
+        var val = data && typeof data.value === 'string' ? data.value : '';
         setConfirmPassword(val);
         clearError('passwordMismatch');
     }
@@ -166,35 +171,6 @@ function CredentialForm({
             delete next[key];
             return Object.keys(next).length ? next : {};
         });
-    }
-
-    // Handle Splunk Select change — data has { label, value, index }
-    function handleSingleSelectChange(target, data) {
-        var val = data && typeof data.value !== 'undefined' ? data.value : (data || '');
-        if (target === 'app') setApp(val);
-        else if (target === 'owner') setOwner(val);
-        else if (target === 'sharing') setSharing(val);
-    }
-
-    // Handle Splunk Select change for multi-select — data has { selectedItems: [{ label, value }] }
-    function handleMultiSelectChange(targetKey, data) {
-        var selected;
-        if (data && Array.isArray(data.selectedItems)) {
-            selected = data.selectedItems.map(function(item) { return item.value; });
-        } else {
-            selected = [];
-        }
-        // Mutual exclusion: if '* (all)' is picked, clear other roles
-        if (selected.length > 1 && selected.includes('* (all)')) {
-            selected = ['* (all)'];
-        }
-        if (targetKey === 'read') {
-            setReadRolesArray(selected);
-            clearError('readRoles');
-        } else {
-            setWriteRolesArray(selected);
-            clearError('writeRoles');
-        }
     }
 
     // Resolve role list for API: map '* (all)' → '*' (wildcard), or pass through normal roles
@@ -220,19 +196,6 @@ function CredentialForm({
     }
     var rolesData = toSelectData(rolesList);
 
-    // Active item helpers for Select
-    var activeAppItem = appData.find(function(a) { return a.value === app; }) || { label: app, value: app };
-    var activeOwnerItem = ownerData.find(function(u) { return u.value === owner; }) || { label: owner, value: owner };
-    var activeSharingItem = sharingData.find(function(s) { return s.value === sharing; }) || { label: 'App-scoped', value: 'app' };
-
-    // Active items for multi-select
-    var activeReadItems = readRolesArray.map(function(r) {
-        return rolesData.find(function(d) { return d.value === r; }) || { label: r, value: r };
-    });
-    var activeWriteItems = writeRolesArray.map(function(r) {
-        return rolesData.find(function(d) { return d.value === r; }) || { label: r, value: r };
-    });
-
     var showPasswordFields = !credential || isChangingPassword;
 
     // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
@@ -251,13 +214,13 @@ function CredentialForm({
 
     return React.createElement(
         'form',
-        { onSubmit: handleSubmit },
+        { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: '1rem' } },
 
         // Username field
         formField('Username',
             React.createElement(Text, {
                 value: username,
-                onChange: function(data) { setUsername(data && typeof data.value === 'string' ? data.value : ''); clearError('username'); },
+                onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
                 placeholder: 'Enter username',
                 error: !!errors.username,
             }),
@@ -268,64 +231,77 @@ function CredentialForm({
         formField('Realm',
             React.createElement(Text, {
                 value: realm,
-                onChange: function(data) { setRealm(data && typeof data.value === 'string' ? data.value : ''); },
+                onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setRealm(val); },
                 placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
                 disabled: !!credential,
             }),
             { helpText: credential ? undefined : 'Cannot be changed after creation' }
         ),
 
-        // App field
+        // App field (controlled single-select with declarative options)
         formField('App',
-            React.createElement(SelectMod, {
-                data: appData,
-                activeItem: activeAppItem,
-                onSelect: function(data) { handleSingleSelectChange('app', data); },
-            }),
+            React.createElement(Selector, {
+                value: app,
+                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : app; setApp(val); },
+            }, appData.map(function(a) {
+                return React.createElement(SelectOption, { key: 'app-' + a.value, label: a.label, value: a.value });
+            })),
             { required: true }
         ),
 
-        // Sharing field
+        // Sharing field (single-select with declarative options)
         formField('Sharing',
-            React.createElement(SelectMod, {
-                data: sharingData,
-                activeItem: activeSharingItem,
-                onSelect: function(data) { handleSingleSelectChange('sharing', data); },
-            }),
+            React.createElement(Selector, {
+                value: sharing,
+                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : sharing; setSharing(val); },
+            }, sharingData.map(function(s) {
+                return React.createElement(SelectOption, { key: 'sharing-' + s.value, label: s.label, value: s.value });
+            })),
             { helpText: 'How this credential is shared' }
         ),
 
-        // Owner field
+        // Owner field (single-select with declarative options)
         formField('Owner',
-            React.createElement(SelectMod, {
-                data: ownerData,
-                activeItem: activeOwnerItem,
-                onSelect: function(data) { handleSingleSelectChange('owner', data); },
-            }),
+            React.createElement(Selector, {
+                value: owner,
+                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : owner; setOwner(val); },
+            }, ownerData.map(function(u) {
+                return React.createElement(SelectOption, { key: 'owner-' + u.value, label: u.label, value: u.value });
+            })),
             { helpText: 'User who owns this credential' }
         ),
 
-        // Read Roles
+        // Read Roles (multi-select with declarative options)
         formField('Read Roles',
-            React.createElement(SelectMod, {
-                data: rolesData,
-                activeItems: activeReadItems,
-                onSelect: function(data) { handleMultiSelectChange('read', data); },
-              placeholderText: 'Select roles...',
-              multiple: true,
-           }),
-          { helpText: 'Roles that can view this credential', errorText: errors.readRoles, required: true }
+            React.createElement(MultiSelector, {
+                placeholder: 'Select roles...',
+                values: readRolesArray,
+                onChange: function(e, data) {
+                    var selected = data.values ? data.values.slice() : [];
+                    if (selected.length > 1 && selected.includes('* (all)')) selected = ['* (all)'];
+                    setReadRolesArray(selected);
+                    clearError('readRoles');
+                },
+            }, rolesData.map(function(r) {
+                return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
+            })),
+            { helpText: 'Roles that can view this credential', errorText: errors.readRoles, required: true }
         ),
 
-        // Write Roles
+        // Write Roles (multi-select with declarative options)
         formField('Write Roles',
-            React.createElement(SelectMod, {
-                data: rolesData,
-                activeItems: activeWriteItems,
-                onSelect: function(data) { handleMultiSelectChange('write', data); },
-              placeholderText: 'Select roles...',
-              multiple: true,
-           }),
+            React.createElement(MultiSelector, {
+                placeholder: 'Select roles...',
+                values: writeRolesArray,
+                onChange: function(e, data) {
+                    var selected = data.values ? data.values.slice() : [];
+                    if (selected.length > 1 && selected.includes('* (all)')) selected = ['* (all)'];
+                    setWriteRolesArray(selected);
+                    clearError('writeRoles');
+                },
+            }, rolesData.map(function(r) {
+                return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
+            })),
             { helpText: 'Roles that can modify this credential', errorText: errors.writeRoles, required: true }
         ),
 
@@ -334,8 +310,8 @@ function CredentialForm({
             key: 'toggle-password',
             label: 'Change password',
         }, React.createElement(Switch, {
-            checked: isChangingPassword,
-            onChange: handleTogglePasswordChange,
+            selected: isChangingPassword,
+            onClick: handleTogglePasswordChange,
         })),
 
         // Password field

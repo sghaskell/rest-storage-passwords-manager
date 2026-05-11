@@ -34,30 +34,43 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
      * Coordinates all credential management functionality
      */
     function CredentialManager() {
-        // State management
-        const [credentials, setCredentials] = React.useState([]);
-        const [loading, setLoading] = React.useState(true);
-        const [error, setError] = React.useState(null);
+        // Data state — credentials, loading, error
+        const [data, setData] = React.useState({
+            credentials: [],
+            loading: true,
+            error: null,
+        });
+        const { credentials, loading, error } = data;
 
-        // Modal states
-        const [showFormModal, setShowFormModal] = React.useState(false);
-        const [showPasswordModal, setShowPasswordModal] = React.useState(false);
-        const [showDeleteModal, setShowDeleteModal] = React.useState(false);
-        const [showImportModal, setShowImportModal] = React.useState(false);
-        const [showResultModal, setShowResultModal] = React.useState(false);
+        // Modal visibility — consolidated from 5 separate useState calls
+        const [modals, setModals] = React.useState({
+            form: false,
+            password: false,
+            delete: false,
+            import: false,
+            result: false,
+        });
 
-        // Selected credential for modals
+        // Modal data
         const [selectedCredential, setSelectedCredential] = React.useState(null);
-
-        // Form state
         const [editingCredential, setEditingCredential] = React.useState(null);
 
-        // Result modal state
-        const [resultTitle, setResultTitle] = React.useState('');
-        const [resultMessages, setResultMessages] = React.useState([]);
+        // Result modal content — consolidated title + messages
+        const [result, setResult] = React.useState({
+            title: '',
+            messages: [],
+        });
 
-        // Bulk selection state
+        // Bulk selection
         const [selectedRows, setSelectedRows] = React.useState([]);
+
+        // Reference data — apps, users, roles for form dropdowns
+        const [refData, setRefData] = React.useState({
+            apps: [],
+            users: [],
+            currentUserIdentity: 'nobody',
+            roles: [],
+        });
 
         // Error helper -- strips XML tags from Splunk responses for readable messages
         function getErrorMessage(err) {
@@ -70,12 +83,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         // Default role constants from API -- prevents empty ACL stripping access (GAP-V03/V04)
         const DEFAULT_READ = API.DEFAULT_READ_ROLES ? API.DEFAULT_READ_ROLES.join(', ') : 'admin, power';
         const DEFAULT_WRITE = API.DEFAULT_WRITE_ROLES ? API.DEFAULT_WRITE_ROLES.join(', ') : 'admin, power';
-
-        // Reference data state -- apps, users, current user identity, roles for form dropdowns
-        const [availableApps, setAvailableApps] = React.useState([]);
-        const [availableUsers, setAvailableUsers] = React.useState([]);
-        const [currentUserIdentity, setCurrentUserIdentity] = React.useState('nobody');
-        const [availableRolesList, setAvailableRolesList] = React.useState([]);
 
         // Load credentials on mount
         React.useEffect(() => {
@@ -91,52 +98,53 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                         API.getUsers(),
                         API.getRoles(),
                     ]);
-                    if (appsResult.status === 'fulfilled') {
-                        setAvailableApps(appsResult.value);
-                    }
-                    if (usersResult.status === 'fulfilled' && usersResult.value) {
-                        setAvailableUsers(usersResult.value);
-                    }
-                    if (rolesResult.status === 'fulfilled') {
-                        setAvailableRolesList(rolesResult.value);
-                    }
+                    setRefData(prev => {
+                        const next = { ...prev };
+                        if (appsResult.status === 'fulfilled') {
+                            next.apps = appsResult.value;
+                        }
+                        if (usersResult.status === 'fulfilled' && usersResult.value) {
+                            next.users = usersResult.value;
+                        }
+                        if (rolesResult.status === 'fulfilled') {
+                            next.roles = rolesResult.value;
+                        }
+                        return next;
+                    });
                 } catch (err) {
                     console.warn('Failed to load reference data, continuing with defaults:', err.message);
                 }
 
                 // Get current user identity from Splunk.util (matches legacy currentUser())
                 const currentUser = API.getCurrentUser();
-                setCurrentUserIdentity(currentUser);
+                setRefData(prev => ({ ...prev, currentUserIdentity: currentUser }));
             }
             fetchReferenceData();
         }, []);
 
         // ─── Result modal helpers ──────────────────────────────────────
         function showSuccess(title, messages) {
-            setResultTitle(title);
-            setResultMessages(typeof messages === 'string' ? [messages] : messages);
-            setShowResultModal(true);
+            setResult({ title, messages: typeof messages === 'string' ? [messages] : messages });
+            setModals(prev => ({ ...prev, result: true }));
         }
 
         function showError(title, messages) {
-            setResultTitle(title);
-            setResultMessages(typeof messages === 'string' ? [messages] : messages);
-            setShowResultModal(true);
+            setResult({ title, messages: typeof messages === 'string' ? [messages] : messages });
+            setModals(prev => ({ ...prev, result: true }));
         }
 
         // ─── Credential operations ─────────────────────────────────────
 
         async function loadCredentials() {
-            setLoading(true);
-            setError(null);
+            setData(prev => ({ ...prev, loading: true, error: null }));
             try {
-                const data = await API.getAllCredentials();
-                setCredentials(data);
+                const fetched = await API.getAllCredentials();
+                setData(prev => ({ ...prev, credentials: fetched }));
             } catch (err) {
                 console.error('Error loading credentials:', err);
-                setError(getErrorMessage(err));
+                setData(prev => ({ ...prev, error: getErrorMessage(err) }));
             } finally {
-                setLoading(false);
+                setData(prev => ({ ...prev, loading: false }));
             }
         }
 
@@ -148,7 +156,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                     data.sharing || 'app'
                 );
                 await loadCredentials();
-                setShowFormModal(false);
+                setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
                 showSuccess('Credential Created', [
                     `Created <strong>${escapeHtml(data.username)}</strong>`,
@@ -156,9 +164,9 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 ]);
             } catch (err) {
                 console.error('Error creating credential:', err);
-                const result = API.parseCreateError ? API.parseCreateError(err) : null;
-                if (result && result.isDuplicate) {
-                    showError('Create Failed', [result.message]);
+                const parseResult = API.parseCreateError ? API.parseCreateError(err) : null;
+                if (parseResult && parseResult.isDuplicate) {
+                    showError('Create Failed', [parseResult.message]);
                 } else {
                     showError('Failed to Create Credential', [`Error: ${getErrorMessage(err)}`]);
                 }
@@ -175,7 +183,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                     data.owner, data.app, data.sharing || 'app', editingCredential.app
                 );
                 await loadCredentials();
-                setShowFormModal(false);
+                setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
                 messages.push('ACLs updated successfully');
                 if (data.password) {
@@ -201,7 +209,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                     selectedCredential.sharing || 'app'
                 );
                 await loadCredentials();
-                setShowDeleteModal(false);
+                setModals(prev => ({ ...prev, delete: false }));
                 setSelectedCredential(null);
                 showSuccess('Credential Deleted', [`Deleted <strong>${escapeHtml(selectedCredential.name)}</strong>`]);
             } catch (err) {
@@ -213,11 +221,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         // ─── Bulk delete handler ──────────────────────────────────────
         async function handleBulkDeleteConfirm() {
             if (!selectedRows.length) return;
-            const names = selectedRows.map(r => `${r.realm || ''}:${r.name}`).join(', ');
             const successMessages = [];
 
-            setShowDeleteModal(false);
-            setSelectedCredential(null); // Clear single-credential modal state
+            setModals(prev => ({ ...prev, delete: false }));
+            setSelectedCredential(null);
 
             try {
                 const results = await Promise.allSettled(
@@ -253,9 +260,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                         ['---'],
                         errorMessages.map(m => `ERROR: ${m}`)
                     );
-                    setResultTitle('Bulk Delete -- Partial Success');
-                    setResultMessages(allMsgs);
-                    setShowResultModal(true);
+                    setResult({ title: 'Bulk Delete -- Partial Success', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
                 }
             } catch (err) {
                 console.error('Error in bulk delete:', err);
@@ -272,7 +278,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 return;
             }
 
-            setShowImportModal(false);
+            setModals(prev => ({ ...prev, import: false }));
             const successMessages = [];
             const errorMessages = [];
 
@@ -321,9 +327,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                         errorMessages.map(function(m) { return 'ERROR: ' + m; }),
                         parseErrors.map(function(e) { return 'WARN: ' + e; })
                     );
-                    setResultTitle('Import Complete');
-                    setResultMessages(allMsgs);
-                    setShowResultModal(true);
+                    setResult({ title: 'Import Complete', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
                 }
             } catch (err) {
                 console.error('Error during CSV import:', err);
@@ -400,8 +405,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                         children: `Delete Selected (${selectedRows.length})`
                     }),
                     React.createElement(Button, { onClick: handleDownloadTemplate, children: 'Download Template' }),
-                    React.createElement(Button, { onClick: () => setShowImportModal(true), children: 'Import CSV' }),
-                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setShowFormModal(true); }, appearance: 'primary', children: 'Create Credential' })
+                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, import: true })), children: 'Import CSV' }),
+                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' })
                 )
             ),
 
@@ -410,57 +415,57 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 credentials,
                 selectedRows,
                 isAllSelected,
-                onEdit: (credential) => { setEditingCredential(credential); setShowFormModal(true); },
-                onDelete: (credential) => { setSelectedCredential(credential); setShowDeleteModal(true); },
-                onReveal: (credential) => { setSelectedCredential(credential); setShowPasswordModal(true); },
+                onEdit: (credential) => { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
+                onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
+                onReveal: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, password: true })); },
                 onSelectRow: handleSelectRow,
                 onSelectAll: handleSelectAll,
                 onDeselectAll: handleDeselectAll,
             }),
 
             // Form modal — dedicated modal wrapper for CredentialForm
-            showFormModal && React.createElement(FormModal, {
-                isOpen: showFormModal,
-                onClose: () => { setShowFormModal(false); setEditingCredential(null); },
+            modals.form && React.createElement(FormModal, {
+                isOpen: modals.form,
+                onClose: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
                 title: editingCredential ? 'Edit Credential' : 'Create Credential',
             }, React.createElement(CredentialForm, {
                 credential: editingCredential,
                 onSave: editingCredential ? handleUpdateCredential : handleCreateCredential,
-                onCancel: () => { setShowFormModal(false); setEditingCredential(null); },
-                availableApps: availableApps,
-                availableUsers: availableUsers,
-                currentUserIdentity: currentUserIdentity,
-                availableRoles: availableRolesList,
+                onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
+                availableApps: refData.apps,
+                availableUsers: refData.users,
+                currentUserIdentity: refData.currentUserIdentity,
+                availableRoles: refData.roles,
                 defaultReadRoles: DEFAULT_READ,
                 defaultWriteRoles: DEFAULT_WRITE,
             })),
 
             // Password reveal modal
-            showPasswordModal && React.createElement(PasswordRevealModal, {
+            modals.password && React.createElement(PasswordRevealModal, {
                 credential: selectedCredential,
-                onClose: () => { setShowPasswordModal(false); setSelectedCredential(null); },
+                onClose: () => { setModals(prev => ({ ...prev, password: false })); setSelectedCredential(null); },
             }),
 
             // Delete confirmation modal — single credential only
-            showDeleteModal && React.createElement(ConfirmDeleteModal, {
+            modals.delete && React.createElement(ConfirmDeleteModal, {
                 credential: selectedCredential,
-                isOpen: showDeleteModal,
-                onClose: () => { setShowDeleteModal(false); setSelectedCredential(null); },
+                isOpen: modals.delete,
+                onClose: () => { setModals(prev => ({ ...prev, delete: false })); setSelectedCredential(null); },
                 onDelete: handleDeleteCredential,
             }),
 
             // CSV import modal — wired to proper handler
-            showImportModal && React.createElement(ImportCSVModal, {
-                isOpen: showImportModal,
-                onClose: () => setShowImportModal(false),
+            modals.import && React.createElement(ImportCSVModal, {
+                isOpen: modals.import,
+                onClose: () => setModals(prev => ({ ...prev, import: false })),
                 onImport: handleCSVImport,
             }),
 
             // Result modal — replaces all alert() calls
-            showResultModal && React.createElement(ResultModal, {
-                title: resultTitle,
-                messages: resultMessages,
-                onClose: () => setShowResultModal(false),
+            modals.result && React.createElement(ResultModal, {
+                title: result.title,
+                messages: result.messages,
+                onClose: () => setModals(prev => ({ ...prev, result: false })),
             })
         );
     }

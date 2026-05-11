@@ -15,6 +15,7 @@ var TableCell = TableMod.Cell;
 var TableRow = TableMod.Row;
 var TableHeadCell = TableMod.HeadCell;
 
+var Table = TableMod.default;
 var PaginatorMod = require('@splunk/react-ui/Paginator');
 var Paginator = PaginatorMod.default;
 var ChipMod = require('@splunk/react-ui/Chip');
@@ -113,11 +114,6 @@ function CredentialTable({
         setSortConfig({ key: key, direction: direction });
     }
 
-    // Handle page change — Splunk Paginator passes { index: zero-basedPage }
-    function handlePageChange(data) {
-        setCurrentPage((data.index || 0) + 1);
-    }
-
     // Handle filter change
     function handleFilterChange(value) {
         setFilterText(value);
@@ -147,7 +143,7 @@ function CredentialTable({
         if (isAllSelected || paginatedCredentials.every(function(c) { return isSelected(c); })) {
             onDeselectAll && onDeselectAll();
         } else {
-            onSelectAll && onSelectAll();
+            onSelectAll && onSelectAll(sortedCredentials);
         }
     }
 
@@ -156,12 +152,6 @@ function CredentialTable({
 
     // Any row on current page is partially selected (for indeterminate header checkbox)
     const pagePartiallySelected = !pageAllSelected && paginatedCredentials.some(function(c) { return isSelected(c); });
-
-    // Build pagination data array for Splunk Paginator (label per page)
-    var pageNumberData = [];
-    for (var p = 1; p <= totalPages; p++) {
-        pageNumberData.push({ label: String(p), value: String(p), index: p - 1 });
-    }
 
     // Create checkbox cell factory
     function createCheckboxCell(cred) {
@@ -258,25 +248,22 @@ function CredentialTable({
         ),
 
         // Credentials table — Splunk Table component
-        React.createElement(TableMod, { style: { width: '100%', marginBottom: '1rem' } },
+        React.createElement(Table, { style: { width: '100%', marginBottom: '1rem' } },
             React.createElement(TableHead, null,
                 React.createElement(TableRow, null, ...headerCells)
             ),
             React.createElement(TableBody, null, ...dataRows)
         ),
 
-        // Pagination — Splunk Paginator component (or native fallback for <2 pages)
+        // Pagination — Splunk Paginator component with controlled page number
         totalPages > 1 ? React.createElement(
             'div',
             { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },
-            pageNumberData.length <= 0
-                ? null
-                : React.createElement(Paginator, {
-                    pageLabel: 'Pages',
-                    data: pageNumberData,
-                    activeItem: { label: String(currentPage), value: String(currentPage) },
-                    onSelect: handlePageChange,
-                })
+            React.createElement(Paginator, {
+                current: currentPage,
+                totalPages: totalPages,
+                onChange: function(page) { setCurrentPage(page); },
+            })
         ) : null
     );
 }
