@@ -31,9 +31,11 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx'],
     },
-    // No externals — React, ReactDOM, and styled-components must all be bundled.
-    // Splunk does not provide these as globals.
-    externals: {},
+    // Externalize styled-components so Splunk's global instance is shared,
+    // eliminating the duplicate context that breaks CSS injection.
+    externals: {
+      'styled-components': 'styledComponents',
+    },
     plugins: [
       new TerserPlugin({
         terserOptions: {
