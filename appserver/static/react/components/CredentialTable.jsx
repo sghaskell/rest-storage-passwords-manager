@@ -54,10 +54,9 @@ function CredentialTable({
 }) {
     const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
     const [currentPage, setCurrentPage] = React.useState(1);
+    const [rowsPerPage, setRowsPerPage] = React.useState(10);
     const [filterText, setFilterText] = React.useState('');
     const [filterType, setFilterType] = React.useState('all');
-
-    const itemsPerPage = 10;
 
     // Filter credentials
     const filteredCredentials = React.useMemo(function() {
@@ -103,11 +102,11 @@ function CredentialTable({
 
     // Paginate credentials
     const paginatedCredentials = React.useMemo(function() {
-        var startIndex = (currentPage - 1) * itemsPerPage;
-        return sortedCredentials.slice(startIndex, startIndex + itemsPerPage);
-    }, [sortedCredentials, currentPage]);
+        var startIndex = (currentPage - 1) * rowsPerPage;
+        return sortedCredentials.slice(startIndex, startIndex + rowsPerPage);
+    }, [sortedCredentials, currentPage, rowsPerPage]);
 
-    const totalPages = Math.ceil(sortedCredentials.length / itemsPerPage);
+    const totalPages = Math.ceil(sortedCredentials.length / rowsPerPage);
 
     // Handle sort
     function handleSort(key) {
@@ -203,7 +202,7 @@ function CredentialTable({
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
-        // Filter bar
+        // Filter bar + pagination controls
         React.createElement(
             'div',
             { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -229,6 +228,24 @@ function CredentialTable({
                 React.createElement('option', { value: 'username' }, 'Username'),
                 React.createElement('option', { value: 'realm' }, 'Realm'),
                 React.createElement('option', { value: 'app' }, 'App')
+            ),
+            React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                React.createElement('strong', null, 'Rows per page:'),
+                React.createElement('select', {
+                    value: rowsPerPage,
+                    onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
+                    style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
+                },
+                    React.createElement('option', { value: 10 }, '10'),
+                    React.createElement('option', { value: 25 }, '25'),
+                    React.createElement('option', { value: 50 }, '50'),
+                    React.createElement('option', { value: 100 }, '100')
+                ),
+                totalPages > 1 ? React.createElement(Paginator.PageControl, {
+                    current: currentPage,
+                    totalPages: totalPages,
+                    onChange: function(event, data) { setCurrentPage(data.page); },
+                }) : null
             )
         ),
 
@@ -250,6 +267,7 @@ function CredentialTable({
             React.createElement(Paginator, {
                 current: currentPage,
                 totalPages: totalPages,
+                numPageLinks: totalPages,
                 onChange: function(event, data) { setCurrentPage(data.page); },
             })
         ) : null

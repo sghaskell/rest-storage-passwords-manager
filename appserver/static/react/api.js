@@ -85,7 +85,7 @@ async function apiRequest(endpoint, options = {}) {
     // GET: required because Splunk defaults to XML responses.
     // POST/PUT/PATCH: included in body via formEncode, ensuring JSON responses for .json() parsing.
     const separator = url.includes('?') ? '&' : '?';
-    url += `${separator}output_mode=json`;
+    url += `${separator}output_mode=json&count=0`;
 
     // Replicate exact header set from password-crud.js splunkdFetch().
     const headers = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -152,7 +152,7 @@ async function splunkdRequest(path, options = {}) {
     // Always append output_mode=json for GET — Splunk defaults to XML.
     if (method === 'GET') {
         const separator = url.includes('?') ? '&' : '?';
-        url += `${separator}output_mode=json`;
+    url += `${separator}output_mode=json&count=0`;
     }
 
     // Replicate exact header set from password-crud.js splunkdFetch().
