@@ -65,6 +65,12 @@ function CredentialForm({
     const [sharing, setSharing] = React.useState('app');
     const [isChangingPassword, setIsChangingPassword] = React.useState(false);
     const [errors, setErrors] = React.useState({});
+    const prevReadRolesRef = React.useRef(readRolesArray);
+    const prevWriteRolesRef = React.useRef(writeRolesArray);
+
+    // Keep refs in sync with state
+    React.useEffect(function() { prevReadRolesRef.current = readRolesArray; }, [readRolesArray]);
+    React.useEffect(function() { prevWriteRolesRef.current = writeRolesArray; }, [writeRolesArray]);
 
     // Initialize form when credential changes
     React.useEffect(function() {
@@ -242,7 +248,7 @@ function CredentialForm({
         formField('App',
             React.createElement(Selector, {
                 value: app,
-                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : app; setApp(val); },
+                onChange: function(e, data) { var val = data && data.value != null ? data.value : app; setApp(val); },
             }, appData.map(function(a) {
                 return React.createElement(SelectOption, { key: 'app-' + a.value, label: a.label, value: a.value });
             })),
@@ -253,7 +259,7 @@ function CredentialForm({
         formField('Sharing',
             React.createElement(Selector, {
                 value: sharing,
-                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : sharing; setSharing(val); },
+                onChange: function(e, data) { var val = data && data.value != null ? data.value : sharing; setSharing(val); },
             }, sharingData.map(function(s) {
                 return React.createElement(SelectOption, { key: 'sharing-' + s.value, label: s.label, value: s.value });
             })),
@@ -264,44 +270,94 @@ function CredentialForm({
         formField('Owner',
             React.createElement(Selector, {
                 value: owner,
-                onChange: function(e, data) { var val = (data && Array.isArray(data.values)) ? data.values[0] : owner; setOwner(val); },
+                onChange: function(e, data) { var val = data && data.value != null ? data.value : owner; setOwner(val); },
             }, ownerData.map(function(u) {
                 return React.createElement(SelectOption, { key: 'owner-' + u.value, label: u.label, value: u.value });
             })),
             { helpText: 'User who owns this credential' }
         ),
 
-        // Read Roles (multi-select with declarative options)
+        // Read Roles (multi-select with controls — counter, select all, reset)
         formField('Read Roles',
-            React.createElement(MultiSelector, {
-                placeholder: 'Select roles...',
-                values: readRolesArray,
-                onChange: function(e, data) {
-                    var selected = data.values ? data.values.slice() : [];
-                    if (selected.length > 1 && selected.includes('* (all)')) selected = ['* (all)'];
-                    setReadRolesArray(selected);
-                    clearError('readRoles');
-                },
-            }, rolesData.map(function(r) {
-                return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
-            })),
+            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
+                React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${readRolesArray.length} selected`),
+                React.createElement(MultiSelector, {
+                    placeholder: 'Select roles...',
+                    values: readRolesArray,
+                    onChange: function(e, data) {
+                        var newVals = data.values ? data.values.slice() : [];
+                        var prevVals = prevReadRolesRef.current;
+                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+
+                        if (added.includes('* (all)')) {
+                            newVals = ['* (all)'];
+                        } else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) {
+                            newVals = newVals.filter(function(v) { return v !== '* (all)'; });
+                        }
+
+                        prevReadRolesRef.current = newVals;
+                        setReadRolesArray(newVals);
+                        clearError('readRoles');
+                    },
+                }, rolesData.map(function(r) {
+                    return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
+                })),
+                React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                    React.createElement('button', {
+                        type: 'button',
+                        onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); },
+                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
+                    }, 'Select All'),
+                    React.createElement('button', {
+                        type: 'button',
+                        onClick: function() { var arr = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); },
+                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
+                    }, 'Reset')
+                ),
+                React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive with individual roles')
+            ),
             { helpText: 'Roles that can view this credential', errorText: errors.readRoles, required: true }
         ),
 
-        // Write Roles (multi-select with declarative options)
+        // Write Roles (multi-select with controls — counter, select all, reset)
         formField('Write Roles',
-            React.createElement(MultiSelector, {
-                placeholder: 'Select roles...',
-                values: writeRolesArray,
-                onChange: function(e, data) {
-                    var selected = data.values ? data.values.slice() : [];
-                    if (selected.length > 1 && selected.includes('* (all)')) selected = ['* (all)'];
-                    setWriteRolesArray(selected);
-                    clearError('writeRoles');
-                },
-            }, rolesData.map(function(r) {
-                return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
-            })),
+            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
+                React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${writeRolesArray.length} selected`),
+                React.createElement(MultiSelector, {
+                    placeholder: 'Select roles...',
+                    values: writeRolesArray,
+                    onChange: function(e, data) {
+                        var newVals = data.values ? data.values.slice() : [];
+                        var prevVals = prevWriteRolesRef.current;
+                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+
+                        if (added.includes('* (all)')) {
+                            newVals = ['* (all)'];
+                        } else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) {
+                            newVals = newVals.filter(function(v) { return v !== '* (all)'; });
+                        }
+
+                        prevWriteRolesRef.current = newVals;
+                        setWriteRolesArray(newVals);
+                        clearError('writeRoles');
+                    },
+                }, rolesData.map(function(r) {
+                    return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
+                })),
+                React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                    React.createElement('button', {
+                        type: 'button',
+                        onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); },
+                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
+                    }, 'Select All'),
+                    React.createElement('button', {
+                        type: 'button',
+                        onClick: function() { var arr = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); },
+                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
+                    }, 'Reset')
+                ),
+                React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive with individual roles')
+            ),
             { helpText: 'Roles that can modify this credential', errorText: errors.writeRoles, required: true }
         ),
 

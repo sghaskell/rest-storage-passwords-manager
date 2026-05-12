@@ -17,6 +17,31 @@ ModalMod.Header && (Modal.Header = ModalMod.Header);
 ModalMod.Body && (Modal.Body = ModalMod.Body);
 ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
 var SplunkThemeProvider = require('@splunk/themes').SplunkThemeProvider;
+var _sc = require('styled-components');
+var GlobalStyles = _sc.createGlobalStyle`
+    input[type='color'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='datetime'],
+    input[type='email'],
+    input[type='month'],
+    input[type='number'],
+    input[type='password'],
+    input[type='search'],
+    input[type='tel'],
+    input[type='text'],
+    input[type='time'],
+    input[type='url'],
+    input[type='week'],
+    textarea {
+        height: auto;
+        margin-bottom: 0px;
+        padding: 0;
+        &:focus {
+            box-shadow: none;
+        }
+    }
+`;
 
 // Import self-contained application components
 const CredentialTable = require('./components/CredentialTable');
@@ -544,7 +569,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                     })
                 ),
                 React.createElement(Modal.Footer, { itemAlign: 'end' },
-                    React.createElement(Button, { onClick: () => onClose(), appearance: 'primary', children: 'Close' }, null)
+                    React.createElement(Button, { onClick: () => onClose(), appearance: 'primary' }, 'Close')
                 )
             )
         );
@@ -567,7 +592,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 return;
             }
             const root = ReactDOM.createRoot(container);
-            root.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' }, React.createElement(CredentialManager)));
+            root.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
+                React.createElement(GlobalStyles, null),
+                React.createElement(CredentialManager, null)
+            ));
             console.log('Credential Manager: Render complete');
         }
     };

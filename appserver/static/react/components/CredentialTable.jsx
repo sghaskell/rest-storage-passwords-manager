@@ -22,6 +22,10 @@ var ChipMod = require('@splunk/react-ui/Chip');
 var Chip = ChipMod.default;
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
+var Pencil = require('@splunk/react-icons/Pencil').default;
+var Eye = require('@splunk/react-icons/Eye').default;
+var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
+
 
 /**
  * CredentialTable - Table component for credential management
@@ -122,8 +126,8 @@ function CredentialTable({
 
     // Get sort indicator
     function getSortIndicator(key) {
-        if (sortConfig.key !== key) return '\u2195';
-        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
+        if (sortConfig.key !== key) return '↕';
+        return sortConfig.direction === 'asc' ? '↑' : '↓';
     }
 
     // Check if a row is selected
@@ -132,14 +136,12 @@ function CredentialTable({
     }
 
     // Toggle row selection
-    function handleToggleSelect(cred, e) {
-        e.stopPropagation();
+    function handleToggleSelect(cred) {
         onSelectRow && onSelectRow(cred);
     }
 
     // Toggle select-all for visible page
-    function handlePageSelectAll(e) {
-        e.stopPropagation();
+    function handlePageSelectAll() {
         if (isAllSelected || paginatedCredentials.every(function(c) { return isSelected(c); })) {
             onDeselectAll && onDeselectAll();
         } else {
@@ -147,65 +149,48 @@ function CredentialTable({
         }
     }
 
-    // Check if all visible rows on current page are selected (for checkbox state)
-    const pageAllSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
-
-    // Any row on current page is partially selected (for indeterminate header checkbox)
-    const pagePartiallySelected = !pageAllSelected && paginatedCredentials.some(function(c) { return isSelected(c); });
-
-    // Create checkbox cell factory
-    function createCheckboxCell(cred) {
-        return React.createElement(TableCell, null,
-            React.createElement('input', {
-                type: 'checkbox',
-                checked: isSelected(cred),
-                onChange: function(e) { handleToggleSelect(cred, e); },
-                style: { cursor: 'pointer' },
-            })
-        );
-    }
-
-    // Create action cell factory — uses Splunk Button with minimal styling for row actions
+    // Create action cell factory — icon buttons for Edit, Reveal, Delete
     function createActionCell(cred) {
         return React.createElement(TableCell, null,
             React.createElement(
                 'div',
                 { style: { display: 'flex', gap: '0.25rem' } },
-                React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, children: 'Edit' }),
-                React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, children: 'Reveal' }),
-                React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'destructive', children: 'Delete' })
+                React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', icon: React.createElement(Pencil, { variant: 'filled' }) }),
+                React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', icon: React.createElement(Eye, { variant: 'filled' }) }),
+                React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
             )
         );
     }
 
-    // Build header cells with sorting
+    // Determine rowSelection state for header checkbox: 'all', 'some', or 'none'
+    var someSelected = paginatedCredentials.some(function(c) { return isSelected(c); });
+    var allSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
+    var rowSelectionState = allSelected ? 'all' : (someSelected ? 'some' : 'none');
+
+    // Build header cells — no checkbox cell needed; TableHead renders it via rowSelection
     var headerCells = [
-        React.createElement(TableHeadCell, { key: 'select', onClick: handlePageSelectAll, style: { cursor: 'pointer', textAlign: 'left' } },
-            React.createElement('input', {
-                type: 'checkbox',
-                checked: pageAllSelected,
-                ref: function(el) { if (el) el.indeterminate = pagePartiallySelected; },
-                style: { cursor: 'pointer' },
-            })
-        ),
-        React.createElement(TableHeadCell, { key: 'username', onClick: function() { handleSort('name'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Username ', getSortIndicator('name')),
-        React.createElement(TableHeadCell, { key: 'realm', onClick: function() { handleSort('realm'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Realm ', getSortIndicator('realm')),
-        React.createElement(TableHeadCell, { key: 'app', onClick: function() { handleSort('app'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'App ', getSortIndicator('app')),
-        React.createElement(TableHeadCell, { key: 'owner', onClick: function() { handleSort('owner'); }, style: { cursor: 'pointer', textAlign: 'left' } }, 'Owner ', getSortIndicator('owner')),
-        React.createElement(TableHeadCell, { key: 'actions', style: { textAlign: 'left' } }, 'Actions')
+        React.createElement(TableHeadCell, { key: 'username', onClick: function() { handleSort('name'); }, appearClickable: true }, 'Username ', getSortIndicator('name')),
+        React.createElement(TableHeadCell, { key: 'realm', onClick: function() { handleSort('realm'); }, appearClickable: true }, 'Realm ', getSortIndicator('realm')),
+        React.createElement(TableHeadCell, { key: 'app', onClick: function() { handleSort('app'); }, appearClickable: true }, 'App ', getSortIndicator('app')),
+        React.createElement(TableHeadCell, { key: 'owner', onClick: function() { handleSort('owner'); }, appearClickable: true }, 'Owner ', getSortIndicator('owner')),
+        React.createElement(TableHeadCell, { key: 'actions' }, 'Actions')
     ];
 
-    // Build data rows
+    // Build data rows — TableRow selected + onRequestToggle renders the checkbox cell
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
-            return React.createElement(TableRow, { key: cred.stanzaKey },
-                createCheckboxCell(cred),
+            return React.createElement(TableRow, {
+                key: cred.stanzaKey,
+                selected: isSelected(cred),
+                onRequestToggle: function() { handleToggleSelect(cred); },
+            },
                 React.createElement(TableCell, null, cred.name || cred.realm),
                 React.createElement(TableCell, null,
-                    React.createElement(Chip, { label: (!cred.realm || cred.realm === 'nobody') ? 'global' : (cred.realm || ''), backgroundColor: (!cred.realm || cred.realm === 'nobody') ? '#e0e0e0' : '#e3f2fd', color: (!cred.realm || cred.realm === 'nobody') ? 'inherit' : '#1565c0' })
+                    React.createElement(Chip, { backgroundColor: (!cred.realm || cred.realm === 'nobody') ? '#e0e0e0' : '#e3f2fd', foregroundColor: (!cred.realm || cred.realm === 'nobody') ? 'inherit' : '#1565c0' },
+                        (!cred.realm || cred.realm === 'nobody') ? 'global' : (cred.realm || ''))
                 ),
                 React.createElement(TableCell, null,
-                    React.createElement(Chip, { label: cred.app || 'search', backgroundColor: '#e8f5e9', color: '#2e7d32' })
+                    React.createElement(Chip, { backgroundColor: '#e8f5e9', foregroundColor: '#2e7d32' }, cred.app || 'search')
                 ),
                 React.createElement(TableCell, null, cred.owner || 'nobody'),
                 createActionCell(cred)
@@ -218,7 +203,7 @@ function CredentialTable({
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
-        // Filter bar (keeps native filter+select — Splunk Text + Select would be Task 8 territory)
+        // Filter bar
         React.createElement(
             'div',
             { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -247,15 +232,18 @@ function CredentialTable({
             )
         ),
 
-        // Credentials table — Splunk Table component
-        React.createElement(Table, { outerStyle: { width: '100%', marginBottom: '1rem' }, tableStyle: { width: '100%' } },
-            React.createElement(TableHead, null,
-                React.createElement(TableRow, null, ...headerCells)
-            ),
+        // Credentials table — rowSelection + onRequestToggleAllRows on Table, flows via context to TableHead/TableRow
+        React.createElement(Table, {
+            outerStyle: { width: '100%', marginBottom: '1rem' },
+            tableStyle: { width: '100%' },
+            rowSelection: rowSelectionState,
+            onRequestToggleAllRows: handlePageSelectAll,
+        },
+            React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, null, ...dataRows)
         ),
 
-        // Pagination — Splunk Paginator component with controlled page number
+        // Pagination
         totalPages > 1 ? React.createElement(
             'div',
             { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },

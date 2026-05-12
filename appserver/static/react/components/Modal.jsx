@@ -71,8 +71,8 @@ function PasswordRevealModal({ credential, onClose }) {
                     'div', { style: { marginBottom: '1rem' } },
                     React.createElement('label', { style: { display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' } }, 'Password'),
                     React.createElement('input', {
-                        type: 'password', value: password, readOnly: true,
-                        style: { width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontFamily: 'monospace' },
+                        type: 'text', value: password, readOnly: true,
+                        style: { width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontFamily: 'monospace', color: '#172b4d', backgroundColor: '#f4f4f4', fontSize: '14px' },
                     })
                 )
             ),

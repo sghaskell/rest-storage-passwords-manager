@@ -31,10 +31,8 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx'],
     },
-    // Externalize styled-components so Splunk's global instance is shared,
-    // eliminating the duplicate context that breaks CSS injection.
     externals: {
-      'styled-components': 'styledComponents',
+      'splunkjs/mvc/simplexml/ready!': 'splunkjs/mvc/simplexml/ready!',
     },
     plugins: [
       new TerserPlugin({
