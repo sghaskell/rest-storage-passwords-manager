@@ -192,7 +192,7 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
                 React.createElement(SplunkModal.Header, null,
                     React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, `Import Preview \u2014 ${parsedRows.length} credential${parsedRows.length !== 1 ? 's' : ''}`)
                 ),
-                React.createElement(SplunkModal.Body, null,
+                React.createElement(SplunkModal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
                     parseErrors.length > 0 && React.createElement(
                         'div',
                         { style: { backgroundColor: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem', color: '#856404' } },

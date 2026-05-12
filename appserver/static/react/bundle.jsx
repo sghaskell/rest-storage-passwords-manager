@@ -74,6 +74,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             delete: false,
             import: false,
             result: false,
+            bulkDelete: false,
         });
 
         // Modal data
@@ -247,9 +248,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         async function handleBulkDeleteConfirm() {
             if (!selectedRows.length) return;
             const successMessages = [];
-
-            setModals(prev => ({ ...prev, delete: false }));
-            setSelectedCredential(null);
 
             try {
                 const results = await Promise.allSettled(
@@ -425,7 +423,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
                     selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px' } }, `${selectedRows.length} selected`),
                     selectedRows.length > 0 && React.createElement(Button, {
-                        onClick: handleBulkDeleteConfirm,
+                        onClick: () => setModals(prev => ({ ...prev, bulkDelete: true })),
                         appearance: 'destructive',
                         children: `Delete Selected (${selectedRows.length})`
                     }),
@@ -486,6 +484,14 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onImport: handleCSVImport,
             }),
 
+            // Bulk delete confirmation modal
+            modals.bulkDelete && React.createElement(BulkDeleteModal, {
+                isOpen: modals.bulkDelete,
+                selectedRows: selectedRows,
+                onClose: () => setModals(prev => ({ ...prev, bulkDelete: false })),
+                onConfirm: handleBulkDeleteConfirm,
+            }),
+
             // Result modal — replaces all alert() calls
             modals.result && React.createElement(ResultModal, {
                 title: result.title,
@@ -524,7 +530,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 React.createElement(Modal.Header, null,
                     React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, title || 'Create/Edit Credential')
                 ),
-                React.createElement(Modal.Body, null, children)
+                React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } }, children)
             )
         );
     }
@@ -556,7 +562,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 React.createElement(Modal.Header, null,
                     React.createElement('h3', { style: { margin: 0, fontSize: '16px' } }, title)
                 ),
-                React.createElement(Modal.Body, null,
+                React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
                     messages.map(function(msg, i) {
                         if (msg === '<br/>' || msg.startsWith('<br/>-')) {
                             return React.createElement('hr', { key: i, style: { margin: '0.75rem 0', border: 'none', borderTop: '1px solid #e0e0e0' } });
@@ -570,6 +576,53 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 ),
                 React.createElement(Modal.Footer, { itemAlign: 'end' },
                     React.createElement(Button, { onClick: () => onClose(), appearance: 'primary' }, 'Close')
+                )
+            )
+        );
+    }
+
+    /**
+     * BulkDeleteModal — confirmation modal listing selected credentials before bulk delete
+     */
+    function BulkDeleteModal({ isOpen, selectedRows, onClose, onConfirm }) {
+        if (!isOpen) return null;
+
+        var prevRef = React.useRef(null);
+        React.useEffect(function() {
+            prevRef.current = document.activeElement;
+        }, [isOpen]);
+
+        function handleReturnFocus() {
+            if (prevRef.current && typeof prevRef.current.focus === 'function') {
+                prevRef.current.focus();
+            }
+        }
+
+        return React.createElement(Modal, {
+            open: true,
+            onRequestClose: function() { onClose(); },
+            returnFocus: handleReturnFocus,
+            divider: 'both',
+            style: { width: '550px', maxWidth: '90%' }
+        },
+            React.createElement('div', null,
+                React.createElement(Modal.Header, null,
+                    React.createElement('h3', { style: { margin: 0, fontSize: '16px' } }, `Delete ${selectedRows.length} Credential${selectedRows.length !== 1 ? 's' : ''}`)
+                ),
+                React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
+                    React.createElement('p', null, 'Are you sure you want to delete the following credential(s)? This action cannot be undone.'),
+                    React.createElement('ul', { style: { margin: '0.5rem 0', paddingLeft: '1.25rem' } },
+                        selectedRows.map(function(row, i) {
+                            return React.createElement('li', { key: i, style: { marginBottom: '0.25rem' } },
+                                React.createElement('strong', null, row.name),
+                                row.realm ? React.createElement('span', null, ` (${row.realm})`) : null
+                            );
+                        })
+                    )
+                ),
+                React.createElement(Modal.Footer, { itemAlign: 'end' },
+                    React.createElement(Button, { onClick: onClose, children: 'Cancel' }),
+                    React.createElement(Button, { onClick: function() { onClose(); onConfirm(); }, appearance: 'destructive', children: 'Delete' })
                 )
             )
         );
