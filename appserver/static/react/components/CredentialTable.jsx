@@ -178,7 +178,12 @@ function CredentialTable({
     function buildExpansionRow(cred) {
         return React.createElement(TableRow, { key: cred.stanzaKey + '-expansion' },
             React.createElement(TableCell, { colSpan: 5 },
-                React.createElement('div', { style: { padding: '1rem' } },
+                React.createElement('div', { style: { backgroundColor: '#f5f8fc', borderLeft: '3px solid #007bff', margin: '0 1rem', padding: '1.25rem', borderRadius: '0 4px 4px 0' } },
+                    // Header bar
+                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid #e0e0e0' } },
+                        React.createElement('span', { style: { fontWeight: '600', fontSize: '14px' } }, 'Editing: ', React.createElement('strong', null, cred.name || cred.realm)),
+                        React.createElement(Button, { onClick: function() { setExpandedRowKey(null); }, appearance: 'subtle', children: 'Close' })
+                    ),
                     React.createElement(CredentialForm, {
                         credential: cred,
                         onSave: function(formData) { handleInlineSave(cred, formData); },
@@ -224,15 +229,12 @@ function CredentialTable({
     // Build data rows — TableRow with expansion, selection, and actions
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
-            var isExpanded = expandedRowKey === cred.stanzaKey;
             return React.createElement(TableRow, {
                 key: cred.stanzaKey,
                 selected: isSelected(cred),
                 onRequestToggle: function() { handleToggleSelect(cred); },
-                expandable: true,
-                expanded: isExpanded,
                 onExpansion: function() { handleExpansion(cred); },
-                expansionRow: isExpanded ? buildExpansionRow(cred) : undefined,
+                expansionRow: buildExpansionRow(cred),
             },
                 React.createElement(TableCell, null, cred.name || cred.realm),
                 React.createElement(TableCell, null,
@@ -306,7 +308,7 @@ function CredentialTable({
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
-            rowExpansion: 'controlled',
+            rowExpansion: 'single',
         },
             React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, null, ...dataRows)

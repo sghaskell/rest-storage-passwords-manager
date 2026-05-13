@@ -218,55 +218,60 @@ function CredentialForm({
         }, inputEl);
     }
 
+    // Grid row helper — renders two fields side by side
+    function gridRow(left, right) {
+        return React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1.5rem' } }, left, right);
+    }
+
     return React.createElement(
         'form',
-        { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: '1rem' } },
+        { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
 
-        // Username field
-        formField('Username',
-            React.createElement(Text, {
-                value: username,
-                onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
-                placeholder: 'Enter username',
-                error: !!errors.username,
-            }),
-            { errorText: errors.username, required: true }
+        // Row 1: Username + Realm
+        gridRow(
+            formField('Username',
+                React.createElement(Text, {
+                    value: username,
+                    onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
+                    placeholder: 'Enter username',
+                    error: !!errors.username,
+                }),
+                { errorText: errors.username, required: true }
+            ),
+            formField('Realm',
+                React.createElement(Text, {
+                    value: realm,
+                    onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setRealm(val); },
+                    placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
+                    disabled: !!credential,
+                }),
+                { helpText: credential ? undefined : 'Cannot be changed after creation' }
+            )
         ),
 
-        // Realm field — disabled in edit mode per REST API limitation (realm immutable after creation)
-        formField('Realm',
-            React.createElement(Text, {
-                value: realm,
-                onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setRealm(val); },
-                placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
-                disabled: !!credential,
-            }),
-            { helpText: credential ? undefined : 'Cannot be changed after creation' }
+        // Row 2: App + Sharing
+        gridRow(
+            formField('App',
+                React.createElement(Selector, {
+                    value: app,
+                    onChange: function(e, data) { var val = data && data.value != null ? data.value : app; setApp(val); },
+                }, appData.map(function(a) {
+                    return React.createElement(SelectOption, { key: 'app-' + a.value, label: a.label, value: a.value });
+                })),
+                { required: true }
+            ),
+            formField('Sharing',
+                React.createElement(Selector, {
+                    value: sharing,
+                    onChange: function(e, data) { var val = data && data.value != null ? data.value : sharing; setSharing(val); },
+                }, sharingData.map(function(s) {
+                    return React.createElement(SelectOption, { key: 'sharing-' + s.value, label: s.label, value: s.value });
+                })),
+                { helpText: 'How this credential is shared' }
+            )
         ),
 
-        // App field (controlled single-select with declarative options)
-        formField('App',
-            React.createElement(Selector, {
-                value: app,
-                onChange: function(e, data) { var val = data && data.value != null ? data.value : app; setApp(val); },
-            }, appData.map(function(a) {
-                return React.createElement(SelectOption, { key: 'app-' + a.value, label: a.label, value: a.value });
-            })),
-            { required: true }
-        ),
-
-        // Sharing field (single-select with declarative options)
-        formField('Sharing',
-            React.createElement(Selector, {
-                value: sharing,
-                onChange: function(e, data) { var val = data && data.value != null ? data.value : sharing; setSharing(val); },
-            }, sharingData.map(function(s) {
-                return React.createElement(SelectOption, { key: 'sharing-' + s.value, label: s.label, value: s.value });
-            })),
-            { helpText: 'How this credential is shared' }
-        ),
-
-        // Owner field (single-select with declarative options)
+        // Row 3: Owner (single column)
         formField('Owner',
             React.createElement(Selector, {
                 value: owner,
@@ -277,91 +282,65 @@ function CredentialForm({
             { helpText: 'User who owns this credential' }
         ),
 
-        // Read Roles (multi-select with controls — counter, select all, reset)
-        formField('Read Roles',
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
-                React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${readRolesArray.length} selected`),
-                React.createElement(MultiSelector, {
-                    placeholder: 'Select roles...',
-                    values: readRolesArray,
-                    onChange: function(e, data) {
-                        var newVals = data.values ? data.values.slice() : [];
-                        var prevVals = prevReadRolesRef.current;
-                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
-
-                        if (added.includes('* (all)')) {
-                            newVals = ['* (all)'];
-                        } else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) {
-                            newVals = newVals.filter(function(v) { return v !== '* (all)'; });
-                        }
-
-                        prevReadRolesRef.current = newVals;
-                        setReadRolesArray(newVals);
-                        clearError('readRoles');
-                    },
-                }, rolesData.map(function(r) {
-                    return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
-                })),
-                React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
-                    React.createElement('button', {
-                        type: 'button',
-                        onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); },
-                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
-                    }, 'Select All'),
-                    React.createElement('button', {
-                        type: 'button',
-                        onClick: function() { var arr = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); },
-                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
-                    }, 'Reset')
+        // Row 4: Read Roles + Write Roles (side by side)
+        gridRow(
+            formField('Read Roles',
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
+                    React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${readRolesArray.length} selected`),
+                    React.createElement(MultiSelector, {
+                        placeholder: 'Select roles...',
+                        values: readRolesArray,
+                        onChange: function(e, data) {
+                            var newVals = data.values ? data.values.slice() : [];
+                            var prevVals = prevReadRolesRef.current;
+                            var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+                            if (added.includes('* (all)')) { newVals = ['* (all)']; }
+                            else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
+                            prevReadRolesRef.current = newVals;
+                            setReadRolesArray(newVals);
+                            clearError('readRoles');
+                        },
+                    }, rolesData.map(function(r) {
+                        return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
+                    })),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                        React.createElement('button', { type: 'button', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); }, style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' } }, 'Select All'),
+                        React.createElement('button', { type: 'button', onClick: function() { var arr = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); }, style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' } }, 'Reset')
+                    ),
+                    React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive')
                 ),
-                React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive with individual roles')
+                { helpText: 'Roles that can view', errorText: errors.readRoles, required: true }
             ),
-            { helpText: 'Roles that can view this credential', errorText: errors.readRoles, required: true }
+            formField('Write Roles',
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
+                    React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${writeRolesArray.length} selected`),
+                    React.createElement(MultiSelector, {
+                        placeholder: 'Select roles...',
+                        values: writeRolesArray,
+                        onChange: function(e, data) {
+                            var newVals = data.values ? data.values.slice() : [];
+                            var prevVals = prevWriteRolesRef.current;
+                            var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+                            if (added.includes('* (all)')) { newVals = ['* (all)']; }
+                            else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
+                            prevWriteRolesRef.current = newVals;
+                            setWriteRolesArray(newVals);
+                            clearError('writeRoles');
+                        },
+                    }, rolesData.map(function(r) {
+                        return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
+                    })),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                        React.createElement('button', { type: 'button', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); }, style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' } }, 'Select All'),
+                        React.createElement('button', { type: 'button', onClick: function() { var arr = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); }, style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' } }, 'Reset')
+                    ),
+                    React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive')
+                ),
+                { helpText: 'Roles that can modify', errorText: errors.writeRoles, required: true }
+            )
         ),
 
-        // Write Roles (multi-select with controls — counter, select all, reset)
-        formField('Write Roles',
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.25rem' } },
-                React.createElement('span', { style: { fontSize: '12px', color: '#666' } }, `${writeRolesArray.length} selected`),
-                React.createElement(MultiSelector, {
-                    placeholder: 'Select roles...',
-                    values: writeRolesArray,
-                    onChange: function(e, data) {
-                        var newVals = data.values ? data.values.slice() : [];
-                        var prevVals = prevWriteRolesRef.current;
-                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
-
-                        if (added.includes('* (all)')) {
-                            newVals = ['* (all)'];
-                        } else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) {
-                            newVals = newVals.filter(function(v) { return v !== '* (all)'; });
-                        }
-
-                        prevWriteRolesRef.current = newVals;
-                        setWriteRolesArray(newVals);
-                        clearError('writeRoles');
-                    },
-                }, rolesData.map(function(r) {
-                    return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
-                })),
-                React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
-                    React.createElement('button', {
-                        type: 'button',
-                        onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); },
-                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
-                    }, 'Select All'),
-                    React.createElement('button', {
-                        type: 'button',
-                        onClick: function() { var arr = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); },
-                        style: { background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: 0, fontSize: '12px', textDecoration: 'underline' },
-                    }, 'Reset')
-                ),
-                React.createElement('span', { style: { fontSize: '11px', color: '#999' } }, '* (all) is mutually exclusive with individual roles')
-            ),
-            { helpText: 'Roles that can modify this credential', errorText: errors.writeRoles, required: true }
-        ),
-
-    // Password change toggle (edit mode only)
+        // Password change toggle (edit mode only)
         credential && React.createElement(ControlGroup, {
             key: 'toggle-password',
             label: 'Change password',
@@ -370,28 +349,28 @@ function CredentialForm({
             onClick: handleTogglePasswordChange,
         })),
 
-        // Password field
-       showPasswordFields && formField('Password',
-            React.createElement(Text, {
-                type: 'password',
-                value: password,
-                onChange: handlePasswordChange,
-                placeholder: 'Enter password',
-                error: !!errors.password,
-            }),
-            { errorText: errors.password, required: true }
-        ),
-
-        // Confirm Password field
-      showPasswordFields && formField('Confirm Password',
-            React.createElement(Text, {
-                type: 'password',
-                value: confirmPassword,
-                onChange: handleConfirmChange,
-                placeholder: 'Confirm password',
-                error: !!errors.passwordMismatch,
-            }),
-            { errorText: errors.passwordMismatch, required: true }
+        // Password + Confirm Password (side by side)
+        showPasswordFields && gridRow(
+            formField('Password',
+                React.createElement(Text, {
+                    type: 'password',
+                    value: password,
+                    onChange: handlePasswordChange,
+                    placeholder: 'Enter password',
+                    error: !!errors.password,
+                }),
+                { errorText: errors.password, required: true }
+            ),
+            formField('Confirm Password',
+                React.createElement(Text, {
+                    type: 'password',
+                    value: confirmPassword,
+                    onChange: handleConfirmChange,
+                    placeholder: 'Confirm password',
+                    error: !!errors.passwordMismatch,
+                }),
+                { errorText: errors.passwordMismatch, required: true }
+            )
         ),
 
         // Action buttons
