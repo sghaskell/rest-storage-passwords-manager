@@ -163,13 +163,9 @@ function CredentialTable({
         }
     }
 
-    // Handle row expansion toggle
+    // Handle row expansion toggle — called from onClick
     function handleExpansion(cred) {
         setExpandedRowKey(expandedRowKey === cred.stanzaKey ? null : cred.stanzaKey);
-        // Blur the row element to remove its :focus blue outline
-        if (document.activeElement) {
-            document.activeElement.blur();
-        }
     }
 
     // Handle inline form save
@@ -244,11 +240,12 @@ function CredentialTable({
                 key: cred.stanzaKey,
                 className: isExpanded ? 'cred-expanded-row' : undefined,
                 selected: isSelected(cred),
-                style: isExpanded ? { backgroundColor: '#fff' } : undefined,
+                style: isExpanded ? { backgroundColor: '#fff', cursor: 'pointer' } : { cursor: 'pointer' },
                 onRequestToggle: function() { handleToggleSelect(cred); },
                 expandable: true,
-                onClick: function(e) {
+                onMouseDown: function(e) {
                     if (e.target.closest('input[type="checkbox"]') || e.target.closest('button')) return;
+                    e.preventDefault(); // prevent focus from painting the blue ring
                     handleExpansion(cred);
                 },
                 expanded: isExpanded,
