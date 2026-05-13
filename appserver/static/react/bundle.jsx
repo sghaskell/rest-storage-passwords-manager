@@ -41,6 +41,11 @@ var GlobalStyles = _sc.createGlobalStyle`
             box-shadow: none;
         }
     }
+
+    /* Distinct hover color for credential table rows — overrides Splunk's neutral100 */
+    .credential-table-container table tbody tr:hover {
+        background-color: #e3f2fd !important;
+    }
 `;
 
 // Import self-contained application components

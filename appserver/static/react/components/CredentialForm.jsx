@@ -234,6 +234,7 @@ function CredentialForm({
                     value: username,
                     onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
                     placeholder: 'Enter username',
+                    disabled: !!credential,
                     error: !!errors.username,
                 }),
                 { errorText: errors.username, required: true }
