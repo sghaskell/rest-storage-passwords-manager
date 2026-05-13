@@ -1,8 +1,9 @@
 /**
  * CredentialTable.jsx - Table component for displaying credentials
  *
- * Displays credentials in a table with pagination, filtering, sorting, and selection
- * Uses @splunk/react-ui Table, Paginator, and Chip components.
+ * Displays credentials in a table with pagination, filtering, sorting, selection,
+ * and inline row expansion for editing.
+ * Uses @splunk/react-ui Table, Paginator, Chip, and CredentialForm components.
  */
 
 const React = require('react');
@@ -22,9 +23,10 @@ var ChipMod = require('@splunk/react-ui/Chip');
 var Chip = ChipMod.default;
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
-var Pencil = require('@splunk/react-icons/Pencil').default;
 var Eye = require('@splunk/react-icons/Eye').default;
 var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
+
+var CredentialForm = require('./CredentialForm');
 
 
 /**
@@ -34,29 +36,42 @@ var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
  * @param {Array} props.credentials - Array of credential objects
  * @param {Array} props.selectedRows - Currently selected rows for bulk operations
  * @param {boolean} props.isAllSelected - Whether all rows are selected
- * @param {Function} props.onEdit - Callback when edit is clicked
  * @param {Function} props.onDelete - Callback when delete is clicked
  * @param {Function} props.onReveal - Callback when reveal password is clicked
  * @param {Function} props.onSelectRow - Callback when row checkbox toggled
  * @param {Function} props.onSelectAll - Callback when select-all checked
  * @param {Function} props.onDeselectAll - Callback when select-all unchecked
+ * @param {Function} props.onUpdate - Callback when inline form saves (credential updated)
+ * @param {Array} props.availableApps - Apps for form dropdown
+ * @param {Array} props.availableUsers - Users for owner dropdown
+ * @param {string} props.currentUserIdentity - Current user identity
+ * @param {Array} props.availableRoles - Roles for ACL dropdowns
+ * @param {string} props.defaultReadRoles - Default read roles CSV
+ * @param {string} props.defaultWriteRoles - Default write roles CSV
  */
 function CredentialTable({
     credentials = [],
     selectedRows = [],
     isAllSelected = false,
-    onEdit,
     onDelete,
     onReveal,
     onSelectRow,
     onSelectAll,
     onDeselectAll,
+    onUpdate,
+    availableApps = [],
+    availableUsers = [],
+    currentUserIdentity = 'nobody',
+    availableRoles = [],
+    defaultReadRoles = '',
+    defaultWriteRoles = '',
 }) {
     const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
     const [currentPage, setCurrentPage] = React.useState(1);
     const [rowsPerPage, setRowsPerPage] = React.useState(10);
     const [filterText, setFilterText] = React.useState('');
     const [filterType, setFilterType] = React.useState('all');
+    const [expandedRowKey, setExpandedRowKey] = React.useState(null);
 
     // Filter credentials
     const filteredCredentials = React.useMemo(function() {
@@ -148,13 +163,44 @@ function CredentialTable({
         }
     }
 
-    // Create action cell factory — icon buttons for Edit, Reveal, Delete
+    // Handle row expansion toggle
+    function handleExpansion(cred) {
+        setExpandedRowKey(expandedRowKey === cred.stanzaKey ? null : cred.stanzaKey);
+    }
+
+    // Handle inline form save
+    function handleInlineSave(cred, formData) {
+        setExpandedRowKey(null);
+        onUpdate && onUpdate(cred, formData);
+    }
+
+    // Build expansion row with inline CredentialForm
+    function buildExpansionRow(cred) {
+        return React.createElement(TableRow, { key: cred.stanzaKey + '-expansion' },
+            React.createElement(TableCell, { colSpan: 5 },
+                React.createElement('div', { style: { padding: '1rem' } },
+                    React.createElement(CredentialForm, {
+                        credential: cred,
+                        onSave: function(formData) { handleInlineSave(cred, formData); },
+                        onCancel: function() { setExpandedRowKey(null); },
+                        availableApps: availableApps,
+                        availableUsers: availableUsers,
+                        currentUserIdentity: currentUserIdentity,
+                        availableRoles: availableRoles,
+                        defaultReadRoles: defaultReadRoles,
+                        defaultWriteRoles: defaultWriteRoles,
+                    })
+                )
+            )
+        );
+    }
+
+    // Create action cell factory — icon buttons for Reveal, Delete
     function createActionCell(cred) {
         return React.createElement(TableCell, null,
             React.createElement(
                 'div',
                 { style: { display: 'flex', gap: '0.25rem' } },
-                React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', icon: React.createElement(Pencil, { variant: 'filled' }) }),
                 React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', icon: React.createElement(Eye, { variant: 'filled' }) }),
                 React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
             )
@@ -175,13 +221,18 @@ function CredentialTable({
         React.createElement(TableHeadCell, { key: 'actions' }, 'Actions')
     ];
 
-    // Build data rows — TableRow selected + onRequestToggle renders the checkbox cell
+    // Build data rows — TableRow with expansion, selection, and actions
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
+            var isExpanded = expandedRowKey === cred.stanzaKey;
             return React.createElement(TableRow, {
                 key: cred.stanzaKey,
                 selected: isSelected(cred),
                 onRequestToggle: function() { handleToggleSelect(cred); },
+                expandable: true,
+                expanded: isExpanded,
+                onExpansion: function() { handleExpansion(cred); },
+                expansionRow: isExpanded ? buildExpansionRow(cred) : undefined,
             },
                 React.createElement(TableCell, null, cred.name || cred.realm),
                 React.createElement(TableCell, null,
@@ -249,12 +300,13 @@ function CredentialTable({
             )
         ),
 
-        // Credentials table — rowSelection + onRequestToggleAllRows on Table, flows via context to TableHead/TableRow
+        // Credentials table — rowSelection + rowExpansion + onRequestToggleAllRows on Table
         React.createElement(Table, {
             outerStyle: { width: '100%', marginBottom: '1rem' },
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
+            rowExpansion: 'controlled',
         },
             React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, null, ...dataRows)

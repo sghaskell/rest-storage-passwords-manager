@@ -199,23 +199,22 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             }
         }
 
-        async function handleUpdateCredential(data) {
-            if (!editingCredential) return;
+        async function handleUpdateCredential(credential, data) {
             const messages = [];
             try {
                 await API.updateCredential(
-                    editingCredential.name, editingCredential.realm,
+                    credential.name, credential.realm,
                     data.password, data.readRoles, data.writeRoles,
-                    data.owner, data.app, data.sharing || 'app', editingCredential.app
+                    data.owner, data.app, data.sharing || 'app', credential.app
                 );
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
                 messages.push('ACLs updated successfully');
                 if (data.password) {
-                    messages.unshift(`Password updated for <strong>${escapeHtml(editingCredential.name)}</strong>`);
+                    messages.unshift(`Password updated for <strong>${escapeHtml(credential.name)}</strong>`);
                 } else {
-                    messages.unshift(`Credential <strong>${escapeHtml(editingCredential.name)}</strong> updated`);
+                    messages.unshift(`Credential <strong>${escapeHtml(credential.name)}</strong> updated`);
                 }
                 showSuccess('Credential Updated', messages);
             } catch (err) {
@@ -438,12 +437,18 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 credentials,
                 selectedRows,
                 isAllSelected,
-                onEdit: (credential) => { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
                 onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
                 onReveal: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, password: true })); },
                 onSelectRow: handleSelectRow,
                 onSelectAll: handleSelectAll,
                 onDeselectAll: handleDeselectAll,
+                onUpdate: handleUpdateCredential,
+                availableApps: refData.apps,
+                availableUsers: refData.users,
+                currentUserIdentity: refData.currentUserIdentity,
+                availableRoles: refData.roles,
+                defaultReadRoles: DEFAULT_READ,
+                defaultWriteRoles: DEFAULT_WRITE,
             }),
 
             // Form modal — dedicated modal wrapper for CredentialForm
