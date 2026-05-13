@@ -43,7 +43,7 @@ var GlobalStyles = _sc.createGlobalStyle`
     }
 
     /* Distinct hover color for credential table rows — overrides Splunk's neutral100 */
-    .credential-table-container table tbody tr:hover {
+    .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover {
         background-color: #e3f2fd !important;
     }
 `;

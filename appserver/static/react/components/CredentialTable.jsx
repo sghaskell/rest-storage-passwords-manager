@@ -166,6 +166,10 @@ function CredentialTable({
     // Handle row expansion toggle
     function handleExpansion(cred) {
         setExpandedRowKey(expandedRowKey === cred.stanzaKey ? null : cred.stanzaKey);
+        // Blur the row element to remove its :focus blue outline
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
     }
 
     // Handle inline form save
@@ -174,11 +178,22 @@ function CredentialTable({
         onUpdate && onUpdate(cred, formData);
     }
 
-    // Build expansion row with inline CredentialForm
-    function buildExpansionRow(cred) {
-        return React.createElement(TableRow, { key: cred.stanzaKey + '-expansion' },
-            React.createElement(TableCell, { colSpan: 6 },
-                React.createElement('div', { style: { padding: '1rem 1.5rem' } },
+    // Build expansion content — white wrapper with negative margins to mask Splunk's border
+    function buildExpansionContent(cred) {
+        return React.createElement(TableRow, {
+            key: cred.stanzaKey + '-expansion',
+            className: 'cred-expansion-row',
+        },
+            React.createElement(TableCell, { colSpan: 6, style: { padding: 0, border: 'none' } },
+                React.createElement('div', {
+                    onClick: function(e) { e.stopPropagation(); },
+                    style: {
+                        background: '#fff',
+                        margin: 0,
+                        padding: '1rem 1.5rem',
+                        boxSizing: 'border-box',
+                    }
+                },
                     React.createElement(CredentialForm, {
                         credential: cred,
                         onSave: function(formData) { handleInlineSave(cred, formData); },
@@ -224,17 +239,24 @@ function CredentialTable({
     // Build data rows — TableRow with expansion, selection, and actions
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
+            var isExpanded = expandedRowKey === cred.stanzaKey;
             return React.createElement(TableRow, {
                 key: cred.stanzaKey,
+                className: isExpanded ? 'cred-expanded-row' : undefined,
                 selected: isSelected(cred),
+                style: isExpanded ? { backgroundColor: '#fff' } : undefined,
                 onRequestToggle: function() { handleToggleSelect(cred); },
-                onClick: function() { handleExpansion(cred); },
-                expanded: expandedRowKey === cred.stanzaKey,
-                expansionRow: buildExpansionRow(cred),
+                expandable: true,
+                onClick: function(e) {
+                    if (e.target.closest('input[type="checkbox"]') || e.target.closest('button')) return;
+                    handleExpansion(cred);
+                },
+                expanded: isExpanded,
+                expansionRow: buildExpansionContent(cred),
             },
                 React.createElement(TableCell, null, cred.name || cred.realm),
                 React.createElement(TableCell, null,
-                    React.createElement(Chip, { backgroundColor: (!cred.realm || cred.realm === 'nobody') ? '#e0e0e0' : '#e3f2fd', foregroundColor: (!cred.realm || cred.realm === 'nobody') ? 'inherit' : '#1565c0' },
+                    React.createElement(Chip, { backgroundColor: (!cred.realm || cred.realm === 'nobody') ? '#bdbdbd' : '#e3f2fd', foregroundColor: (!cred.realm || cred.realm === 'nobody') ? '#212121' : '#1565c0' },
                         (!cred.realm || cred.realm === 'nobody') ? 'global' : (cred.realm || ''))
                 ),
                 React.createElement(TableCell, null,
@@ -251,6 +273,107 @@ function CredentialTable({
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
+        // CSS override: expansion rows get solid white bg, no hover, no blue border; expanded parent row also loses hover
+        React.createElement('style', null,
+            /* Target expansion row and its td only — do NOT touch form descendants */
+            '.credential-table-container .cred-expansion-row,\n' +
+            '.credential-table-container .cred-expansion-row td {\n' +
+            '  background: #fff !important;\n' +
+            '  border: none !important;\n' +
+            '  border-top: 0 !important;\n' +
+            '  border-left: 0 !important;\n' +
+            '  border-top-color: transparent !important;\n' +
+            '  border-left-color: transparent !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  outline: none !important;\n' +
+            '  outline-color: transparent !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expansion-row::before,\n' +
+            '.credential-table-container .cred-expansion-row::after,\n' +
+            '.credential-table-container .cred-expansion-row td::before,\n' +
+            '.credential-table-container .cred-expansion-row td::after {\n' +
+            '  border: none !important;\n' +
+            '  border-top: 0 !important;\n' +
+            '  border-left: 0 !important;\n' +
+            '  border-top-color: transparent !important;\n' +
+            '  border-left-color: transparent !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  outline: none !important;\n' +
+            '  display: none !important;\n' +
+            '}\n' +
+            /* Kill blue focus ring on expand chevron button */
+            '.credential-table-container button[title*="Expand"],\n' +
+            '.credential-table-container button[title*="Collapse"] {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border: none !important;\n' +
+            '}\n' +
+            '.credential-table-container button[title*="Expand"]:focus,\n' +
+            '.credential-table-container button[title*="Collapse"]:focus {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border: none !important;\n' +
+            '}\n' +
+            /* Kill focus ring on expanded row — the blue box that appears on click */
+            '.credential-table-container .cred-expanded-row:focus,\n' +
+            '.credential-table-container .cred-expanded-row:focus-visible {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border: none !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expanded-row:focus td,\n' +
+            '.credential-table-container .cred-expanded-row:focus-visible td {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border: none !important;\n' +
+            '  border-color: transparent !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expanded-row:focus::before,\n' +
+            '.credential-table-container .cred-expanded-row:focus::after,\n' +
+            '.credential-table-container .cred-expanded-row:focus-visible::before,\n' +
+            '.credential-table-container .cred-expanded-row:focus-visible::after,\n' +
+            '.credential-table-container .cred-expanded-row:focus td::before,\n' +
+            '.credential-table-container .cred-expanded-row:focus td::after {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border: none !important;\n' +
+            '  display: none !important;\n' +
+            '}\n' +
+            /* Kill hover on the expanded parent row too — always white, never highlight */
+            '.credential-table-container .cred-expanded-row,\n' +
+            '.credential-table-container .cred-expanded-row:hover,\n' +
+            '.credential-table-container .cred-expanded-row:hover td {\n' +
+            '  background: #fff !important;\n' +
+            '  background-color: #fff !important;\n' +
+            '  border: none !important;\n' +
+            '  border-top: 0 !important;\n' +
+            '  border-left: 0 !important;\n' +
+            '  border-top-color: transparent !important;\n' +
+            '  border-left-color: transparent !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  outline: none !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expanded-row td,\n' +
+            '.credential-table-container .cred-expanded-row:hover td {\n' +
+            '  background: #fff !important;\n' +
+            '  background-color: #fff !important;\n' +
+            '  border: none !important;\n' +
+            '  border-color: transparent !important;\n' +
+            '  outline: none !important;\n' +
+            '  outline-color: transparent !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expanded-row td::before,\n' +
+            '.credential-table-container .cred-expanded-row td::after {\n' +
+            '  border: none !important;\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '}\n' +
+            '.credential-table-container .cred-expanded-row td > * {\n' +
+            '  background: transparent !important;\n' +
+            '  background-color: transparent !important;\n' +
+            '}\n'
+        ),
         // Filter bar + pagination controls
         React.createElement(
             'div',
