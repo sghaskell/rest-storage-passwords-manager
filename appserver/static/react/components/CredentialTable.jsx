@@ -267,6 +267,8 @@ function CredentialTable({
             React.createElement(TableCell, { colSpan: 6, style: { textAlign: 'center', padding: '2rem', color: '#666' } }, 'No credentials found')
         )];
 
+    var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
+
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
@@ -369,13 +371,26 @@ function CredentialTable({
             '.credential-table-container .cred-expanded-row td > * {\n' +
             '  background: transparent !important;\n' +
             '  background-color: transparent !important;\n' +
+            '}\n' +
+            /* Kill blue focus ring on all interactive elements */
+            '.credential-table-container input:focus,\n' +
+            '.credential-table-container select:focus,\n' +
+            '.credential-table-container button:focus,\n' +
+            '.credential-table-container input:focus-visible,\n' +
+            '.credential-table-container select:focus-visible,\n' +
+            '.credential-table-container button:focus-visible,\n' +
+            '.credential-table-container input[type="checkbox"]:focus,\n' +
+            '.credential-table-container input[type="checkbox"]:focus-visible {\n' +
+            '  outline: none !important;\n' +
+            '  box-shadow: none !important;\n' +
+            '  border-color: inherit !important;\n' +
             '}\n'
         ),
         // Filter bar + pagination controls
         React.createElement(
             'div',
-            { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
-            React.createElement('strong', null, 'Search:'),
+            { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' } },
+            React.createElement('strong', { style: labelStyle }, 'Search:'),
             React.createElement('input', {
                 type: 'text',
                 value: filterText,
@@ -386,24 +401,27 @@ function CredentialTable({
                     border: '1px solid #ccc',
                     borderRadius: '4px',
                     minWidth: '200px',
+                    fontSize: '13px',
+                    height: '28px',
+                    boxSizing: 'border-box',
                 },
             }),
             React.createElement('select', {
                 value: filterType,
                 onChange: function(e) { setFilterType(e.target.value); },
-                style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
+                style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
             },
                 React.createElement('option', { value: 'all' }, 'All Fields'),
                 React.createElement('option', { value: 'username' }, 'Username'),
                 React.createElement('option', { value: 'realm' }, 'Realm'),
                 React.createElement('option', { value: 'app' }, 'App')
             ),
-            React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' } },
-                React.createElement('strong', null, 'Rows per page:'),
+            React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
+                React.createElement('strong', { style: labelStyle }, 'Rows per page:'),
                 React.createElement('select', {
                     value: rowsPerPage,
                     onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
-                    style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
+                    style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
                 },
                     React.createElement('option', { value: 10 }, '10'),
                     React.createElement('option', { value: 25 }, '25'),
