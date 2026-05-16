@@ -46,6 +46,19 @@ var GlobalStyles = _sc.createGlobalStyle`
     .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover {
         background-color: #e3f2fd !important;
     }
+
+    /* Kill blue focus ring on all interactive elements (modals, forms, table) */
+    button:focus,
+    button:focus-visible,
+    a:focus,
+    a:focus-visible,
+    [tabindex]:focus,
+    [tabindex]:focus-visible,
+    select:focus,
+    select:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+    }
 `;
 
 // Import self-contained application components
@@ -447,13 +460,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onSelectRow: handleSelectRow,
                 onSelectAll: handleSelectAll,
                 onDeselectAll: handleDeselectAll,
-                onUpdate: handleUpdateCredential,
-                availableApps: refData.apps,
-                availableUsers: refData.users,
-                currentUserIdentity: refData.currentUserIdentity,
-                availableRoles: refData.roles,
-                defaultReadRoles: DEFAULT_READ,
-                defaultWriteRoles: DEFAULT_WRITE,
+                onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
             }),
 
             // Form modal — dedicated modal wrapper for CredentialForm
@@ -463,7 +470,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 title: editingCredential ? 'Edit Credential' : 'Create Credential',
             }, React.createElement(CredentialForm, {
                 credential: editingCredential,
-                onSave: editingCredential ? handleUpdateCredential : handleCreateCredential,
+                onSave: editingCredential ? function(formData) { handleUpdateCredential(editingCredential, formData); } : handleCreateCredential,
                 onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
                 availableApps: refData.apps,
                 availableUsers: refData.users,
@@ -534,13 +541,13 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             onRequestClose: function() { onClose(); },
             returnFocus: handleReturnFocus,
             divider: 'both',
-            style: { width: '700px', maxWidth: '95%', maxHeight: '90vh' }
+            style: { width: '800px', maxWidth: '95%', maxHeight: '90vh' }
         },
             React.createElement('div', null,
                 React.createElement(Modal.Header, null,
                     React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, title || 'Create/Edit Credential')
                 ),
-                React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } }, children)
+                React.createElement(Modal.Body, { style: { overflow: 'visible' } }, children)
             )
         );
     }

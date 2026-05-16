@@ -2,8 +2,8 @@
  * CredentialTable.jsx - Table component for displaying credentials
  *
  * Displays credentials in a table with pagination, filtering, sorting, selection,
- * and inline row expansion for editing.
- * Uses @splunk/react-ui Table, Paginator, Chip, and CredentialForm components.
+ * and edit/reveal/delete actions per row.
+ * Uses @splunk/react-ui Table, Paginator, Chip, and Button components.
  */
 
 const React = require('react');
@@ -24,9 +24,8 @@ var Chip = ChipMod.default;
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
 var Eye = require('@splunk/react-icons/Eye').default;
+var Pencil = require('@splunk/react-icons/Pencil').default;
 var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
-
-var CredentialForm = require('./CredentialForm');
 
 // Splunk Dropdown, Checkbox for column picker
 var DropdownMod = require('@splunk/react-ui/Dropdown');
@@ -79,13 +78,7 @@ function saveVisibleColumns(columns) {
  * @param {Function} props.onSelectRow - Callback when row checkbox toggled
  * @param {Function} props.onSelectAll - Callback when select-all checked
  * @param {Function} props.onDeselectAll - Callback when select-all unchecked
- * @param {Function} props.onUpdate - Callback when inline form saves (credential updated)
- * @param {Array} props.availableApps - Apps for form dropdown
- * @param {Array} props.availableUsers - Users for owner dropdown
- * @param {string} props.currentUserIdentity - Current user identity
- * @param {Array} props.availableRoles - Roles for ACL dropdowns
- * @param {string} props.defaultReadRoles - Default read roles CSV
- * @param {string} props.defaultWriteRoles - Default write roles CSV
+ * @param {Function} props.onEdit - Callback when edit button clicked
  */
 function CredentialTable({
     credentials = [],
@@ -96,20 +89,13 @@ function CredentialTable({
     onSelectRow,
     onSelectAll,
     onDeselectAll,
-    onUpdate,
-    availableApps = [],
-    availableUsers = [],
-    currentUserIdentity = 'nobody',
-    availableRoles = [],
-    defaultReadRoles = '',
-    defaultWriteRoles = '',
+    onEdit,
 }) {
     const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
     const [currentPage, setCurrentPage] = React.useState(1);
     const [rowsPerPage, setRowsPerPage] = React.useState(10);
     const [filterText, setFilterText] = React.useState('');
     const [filterType, setFilterType] = React.useState('all');
-    const [expandedRowKey, setExpandedRowKey] = React.useState(null);
     const [visibleColumns, setVisibleColumns] = React.useState(loadVisibleColumns);
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
@@ -218,17 +204,6 @@ function CredentialTable({
         }
     }
 
-    // Handle row expansion toggle — called from onClick
-    function handleExpansion(cred) {
-        setExpandedRowKey(expandedRowKey === cred.stanzaKey ? null : cred.stanzaKey);
-    }
-
-    // Handle inline form save
-    function handleInlineSave(cred, formData) {
-        setExpandedRowKey(null);
-        onUpdate && onUpdate(cred, formData);
-    }
-
     // colSpan = visible columns + 1 (checkbox column from rowSelection)
     function getColSpan() {
         return visibleColumns.length + 1;
@@ -266,6 +241,7 @@ function CredentialTable({
                 React.createElement(
                     'div',
                     { style: { display: 'flex', gap: '0.25rem' } },
+                    React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', icon: React.createElement(Pencil, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', icon: React.createElement(Eye, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
                 )
@@ -292,38 +268,6 @@ function CredentialTable({
         return React.createElement(TableCell, null, cred[col.key] || '');
     }
 
-    // Build expansion content — white wrapper with negative margins to mask Splunk's border
-    function buildExpansionContent(cred) {
-        return React.createElement(TableRow, {
-            key: cred.stanzaKey + '-expansion',
-            className: 'cred-expansion-row',
-        },
-            React.createElement(TableCell, { colSpan: getColSpan(), style: { padding: 0, border: 'none' } },
-                React.createElement('div', {
-                    onClick: function(e) { e.stopPropagation(); },
-                    style: {
-                        background: '#fff',
-                        margin: 0,
-                        padding: '1rem 1.5rem',
-                        boxSizing: 'border-box',
-                    }
-                },
-                    React.createElement(CredentialForm, {
-                        credential: cred,
-                        onSave: function(formData) { handleInlineSave(cred, formData); },
-                        onCancel: function() { setExpandedRowKey(null); },
-                        availableApps: availableApps,
-                        availableUsers: availableUsers,
-                        currentUserIdentity: currentUserIdentity,
-                        availableRoles: availableRoles,
-                        defaultReadRoles: defaultReadRoles,
-                        defaultWriteRoles: defaultWriteRoles,
-                    })
-                )
-            )
-        );
-    }
-
     // Determine rowSelection state for header checkbox: 'all', 'some', or 'none'
     var someSelected = paginatedCredentials.some(function(c) { return isSelected(c); });
     var allSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
@@ -335,23 +279,13 @@ function CredentialTable({
         return buildHeaderCell(col);
     });
 
-    // Build data rows — TableRow with expansion, selection, and actions
+    // Build data rows — TableRow with selection and actions
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
-            var isExpanded = expandedRowKey === cred.stanzaKey;
             return React.createElement(TableRow, {
                 key: cred.stanzaKey,
-                className: isExpanded ? 'cred-expanded-row' : undefined,
                 selected: isSelected(cred),
-                style: isExpanded ? { backgroundColor: '#fff', cursor: 'pointer' } : { cursor: 'pointer' },
                 onRequestToggle: function() { handleToggleSelect(cred); },
-                expandable: true,
-                onClick: function(e) {
-                    if (e.target.closest('input[type="checkbox"]') || e.target.closest('button')) return;
-                    handleExpansion(cred);
-                },
-                expanded: isExpanded,
-                expansionRow: buildExpansionContent(cred),
             },
                 visibleColumns.map(function(vk) {
                     var col = COLUMNS.find(function(cc) { return cc.key === vk; });
@@ -368,147 +302,6 @@ function CredentialTable({
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
-        // CSS override: expansion rows get solid white bg, no hover, no blue border; expanded parent row also loses hover
-        React.createElement('style', null,
-            /* Target expansion row and its td only — do NOT touch form descendants */
-            '.credential-table-container .cred-expansion-row,\n' +
-            '.credential-table-container .cred-expansion-row td {\n' +
-            '  background: #fff !important;\n' +
-            '  border: none !important;\n' +
-            '  border-top: 0 !important;\n' +
-            '  border-left: 0 !important;\n' +
-            '  border-top-color: transparent !important;\n' +
-            '  border-left-color: transparent !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  outline: none !important;\n' +
-            '  outline-color: transparent !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expansion-row::before,\n' +
-            '.credential-table-container .cred-expansion-row::after,\n' +
-            '.credential-table-container .cred-expansion-row td::before,\n' +
-            '.credential-table-container .cred-expansion-row td::after {\n' +
-            '  border: none !important;\n' +
-            '  border-top: 0 !important;\n' +
-            '  border-left: 0 !important;\n' +
-            '  border-top-color: transparent !important;\n' +
-            '  border-left-color: transparent !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  outline: none !important;\n' +
-            '  display: none !important;\n' +
-            '}\n' +
-            /* Kill blue focus ring on expand chevron button */
-            '.credential-table-container button[title*="Expand"],\n' +
-            '.credential-table-container button[title*="Collapse"] {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '}\n' +
-            '.credential-table-container button[title*="Expand"]:focus,\n' +
-            '.credential-table-container button[title*="Collapse"]:focus {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '}\n' +
-            /* Kill focus ring on all table rows */
-            '.credential-table-container tbody tr:focus,\n' +
-            '.credential-table-container tbody tr:focus-visible {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '}\n' +
-            '.credential-table-container tbody tr:focus td,\n' +
-            '.credential-table-container tbody tr:focus-visible td {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '  border-color: transparent !important;\n' +
-            '}\n' +
-            /* Kill focus ring on expanded row — the blue box that appears on click */
-            '.credential-table-container .cred-expanded-row:focus,\n' +
-            '.credential-table-container .cred-expanded-row:focus-visible {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expanded-row:focus td,\n' +
-            '.credential-table-container .cred-expanded-row:focus-visible td {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '  border-color: transparent !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expanded-row:focus::before,\n' +
-            '.credential-table-container .cred-expanded-row:focus::after,\n' +
-            '.credential-table-container .cred-expanded-row:focus-visible::before,\n' +
-            '.credential-table-container .cred-expanded-row:focus-visible::after,\n' +
-            '.credential-table-container .cred-expanded-row:focus td::before,\n' +
-            '.credential-table-container .cred-expanded-row:focus td::after {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border: none !important;\n' +
-            '  display: none !important;\n' +
-            '}\n' +
-            /* Kill hover on the expanded parent row too — always white, never highlight */
-            '.credential-table-container .cred-expanded-row,\n' +
-            '.credential-table-container .cred-expanded-row:hover,\n' +
-            '.credential-table-container .cred-expanded-row:hover td {\n' +
-            '  background: #fff !important;\n' +
-            '  background-color: #fff !important;\n' +
-            '  border: none !important;\n' +
-            '  border-top: 0 !important;\n' +
-            '  border-left: 0 !important;\n' +
-            '  border-top-color: transparent !important;\n' +
-            '  border-left-color: transparent !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  outline: none !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expanded-row td,\n' +
-            '.credential-table-container .cred-expanded-row:hover td {\n' +
-            '  background: #fff !important;\n' +
-            '  background-color: #fff !important;\n' +
-            '  border: none !important;\n' +
-            '  border-color: transparent !important;\n' +
-            '  outline: none !important;\n' +
-            '  outline-color: transparent !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expanded-row td::before,\n' +
-            '.credential-table-container .cred-expanded-row td::after {\n' +
-            '  border: none !important;\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '}\n' +
-            '.credential-table-container .cred-expanded-row td > * {\n' +
-            '  background: transparent !important;\n' +
-            '  background-color: transparent !important;\n' +
-            '}\n' +
-            /* Kill blue focus ring on all interactive elements */
-            '.credential-table-container input:focus,\n' +
-            '.credential-table-container select:focus,\n' +
-            '.credential-table-container button:focus,\n' +
-            '.credential-table-container input:focus-visible,\n' +
-            '.credential-table-container select:focus-visible,\n' +
-            '.credential-table-container button:focus-visible,\n' +
-            '.credential-table-container input[type="checkbox"]:focus,\n' +
-            '.credential-table-container input[type="checkbox"]:focus-visible {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border-color: inherit !important;\n' +
-            '}\n' +
-            /* Column picker checkbox focus ring (rendered outside table container via Popper) */
-            '.column-picker input[type="checkbox"]:focus,\n' +
-            '.column-picker input[type="checkbox"]:focus-visible {\n' +
-            '  outline: none !important;\n' +
-            '  box-shadow: none !important;\n' +
-            '  border-color: inherit !important;\n' +
-            '}\n' +
-            /* Blue focus shadow is on the checkbox wrapper div, not the input */
-            '.column-picker div:has(input[type="checkbox"]:focus),\n' +
-            '.column-picker div:has(input[type="checkbox"]:focus-visible) {\n' +
-            '  box-shadow: none !important;\n' +
-            '  outline: none !important;\n' +
-            '}\n'
-        ),
         // Filter bar + pagination controls
         React.createElement(
             'div',
@@ -586,13 +379,12 @@ function CredentialTable({
             )
         ),
 
-        // Credentials table — rowSelection + rowExpansion + onRequestToggleAllRows on Table
+        // Credentials table — rowSelection + onRequestToggleAllRows on Table
         React.createElement(Table, {
             outerStyle: { width: '100%', marginBottom: '1rem' },
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
-            rowExpansion: 'controlled',
             stripeRows: true,
         },
             React.createElement(TableHead, null, ...headerCells),
