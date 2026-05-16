@@ -18,6 +18,8 @@ ModalMod.Body && (Modal.Body = ModalMod.Body);
 ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
 var CheckCircle = require('@splunk/react-icons/CheckCircle').default;
 var CrossCircle = require('@splunk/react-icons/CrossCircle').default;
+var ExclamationTriangle = require('@splunk/react-icons/ExclamationTriangle').default;
+var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
 var SplunkThemeProvider = require('@splunk/themes').SplunkThemeProvider;
 var _sc = require('styled-components');
 var GlobalStyles = _sc.createGlobalStyle`
@@ -296,6 +298,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
 
                 if (errorMessages.length === 0) {
                     showSuccess('Bulk Delete Complete', successMessages);
+                } else if (successMessages.length === 0) {
+                    showError('Bulk Delete Failed', errorMessages.map(m => `ERROR: ${m}`));
                 } else {
                     // Partial success
                     const allMsgs = successMessages.concat(
@@ -571,10 +575,14 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         }
 
         // Determine overall status from messages
-        var contentMessages = messages.filter(function(m) { return m !== '<br/>' && !m.startsWith('<br/>-'); });
-        var errorCount = contentMessages.filter(function(m) { return m.startsWith('ERROR') || /failed/i.test(m); }).length;
+        var contentMessages = messages.filter(function(m) {
+            return m !== '<br/>' && !m.startsWith('<br/>-') && m !== '---';
+        });
+        var errorCount = contentMessages.filter(function(m) {
+            return m.startsWith('ERROR') || /failed/i.test(m);
+        }).length;
         var hasErrors = errorCount > 0;
-        var hasSuccess = contentMessages.length > errorCount;
+        var hasSuccess = contentMessages.length - errorCount > 0;
 
         var statusBg, statusBorder, statusIconColor;
         if (hasErrors && hasSuccess) {
@@ -620,7 +628,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                     }
                 },
                     messages.map(function(msg, i) {
-                        if (msg === '<br/>' || msg.startsWith('<br/>-')) {
+                        if (msg === '<br/>' || msg.startsWith('<br/>-') || msg === '---') {
                             return React.createElement('hr', { key: i, style: { margin: '0.75rem 0', border: 'none', borderTop: '1px solid ' + statusBorder + '40' } });
                         }
                         var isError = msg.startsWith('ERROR') || /failed/i.test(msg);
@@ -676,18 +684,23 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         },
             React.createElement('div', null,
                 React.createElement(Modal.Header, null,
-                    React.createElement('h3', { style: { margin: 0, fontSize: '16px' } }, `Delete ${selectedRows.length} Credential${selectedRows.length !== 1 ? 's' : ''}`)
+                    React.createElement('h3', { style: { margin: 0, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '0.5rem' } },
+                        React.createElement('span', { style: { color: '#d32f2f' } }, React.createElement(ExclamationTriangle, null)),
+                        `Delete ${selectedRows.length} Credential${selectedRows.length !== 1 ? 's' : ''}`
+                    )
                 ),
                 React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
                     React.createElement('p', null, 'Are you sure you want to delete the following credential(s)? This action cannot be undone.'),
-                    React.createElement('ul', { style: { margin: '0.5rem 0', paddingLeft: '1.25rem' } },
-                        selectedRows.map(function(row, i) {
-                            return React.createElement('li', { key: i, style: { marginBottom: '0.25rem' } },
-                                React.createElement('strong', null, row.name),
-                                row.realm ? React.createElement('span', null, ` (${row.realm})`) : null
-                            );
-                        })
-                    )
+                    selectedRows.map(function(row, i) {
+                        return React.createElement('div', {
+                            key: i,
+                            style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }
+                        },
+                            React.createElement('span', { style: { color: '#d32f2f', flexShrink: 0 } }, React.createElement(TrashCanCross, null)),
+                            React.createElement('strong', null, row.name),
+                            row.realm ? React.createElement('span', null, `(${row.realm})`) : null
+                        );
+                    })
                 ),
                 React.createElement(Modal.Footer, { itemAlign: 'end' },
                     React.createElement(Button, { onClick: onClose, children: 'Cancel' }),
