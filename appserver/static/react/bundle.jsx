@@ -16,6 +16,8 @@ var Modal = ModalMod.default;
 ModalMod.Header && (Modal.Header = ModalMod.Header);
 ModalMod.Body && (Modal.Body = ModalMod.Body);
 ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
+var CheckCircle = require('@splunk/react-icons/CheckCircle').default;
+var CrossCircle = require('@splunk/react-icons/CrossCircle').default;
 var SplunkThemeProvider = require('@splunk/themes').SplunkThemeProvider;
 var _sc = require('styled-components');
 var GlobalStyles = _sc.createGlobalStyle`
@@ -568,6 +570,27 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             }
         }
 
+        // Determine overall status from messages
+        var contentMessages = messages.filter(function(m) { return m !== '<br/>' && !m.startsWith('<br/>-'); });
+        var errorCount = contentMessages.filter(function(m) { return m.startsWith('ERROR') || /failed/i.test(m); }).length;
+        var hasErrors = errorCount > 0;
+        var hasSuccess = contentMessages.length > errorCount;
+
+        var statusBg, statusBorder, statusIconColor;
+        if (hasErrors && hasSuccess) {
+            statusBg = '#fff8e1';
+            statusBorder = '#ff9800';
+            statusIconColor = '#ff9800';
+        } else if (hasErrors) {
+            statusBg = '#ffebee';
+            statusBorder = '#d32f2f';
+            statusIconColor = '#d32f2f';
+        } else {
+            statusBg = '#e8f5e9';
+            statusBorder = '#4caf50';
+            statusIconColor = '#4caf50';
+        }
+
         return React.createElement(Modal, {
             open: true,
             onRequestClose: function() { onClose(); },
@@ -577,18 +600,47 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         },
             React.createElement('div', null,
                 React.createElement(Modal.Header, null,
-                    React.createElement('h3', { style: { margin: 0, fontSize: '16px' } }, title)
+                    React.createElement('h3', { style: { margin: 0, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '0.5rem' } },
+                        React.createElement('span', { style: { color: statusIconColor } },
+                            hasErrors && !hasSuccess
+                                ? React.createElement(CrossCircle, null)
+                                : React.createElement(CheckCircle, null)
+                        ),
+                        title
+                    )
                 ),
-                React.createElement(Modal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
+                React.createElement(Modal.Body, {
+                    style: {
+                        maxHeight: '60vh',
+                        overflowY: 'auto',
+                        backgroundColor: statusBg,
+                        border: '1px solid ' + statusBorder,
+                        borderRadius: '4px',
+                        padding: '1rem'
+                    }
+                },
                     messages.map(function(msg, i) {
                         if (msg === '<br/>' || msg.startsWith('<br/>-')) {
-                            return React.createElement('hr', { key: i, style: { margin: '0.75rem 0', border: 'none', borderTop: '1px solid #e0e0e0' } });
+                            return React.createElement('hr', { key: i, style: { margin: '0.75rem 0', border: 'none', borderTop: '1px solid ' + statusBorder + '40' } });
                         }
-                        return React.createElement('p', {
+                        var isError = msg.startsWith('ERROR') || /failed/i.test(msg);
+                        return React.createElement('div', {
                             key: i,
-                            style: { margin: '0.25rem 0', color: msg.startsWith('ERROR') ? '#d32f2f' : '#172b4d' },
-                            dangerouslySetInnerHTML: { __html: msg }
-                        });
+                            style: {
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                margin: '0.25rem 0'
+                            }
+                        },
+                            React.createElement('span', { style: { flexShrink: 0, color: isError ? '#d32f2f' : '#4caf50' } },
+                                isError ? React.createElement(CrossCircle, null) : React.createElement(CheckCircle, null)
+                            ),
+                            React.createElement('span', {
+                                style: { color: isError ? '#d32f2f' : '#172b4d', flex: 1 },
+                                dangerouslySetInnerHTML: { __html: msg }
+                            })
+                        );
                     })
                 ),
                 React.createElement(Modal.Footer, { itemAlign: 'end' },

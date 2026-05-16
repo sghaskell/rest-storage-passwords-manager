@@ -55,7 +55,9 @@ function loadVisibleColumns() {
             var hasAllFixed = COLUMNS.filter(function(c) { return c.fixed; }).every(function(c) { return parsed.indexOf(c.key) !== -1; });
             if (Array.isArray(parsed) && hasAllFixed) {
                 var validKeys = COLUMNS.map(function(c) { return c.key; });
-                return parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
+                var valid = parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
+                // Normalize order against canonical COLUMNS definition
+                return COLUMNS.map(function(c) { return c.key; }).filter(function(k) { return valid.indexOf(k) !== -1; });
             }
         }
     } catch (e) {}
@@ -218,7 +220,8 @@ function CredentialTable({
             if (idx !== -1) {
                 return prev.filter(function(k) { return k !== colKey; });
             } else {
-                return prev.concat([colKey]);
+                return COLUMNS.map(function(c) { return c.key; })
+                    .filter(function(k) { return k === colKey || prev.indexOf(k) !== -1; });
             }
         });
     }
