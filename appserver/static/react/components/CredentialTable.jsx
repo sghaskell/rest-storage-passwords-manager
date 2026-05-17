@@ -247,10 +247,10 @@ function CredentialTable({
                 React.createElement(
                     'div',
                     { style: { display: 'flex', gap: '0.25rem' } },
-                    React.createElement(Button, { onClick: function() { onCopy && onCopy(cred); }, appearance: 'subtle', icon: React.createElement(PlusSquare, { variant: 'filled' }) }),
-                    React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', icon: React.createElement(Pencil, { variant: 'filled' }) }),
-                    React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', icon: React.createElement(Eye, { variant: 'filled' }) }),
-                    React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
+                    React.createElement(Button, { onClick: function() { onCopy && onCopy(cred); }, appearance: 'subtle', title: 'Copy credential', icon: React.createElement(PlusSquare, { variant: 'filled' }) }),
+                    React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', title: 'Edit credential', icon: React.createElement(Pencil, { variant: 'filled' }) }),
+                    React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', title: 'Reveal password', icon: React.createElement(Eye, { variant: 'filled' }) }),
+                    React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', title: 'Delete credential', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
                 )
             );
         }
