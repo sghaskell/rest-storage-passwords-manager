@@ -722,6 +722,147 @@ function parseCSV(text) {
 const DEFAULT_READ_ROLES = ['admin', 'power'];
 const DEFAULT_WRITE_ROLES = ['admin', 'power'];
 
+/**
+ * Fetch audit log entries for REST activity against storage/passwords.
+ * Submits a search job against the _audit index, polls for completion, then returns results.
+ *
+ * @param {number} timeRangeMs - Milliseconds to look back (e.g., 3600000 for 1 hour)
+ * @returns {Array} Array of audit entry objects with timestamp, user, action, method, path, status
+ */
+async function fetchAuditLog(timeRangeMs) {
+    // Convert to Splunk relative time format: "-{amount}{unit}"
+    var seconds = Math.round(timeRangeMs / 1000);
+    var earliestTime;
+    if (seconds < 3600) {
+        earliestTime = '-' + Math.round(seconds / 60) + 'm';
+    } else if (seconds < 86400) {
+        earliestTime = '-' + Math.round(seconds / 3600) + 'h';
+    } else {
+        earliestTime = '-' + Math.round(seconds / 86400) + 'd';
+    }
+
+    var searchQuery = 'index=_audit (action=rest_post OR action=rest_delete OR action=rest_get OR action=rest_put OR action=rest_patch) path=*storage*passwords* | sort -info_time | table info_time, info_user, action, rest_method, path, rest_status_code';
+
+    try {
+        // Submit search job
+        var jobResponse = await splunkdRequest('/servicesNS/-/-/search/jobs', {
+            method: 'POST',
+            body: {
+                search: searchQuery,
+                earliest_time: earliestTime,
+                latest_time: 'now',
+                exec_mode: 'normal',
+            },
+        });
+
+        var sid = (jobResponse.sid) || null;
+        if (!sid) {
+            throw new Error('Search job failed to start — no SID returned');
+        }
+
+        // Poll for job completion with exponential backoff
+        var maxWaitMs = Math.max(15000, timeRangeMs > 604800000 ? 30000 : 20000);
+        var startTime = Date.now();
+        var pollInterval = 250;
+
+        while (Date.now() - startTime < maxWaitMs) {
+            var statusResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid), {
+                method: 'GET',
+            });
+
+            var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                statusResp.entry[0].content && statusResp.entry[0].content.isDone === '1');
+
+            if (isDone) {
+                // Fetch results
+                var resultsResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+                    method: 'GET',
+                });
+
+                // Cleanup search job
+                try {
+                    await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/control', {
+                        method: 'POST',
+                        body: { action: 'terminate' },
+                    });
+                } catch (_) { /* cleanup failure is non-critical */ }
+
+                var entries = (resultsResp.results && resultsResp.results.fields && resultsResp.results.fields.data) || [];
+                var rows = (resultsResp.results && resultsResp.results.rows) || [];
+
+                var fieldNames = entries.map(function(f) { return f.title || f.name || ''; });
+                var auditEntries = rows.map(function(row) {
+                    var entry = {};
+                    fieldNames.forEach(function(name, i) {
+                        entry[name] = row[i];
+                    });
+                    return {
+                        timestamp: entry.info_time || '',
+                        user: entry.info_user || '',
+                        action: entry.action || '',
+                        method: entry.rest_method || '',
+                        path: entry.path || '',
+                        status: entry.rest_status_code || '',
+                    };
+                });
+
+                return auditEntries;
+            }
+
+            // Check for job errors
+            var dispatchState = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                statusResp.entry[0].content && statusResp.entry[0].content.dispatchState);
+            if (dispatchState === 'FAILED' || dispatchState === 'KILLED') {
+                var errorMsg = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                    statusResp.entry[0].content && statusResp.entry[0].content.messages) || '';
+                throw new Error('Search job failed: ' + (errorMsg || dispatchState));
+            }
+
+            // Wait before next poll
+            await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
+            pollInterval = Math.min(pollInterval * 2, 2000);
+        }
+
+        // Timeout — try to grab partial results
+        var partialResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+            method: 'GET',
+        });
+
+        try {
+            await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/control', {
+                method: 'POST',
+                body: { action: 'terminate' },
+            });
+        } catch (_) {}
+
+        var partialEntries = (partialResp.results && partialResp.results.fields && partialResp.results.fields.data) || [];
+        var partialRows = (partialResp.results && partialResp.results.rows) || [];
+        var partialFieldNames = partialEntries.map(function(f) { return f.title || f.name || ''; });
+        return partialRows.map(function(row) {
+            var entry = {};
+            partialFieldNames.forEach(function(name, i) {
+                entry[name] = row[i];
+            });
+            return {
+                timestamp: entry.info_time || '',
+                user: entry.info_user || '',
+                action: entry.action || '',
+                method: entry.rest_method || '',
+                path: entry.path || '',
+                status: entry.rest_status_code || '',
+            };
+        });
+    } catch (error) {
+        // Surface permission errors with descriptive message
+        if (error.status === 403 || /permission|capability|access denied/i.test(error.message || '')) {
+            var permError = new Error('Insufficient permissions to query audit log. Required capability: search_filter:audit (or equivalent _audit index access).');
+            permError.isPermissionError = true;
+            throw permError;
+        }
+        throw error;
+    }
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -742,6 +883,7 @@ module.exports = {
     getApps,
     getUsers,
     getRoles,
+    fetchAuditLog,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
 };

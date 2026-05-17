@@ -68,6 +68,7 @@ var GlobalStyles = _sc.createGlobalStyle`
 // Import self-contained application components
 const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
+const AuditLog = require('./components/AuditLog');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./components/Modal');
 
@@ -738,6 +739,18 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             console.log('Credential Manager: Render complete');
         }
     };
+
+    // AuditLog init — renders when #audit-log-app container exists
+    (function() {
+        var auditContainer = document.getElementById('audit-log-app');
+        if (!auditContainer) return;
+
+        var auditRoot = ReactDOM.createRoot(auditContainer);
+        auditRoot.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
+            React.createElement(GlobalStyles, null),
+            React.createElement(AuditLog, null)
+        ));
+    })();
 
     if (typeof window.require === 'function') {
         window.require(['splunkjs/mvc/simplexml/ready!', 'splunkjs/mvc'], function(ready, mvc) {

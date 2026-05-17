@@ -1,0 +1,16 @@
+<!--
+  audit_log.xml  –  React-based Splunk Dashboard for audit log viewer
+-->
+<dashboard version="1.1" script="react/bundle.js">
+  <label>Audit Log</label>
+  
+  <row>
+    <panel>
+      <html>
+        <div id="audit-log-app" class="audit-log-container">
+          <!-- React AuditLog component will be mounted here -->
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>
