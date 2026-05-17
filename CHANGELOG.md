@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2026-04-28
+
+### Breaking Changes
+- Complete React rewrite — replaced vanilla JS + Bootstrap 3 with React 19, Webpack bundling, and component-based architecture
+  - All UI rendered as React components: `CredentialTable`, `CredentialForm`, `PasswordRevealModal`, `ImportCSVModal`, `ConfirmDeleteModal`
+  - Build pipeline added: `npm run build` (webpack production bundle), `npm test` (playwright smoke tests)
+- Removed legacy jQuery, Bootstrap 3 table/dropdown context menu, and all pre-existing SplunkJS MVC dependencies (`splunkjs/mvc`, `splunkjs/ready`)
+
+### Added
+- **Cookie-based authentication** — fetches credentials via `/en-US/splunkd/__raw/...` proxy with cookie auth; no session-key extraction required
+- **CSRF protection** — extracts `splunkweb_csrf_token` from cookies, sends as `X-Splunk-Form-Key` header on all mutations (POST/PUT/DELETE)
+- **Credential response flattening** — `flattenCredential()` maps nested Splunk REST response (`entry.content.username`, `entry.acl.perms.read`, etc.) to flat objects consumed by components
+- **Playwright smoke test suite** — automated login, navigation, and table-rendering verification after deploy
+- **Deploy tooling** — `bin/deploy.sh splunk` with build + copy-to-container + Splunk restart; `bin/verify.sh` for quick health checks
+
+### Changed
+- API service layer rewritten in CommonJS (`api.js`) with `module.exports` for webpack bundling
+- Splunk REST mutations switched from JSON bodies to `application/x-www-form-urlencoded` (`new URLSearchParams`) per Splunk REST API requirements
+- ACL roles simplified: flat comma-separated string fields (`aclRead`, `aclWrite`) stored directly on credential objects
+- Credential view XML stripped down to bare minimum — single `<html>` element with React container div; all UI handled by React
+
+### Fixed
+- Credentials table now loads reliably without 50-retry polling loops for session tokens
+- Form-encoded CSRF token prevents "login required" 403 errors on create/edit/delete operations
+- Component field access aligned end-to-end: `flattenCredential()` → `bundle.jsx` state → `CredentialTable.jsx` display → `CredentialForm.jsx` editing
+
 ## [2.1.1] - 2026-03-21
 
 ### Fixed

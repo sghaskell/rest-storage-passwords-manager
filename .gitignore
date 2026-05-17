@@ -1,0 +1,47 @@
+# Node modules
+node_modules/
+
+# Build artifacts
+appserver/static/react/bundle.js
+appserver/static/react/bundle.js.map
+
+# Lock files
+pnpm-lock.yaml
+yarn.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage
+coverage/
+
+# Generated package artifacts
+*.spl
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+/test-results/
+
+# Compound Engineering local config
+.compound-engineering/*.local.yaml
