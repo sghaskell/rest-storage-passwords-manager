@@ -47,6 +47,7 @@ function CredentialForm({
   credential = null,
   onSave,
   onCancel,
+  isCopy = false,
   availableApps = [],
   availableUsers = [],
   currentUserIdentity = 'nobody',
@@ -75,7 +76,14 @@ function CredentialForm({
     // Initialize form when credential changes
     React.useEffect(function() {
         if (credential) {
-            setUsername(credential.name || '');
+            var today = new Date();
+            var dateSuffix = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+            if (isCopy) {
+                setUsername((credential.name || '') + '-' + dateSuffix);
+            } else {
+                setUsername(credential.name || '');
+            }
             setRealm(credential.realm || '');
             setApp(credential.app || 'search');
             setOwner(credential.owner || 'nobody');
@@ -104,7 +112,7 @@ function CredentialForm({
             setWriteRolesArray(defWrite);
         }
         setErrors({});
-    }, [credential, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
+    }, [credential, isCopy, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
 
     // Submit handler
     function handleSubmit(e) {
@@ -115,13 +123,13 @@ function CredentialForm({
         if (!username.trim()) {
             newErrors.username = 'Username is required';
         }
-        if (!credential && !password) {
+        if ((!credential || isCopy) && !password) {
             newErrors.password = 'Password is required';
         }
         if (isChangingPassword && !password) {
             newErrors.password = 'Password is required';
         }
-        if ((!credential || isChangingPassword) && password !== confirmPassword) {
+        if ((!credential || isCopy || isChangingPassword) && password !== confirmPassword) {
             newErrors.passwordMismatch = 'Passwords do not match';
         }
         if (!readRolesArray.length) {
@@ -202,7 +210,7 @@ function CredentialForm({
     }
     var rolesData = toSelectData(rolesList);
 
-    var showPasswordFields = !credential || isChangingPassword;
+    var showPasswordFields = !credential || isChangingPassword || isCopy;
 
     // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
     function formField(label, inputEl, opts) {
@@ -234,7 +242,7 @@ function CredentialForm({
                     value: username,
                     onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
                     placeholder: 'Enter username',
-                    disabled: !!credential,
+                    disabled: !!(credential && !isCopy),
                     error: !!errors.username,
                 }),
                 { errorText: errors.username, required: true }
@@ -243,10 +251,10 @@ function CredentialForm({
                 React.createElement(Text, {
                     value: realm,
                     onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setRealm(val); },
-                    placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
-                    disabled: !!credential,
+                    placeholder: credential && !isCopy ? '(set at create time)' : 'Enter realm (or leave empty)',
+                    disabled: !!(credential && !isCopy),
                 }),
-                { helpText: credential ? undefined : 'Cannot be changed after creation' }
+                { helpText: (credential && !isCopy) ? undefined : 'Cannot be changed after creation' }
             )
         ),
 
@@ -378,7 +386,7 @@ function CredentialForm({
       'div',
             { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center' } },
             React.createElement(Button, { onClick: onCancel, appearance: 'subtle', children: 'Cancel' }),
-            React.createElement(Button, { onClick: handleSubmit, appearance: 'primary', children: credential ? 'Update' : 'Create' })
+            React.createElement(Button, { onClick: handleSubmit, appearance: 'primary', children: isCopy ? 'Create Copy' : (credential ? 'Update' : 'Create') })
         )
     );
 }

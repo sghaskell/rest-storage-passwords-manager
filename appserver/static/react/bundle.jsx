@@ -102,6 +102,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         // Modal data
         const [selectedCredential, setSelectedCredential] = React.useState(null);
         const [editingCredential, setEditingCredential] = React.useState(null);
+        const [copyCredential, setCopyCredential] = React.useState(null);
 
         // Result modal content — consolidated title + messages
         const [result, setResult] = React.useState({
@@ -206,6 +207,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
+                setCopyCredential(null);
                 showSuccess('Credential Created', [
                     `Created <strong>${escapeHtml(data.username)}</strong>`,
                     'ACLs applied successfully'
@@ -467,17 +469,19 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onSelectAll: handleSelectAll,
                 onDeselectAll: handleDeselectAll,
                 onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
+                onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
             }),
 
             // Form modal — dedicated modal wrapper for CredentialForm
             modals.form && React.createElement(FormModal, {
                 isOpen: modals.form,
-                onClose: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
-                title: editingCredential ? 'Edit Credential' : 'Create Credential',
+                onClose: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); setCopyCredential(null); },
+                title: copyCredential ? 'Copy Credential' : (editingCredential ? 'Edit Credential' : 'Create Credential'),
             }, React.createElement(CredentialForm, {
-                credential: editingCredential,
-                onSave: editingCredential ? function(formData) { handleUpdateCredential(editingCredential, formData); } : handleCreateCredential,
-                onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
+                credential: copyCredential || editingCredential,
+                isCopy: !!copyCredential,
+                onSave: copyCredential ? handleCreateCredential : (editingCredential ? function(formData) { handleUpdateCredential(editingCredential, formData); } : handleCreateCredential),
+                onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); setCopyCredential(null); },
                 availableApps: refData.apps,
                 availableUsers: refData.users,
                 currentUserIdentity: refData.currentUserIdentity,

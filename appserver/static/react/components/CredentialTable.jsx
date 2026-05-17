@@ -25,6 +25,7 @@ var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
 var Eye = require('@splunk/react-icons/Eye').default;
 var Pencil = require('@splunk/react-icons/Pencil').default;
+var PlusSquare = require('@splunk/react-icons/PlusSquare').default;
 var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
 
 // Splunk Dropdown, Checkbox for column picker
@@ -81,6 +82,7 @@ function saveVisibleColumns(columns) {
  * @param {Function} props.onSelectAll - Callback when select-all checked
  * @param {Function} props.onDeselectAll - Callback when select-all unchecked
  * @param {Function} props.onEdit - Callback when edit button clicked
+ * @param {Function} props.onCopy - Callback when copy button clicked
  */
 function CredentialTable({
     credentials = [],
@@ -92,6 +94,7 @@ function CredentialTable({
     onSelectAll,
     onDeselectAll,
     onEdit,
+    onCopy,
 }) {
     const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
     const [currentPage, setCurrentPage] = React.useState(1);
@@ -244,6 +247,7 @@ function CredentialTable({
                 React.createElement(
                     'div',
                     { style: { display: 'flex', gap: '0.25rem' } },
+                    React.createElement(Button, { onClick: function() { onCopy && onCopy(cred); }, appearance: 'subtle', icon: React.createElement(PlusSquare, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', icon: React.createElement(Pencil, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', icon: React.createElement(Eye, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
