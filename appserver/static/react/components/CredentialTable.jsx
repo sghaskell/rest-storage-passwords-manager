@@ -267,7 +267,31 @@ function CredentialTable({
                 }, cred.app || 'search')
             );
         }
-        // name, owner, aclRead, aclWrite — plain text
+        if (col.key === 'owner') {
+            return React.createElement(TableCell, null,
+                React.createElement(Chip, {
+                    backgroundColor: '#fff3e0',
+                    foregroundColor: '#e65100'
+                }, cred[col.key] || '')
+            );
+        }
+        if (col.key === 'aclRead' || col.key === 'aclWrite') {
+            var roles = (cred[col.key] || '').split(',').map(function(r) { return r.trim(); }).filter(function(r) { return r; });
+            return React.createElement(TableCell, null,
+                React.createElement(
+                    'div',
+                    { style: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' } },
+                    roles.map(function(role, i) {
+                        return React.createElement(Chip, {
+                            key: i,
+                            backgroundColor: col.key === 'aclRead' ? '#f3e5f5' : '#fce4ec',
+                            foregroundColor: col.key === 'aclRead' ? '#7b1fa2' : '#c62828'
+                        }, role);
+                    })
+                )
+            );
+        }
+        // name — plain text
         return React.createElement(TableCell, null, cred[col.key] || '');
     }
 
