@@ -740,21 +740,19 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         }
     };
 
-    // AuditLog init — renders when #audit-log-app container exists
-    (function() {
-        var auditContainer = document.getElementById('audit-log-app');
-        if (!auditContainer) return;
-
-        var auditRoot = ReactDOM.createRoot(auditContainer);
-        auditRoot.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
-            React.createElement(GlobalStyles, null),
-            React.createElement(AuditLog, null)
-        ));
-    })();
-
     if (typeof window.require === 'function') {
         window.require(['splunkjs/mvc/simplexml/ready!', 'splunkjs/mvc'], function(ready, mvc) {
             window.CredentialManager.init(mvc);
+
+            // AuditLog init — renders when #audit-log-app container exists
+            var auditContainer = document.getElementById('audit-log-app');
+            if (auditContainer) {
+                var auditRoot = ReactDOM.createRoot(auditContainer);
+                auditRoot.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
+                    React.createElement(GlobalStyles, null),
+                    React.createElement(AuditLog, { mvc: mvc })
+                ));
+            }
         });
     } else {
         if (document.readyState === 'loading') {

@@ -1,8 +1,9 @@
 /**
  * AuditLog.jsx - Audit log viewer for REST activity against storage/passwords
  *
- * Displays Splunk _audit index entries in a table with time range filtering,
- * human-readable action labels, and loading/error/empty states.
+ * Uses SplunkJS MVC SearchManager to query the _audit index.
+ * Displays results in a table with time range filtering, human-readable
+ * action labels, and loading/error/empty states.
  */
 
 const React = require('react');
@@ -30,9 +31,8 @@ var AUDIT_COLUMNS = [
     { key: 'timestamp', label: 'Timestamp' },
     { key: 'user', label: 'User' },
     { key: 'action', label: 'Action' },
-    { key: 'method', label: 'HTTP Method' },
-    { key: 'path', label: 'Path' },
-    { key: 'status', label: 'Status' },
+    { key: 'credential', label: 'Credential' },
+    { key: 'info', label: 'Details' },
 ];
 
 // Time range options — maps label to milliseconds
@@ -43,20 +43,19 @@ var TIME_RANGES = [
     { label: '7 days', value: 604800000 },
 ];
 
-// Map Splunk REST action codes to human-readable labels
+// Map Splunk password action codes to human-readable labels
 var ACTION_LABELS = {
-    rest_post: 'Created',
-    rest_delete: 'Deleted',
-    rest_get: 'Viewed',
-    rest_put: 'Updated',
-    rest_patch: 'Modified',
+    CREATE_PASSWORD: 'Created',
+    EDIT_PASSWORD: 'Updated',
+    GET_PASSWORD: 'Viewed',
+    REMOVE_PASSWORD: 'Deleted',
 };
 
 function getActionLabel(action) {
     return ACTION_LABELS[action] || (action || 'Unknown');
 }
 
-function AuditLog() {
+function AuditLog({ mvc }) {
     var [timeRange, setTimeRange] = React.useState(3600000);
     var [auditData, setAuditData] = React.useState([]);
     var [loading, setLoading] = React.useState(false);

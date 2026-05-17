@@ -73,6 +73,37 @@ function formEncode(data) {
 }
 
 /**
+ * Parse Splunk XML responses into a flat object.
+ * Handles search job creation responses (sid) and polling responses (isDone, dispatchState, messages).
+ */
+function parseSplunkXml(xml) {
+    const result = {};
+    // Extract simple tags: <sid>s123...</sid>, <isDone>1</isDone>, etc.
+    const tagRegex = /<(\w+)>([^<]*)<\/\1>/g;
+    let m;
+    while ((m = tagRegex.exec(xml)) !== null) {
+        result[m[1]] = m[2].trim();
+    }
+    // Extract <entry> blocks with nested content
+    const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/);
+    if (entryMatch) {
+        const contentMatch = entryMatch[1].match(/<content>([\s\S]*?)<\/content>/);
+        if (contentMatch) {
+            const contentObj = {};
+            let cm;
+            while ((cm = tagRegex.exec(contentMatch[1])) !== null) {
+                contentObj[cm[1]] = cm[2].trim();
+            }
+            result.entry = [{ content: contentObj }];
+        }
+        // Extract <name> from entry
+        const nameMatch = entryMatch[1].match(/<name>([^<]*)<\/name>/);
+        if (nameMatch) result.name = nameMatch[1].trim();
+    }
+    return result;
+}
+
+/**
  * Make authenticated API request to Splunk via splunkd/__raw proxy.
  * Uses cookie-based auth and form-urlencoded body for mutations.
  * Body is serialized unconditionally for mutations (POST/PUT/PATCH), matching legacy behavior.
@@ -205,8 +236,8 @@ async function splunkdRequest(path, options = {}) {
             if (!text || text.trim().length === 0) {
                 return {};
             }
-            console.warn(`splunkdRequest: non-JSON response (${contentType}), status ${response.status}`);
-            return { error: 'Invalid response — expected JSON' };
+            // Parse Splunk XML response — simple tag extraction for search job creation, etc.
+            return parseSplunkXml(text);
         }
         return response.json().catch(() => ({ error: 'Invalid response — failed to parse JSON' }));
     } finally {
@@ -727,23 +758,21 @@ const DEFAULT_WRITE_ROLES = ['admin', 'power'];
  * Handles the {results: {fields: [{title, name}], rows: [...]}} structure.
  */
 function parseAuditResults(response) {
-    var entries = (response.results && response.results.fields && response.results.fields.data) || [];
-    var rows = (response.results && response.results.rows) || [];
-    var fieldNames = entries.map(function(f) { return f.title || f.name || ''; });
-    return rows.map(function(row) {
+    var fields = (response.fields && response.fields.map(function(f) { return f.name || ''; })) || [];
+    var rows = (response.results && response.results.map(function(row) {
         var entry = {};
-        fieldNames.forEach(function(name, i) {
+        fields.forEach(function(name, i) {
             entry[name] = row[i];
         });
         return {
-            timestamp: entry.info_time || '',
-            user: entry.info_user || '',
+            timestamp: entry._time || '',
+            user: entry.user || '',
             action: entry.action || '',
-            method: entry.rest_method || '',
-            path: entry.path || '',
-            status: entry.rest_status_code || '',
+            credential: entry.password_id || '',
+            info: entry.info || '',
         };
-    });
+    })) || [];
+    return rows;
 }
 
 /**
@@ -776,11 +805,17 @@ async function fetchAuditLog(timeRangeMs) {
         earliestTime = '-' + Math.round(seconds / 86400) + 'd';
     }
 
-    var searchQuery = 'index=_audit (action=rest_post OR action=rest_delete OR action=rest_get OR action=rest_put OR action=rest_patch) path=*storage*passwords* | sort -info_time | table info_time, info_user, action, rest_method, path, rest_status_code';
+    // Use "search index=_audit" — Splunk's form parser splits on ALL '=' signs,
+    // so "index=_audit" at the start gets truncated to just "index".
+    // "search index=_audit" survives because the first '=' is after "search index".
+    // Action names are CREATE_PASSWORD, EDIT_PASSWORD, GET_PASSWORD, REMOVE_PASSWORD.
+    // password_id lives in _raw only — extract with rex.
+    var searchQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=GET_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]+)\\\"" | sort -_time | table _time, user, action, password_id, info';
 
     try {
         var jobResponse = await splunkdRequest('/servicesNS/-/-/search/jobs', {
             method: 'POST',
+            queryInUrl: true,
             body: {
                 search: searchQuery,
                 earliest_time: earliestTime,
@@ -789,7 +824,9 @@ async function fetchAuditLog(timeRangeMs) {
             },
         });
 
-        var sid = (jobResponse.sid) || null;
+        var sid = (jobResponse.sid) ||
+            (jobResponse.entry && jobResponse.entry[0] && jobResponse.entry[0].content && jobResponse.entry[0].content.sid) ||
+            null;
         if (!sid) {
             throw new Error('Search job failed to start — no SID returned');
         }
