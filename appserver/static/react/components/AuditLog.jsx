@@ -21,6 +21,10 @@ var SelectMod = require('@splunk/react-ui/Select');
 var Selector = SelectMod.default;
 var SelectOption = SelectMod.Option;
 
+var MultiSelectMod = require('@splunk/react-ui/Multiselect');
+var MultiSelector = MultiSelectMod.default;
+var MultiSelectOption = MultiSelectMod.Option;
+
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
 
@@ -58,6 +62,8 @@ function getActionLabel(action) {
 function AuditLog({ mvc }) {
     var [timeRange, setTimeRange] = React.useState(3600000);
     var [auditData, setAuditData] = React.useState([]);
+    var [rawData, setRawData] = React.useState([]);
+    var [selectedUsers, setSelectedUsers] = React.useState([]);
     var [loading, setLoading] = React.useState(false);
     var [error, setError] = React.useState(null);
 
@@ -67,13 +73,13 @@ function AuditLog({ mvc }) {
 
         API.fetchAuditLog(timeRange)
             .then(function(results) {
-                setAuditData(results);
+                setRawData(results);
                 setError(null);
             })
             .catch(function(err) {
                 console.error('Audit log fetch error:', err);
                 setError(err.message || 'Failed to fetch audit log');
-                setAuditData([]);
+                setRawData([]);
             })
             .finally(function() {
                 setLoading(false);
@@ -85,6 +91,35 @@ function AuditLog({ mvc }) {
         fetchData();
     }, [fetchData]);
 
+    // Derive unique users from raw data, pre-select all on new data load
+    var uniqueUsers = React.useMemo(function() {
+        var seen = {};
+        var users = [];
+        rawData.forEach(function(entry) {
+            if (entry.user && !seen[entry.user]) {
+                seen[entry.user] = true;
+                users.push(entry.user);
+            }
+        });
+        return users.sort();
+    }, [rawData]);
+
+    // Auto-select all users when raw data changes
+    React.useEffect(function() {
+        setSelectedUsers(uniqueUsers.slice());
+    }, [uniqueUsers.join(',')]);
+
+    // Filter data by selected users
+    React.useEffect(function() {
+        if (selectedUsers.length === 0) {
+            setAuditData([]);
+        } else {
+            var userSet = {};
+            selectedUsers.forEach(function(u) { userSet[u] = true; });
+            setAuditData(rawData.filter(function(entry) { return userSet[entry.user]; }));
+        }
+    }, [rawData, selectedUsers.join(',')]);
+
     var handleTimeRangeChange = function(e, data) {
         var val = data && data.value != null ? data.value : timeRange;
         setTimeRange(val);
@@ -92,6 +127,11 @@ function AuditLog({ mvc }) {
 
     var handleRefresh = function() {
         fetchData();
+    };
+
+    var handleUserFilterChange = function(e, data) {
+        var vals = data && Array.isArray(data.values) ? data.values : [];
+        setSelectedUsers(vals);
     };
 
     var headerCells = AUDIT_COLUMNS.map(function(col) {
@@ -162,7 +202,7 @@ function AuditLog({ mvc }) {
         },
             React.createElement('h1', { style: { margin: 0 } }, 'Audit Log'),
             React.createElement('div', {
-                style: { display: 'flex', gap: '0.5rem', alignItems: 'center' }
+                style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }
             },
                 React.createElement('label', {
                     style: { fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center' }
@@ -176,6 +216,21 @@ function AuditLog({ mvc }) {
                         key: tr.value,
                         label: tr.label,
                         value: tr.value,
+                    });
+                })),
+                React.createElement('label', {
+                    style: { fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center' }
+                }, 'Users: '),
+                React.createElement(MultiSelector, {
+                    values: selectedUsers,
+                    onChange: handleUserFilterChange,
+                    placeholder: 'Select users',
+                    style: { minWidth: '200px' },
+                }, uniqueUsers.map(function(u) {
+                    return React.createElement(MultiSelectOption, {
+                        key: u,
+                        label: u,
+                        value: u,
                     });
                 })),
                 React.createElement(Button, {
