@@ -17,6 +17,9 @@ var TableRow = TableMod.Row;
 var TableHeadCell = TableMod.HeadCell;
 var Table = TableMod.default;
 
+var PaginatorMod = require('@splunk/react-ui/Paginator');
+var Paginator = PaginatorMod.default;
+
 var SelectMod = require('@splunk/react-ui/Select');
 var Selector = SelectMod.default;
 var SelectOption = SelectMod.Option;
@@ -66,6 +69,10 @@ function AuditLog({ mvc }) {
     var [selectedUsers, setSelectedUsers] = React.useState([]);
     var [loading, setLoading] = React.useState(false);
     var [error, setError] = React.useState(null);
+    var [currentPage, setCurrentPage] = React.useState(1);
+    var [rowsPerPage, setRowsPerPage] = React.useState(10);
+    var [currentPage, setCurrentPage] = React.useState(1);
+    var [rowsPerPage, setRowsPerPage] = React.useState(10);
 
     var fetchData = React.useCallback(function() {
         setLoading(true);
@@ -119,6 +126,22 @@ function AuditLog({ mvc }) {
             setAuditData(rawData.filter(function(entry) { return userSet[entry.user]; }));
         }
     }, [rawData, selectedUsers.join(',')]);
+
+    // Paginate audit data
+    var paginatedAuditData = React.useMemo(function() {
+        var startIndex = (currentPage - 1) * rowsPerPage;
+        return auditData.slice(startIndex, startIndex + rowsPerPage);
+    }, [auditData, currentPage, rowsPerPage]);
+
+    var totalPages = Math.ceil(auditData.length / rowsPerPage);
+
+    // Paginate audit data
+    var paginatedAuditData = React.useMemo(function() {
+        var startIndex = (currentPage - 1) * rowsPerPage;
+        return auditData.slice(startIndex, startIndex + rowsPerPage);
+    }, [auditData, currentPage, rowsPerPage]);
+
+    var totalPages = Math.ceil(auditData.length / rowsPerPage);
 
     var handleTimeRangeChange = function(e, data) {
         var val = data && data.value != null ? data.value : timeRange;
@@ -175,7 +198,7 @@ function AuditLog({ mvc }) {
             }, 'No audit activity found in selected time range')
         )];
     } else {
-        dataRows = auditData.map(function(entry, i) {
+        dataRows = paginatedAuditData.map(function(entry, i) {
             return React.createElement(TableRow, { key: i },
                 AUDIT_COLUMNS.map(function(col) {
                     var value = entry[col.key] || '';
@@ -187,6 +210,8 @@ function AuditLog({ mvc }) {
             );
         });
     }
+
+    var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
 
     return React.createElement('div', { className: 'audit-log-app' },
         // Header with controls
@@ -237,19 +262,49 @@ function AuditLog({ mvc }) {
                     onClick: handleRefresh,
                     appearance: 'subtle',
                     children: 'Refresh',
-                })
+                }),
+                React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
+                    React.createElement('strong', { style: labelStyle }, 'Rows per page:'),
+                    React.createElement('select', {
+                        value: rowsPerPage,
+                        onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
+                        style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
+                    },
+                        React.createElement('option', { value: 10 }, '10'),
+                        React.createElement('option', { value: 25 }, '25'),
+                        React.createElement('option', { value: 50 }, '50'),
+                        React.createElement('option', { value: 100 }, '100')
+                    ),
+                    totalPages > 1 ? React.createElement(Paginator.PageControl, {
+                        current: currentPage,
+                        totalPages: totalPages,
+                        onChange: function(event, data) { setCurrentPage(data.page); },
+                    }) : null
+                )
             )
         ),
 
         // Results table
         React.createElement(Table, {
-            outerStyle: { width: '100%' },
+            outerStyle: { width: '100%', marginBottom: '1rem' },
             tableStyle: { width: '100%' },
             stripeRows: true,
         },
             React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, null, ...dataRows)
-        )
+        ),
+
+        // Bottom pagination
+        totalPages > 1 ? React.createElement(
+            'div',
+            { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },
+            React.createElement(Paginator, {
+                current: currentPage,
+                totalPages: totalPages,
+                numPageLinks: totalPages,
+                onChange: function(event, data) { setCurrentPage(data.page); },
+            })
+        ) : null
     );
 }
 
