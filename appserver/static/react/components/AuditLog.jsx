@@ -69,8 +69,8 @@ function AuditLog({ mvc }) {
     var [selectedUsers, setSelectedUsers] = React.useState([]);
     var [loading, setLoading] = React.useState(false);
     var [error, setError] = React.useState(null);
-    var [currentPage, setCurrentPage] = React.useState(1);
-    var [rowsPerPage, setRowsPerPage] = React.useState(10);
+    var [filterText, setFilterText] = React.useState('');
+    var [filterType, setFilterType] = React.useState('all');
     var [currentPage, setCurrentPage] = React.useState(1);
     var [rowsPerPage, setRowsPerPage] = React.useState(10);
 
@@ -116,24 +116,46 @@ function AuditLog({ mvc }) {
         setSelectedUsers(uniqueUsers.slice());
     }, [uniqueUsers.join(',')]);
 
-    // Filter data by selected users
+    // Filter data by selected users, then by text search
     React.useEffect(function() {
+        var userFiltered;
         if (selectedUsers.length === 0) {
-            setAuditData([]);
+            userFiltered = [];
         } else {
             var userSet = {};
             selectedUsers.forEach(function(u) { userSet[u] = true; });
-            setAuditData(rawData.filter(function(entry) { return userSet[entry.user]; }));
+            userFiltered = rawData.filter(function(entry) { return userSet[entry.user]; });
         }
-    }, [rawData, selectedUsers.join(',')]);
 
-    // Paginate audit data
-    var paginatedAuditData = React.useMemo(function() {
-        var startIndex = (currentPage - 1) * rowsPerPage;
-        return auditData.slice(startIndex, startIndex + rowsPerPage);
-    }, [auditData, currentPage, rowsPerPage]);
+        if (!filterText) {
+            setAuditData(userFiltered);
+            return;
+        }
 
-    var totalPages = Math.ceil(auditData.length / rowsPerPage);
+        var search = filterText.toLowerCase();
+        setAuditData(userFiltered.filter(function(entry) {
+            var timestamp = (entry.timestamp || '').toLowerCase();
+            var user = (entry.user || '').toLowerCase();
+            var action = (entry.action || '').toLowerCase();
+            var credential = (entry.credential || '').toLowerCase();
+            var info = (entry.info || '').toLowerCase();
+
+            if (filterType === 'all') {
+                return timestamp.includes(search) || user.includes(search) || action.includes(search) || credential.includes(search) || info.includes(search);
+            } else if (filterType === 'timestamp') {
+                return timestamp.includes(search);
+            } else if (filterType === 'user') {
+                return user.includes(search);
+            } else if (filterType === 'action') {
+                return action.includes(search);
+            } else if (filterType === 'credential') {
+                return credential.includes(search);
+            } else if (filterType === 'details') {
+                return info.includes(search);
+            }
+            return true;
+        }));
+    }, [rawData, selectedUsers.join(','), filterText, filterType]);
 
     // Paginate audit data
     var paginatedAuditData = React.useMemo(function() {
@@ -211,7 +233,8 @@ function AuditLog({ mvc }) {
         });
     }
 
-    var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
+    var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px', fontWeight: '500' };
+    var inputStyle = { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' };
 
     return React.createElement('div', { className: 'audit-log-app' },
         // Header with controls
@@ -227,11 +250,9 @@ function AuditLog({ mvc }) {
         },
             React.createElement('h1', { style: { margin: 0 } }, 'Audit Log'),
             React.createElement('div', {
-                style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }
+                style: { display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' }
             },
-                React.createElement('label', {
-                    style: { fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center' }
-                }, 'Time Range: '),
+                React.createElement('strong', { style: labelStyle }, 'Time Range:'),
                 React.createElement(Selector, {
                     value: timeRange,
                     onChange: handleTimeRangeChange,
@@ -243,21 +264,41 @@ function AuditLog({ mvc }) {
                         value: tr.value,
                     });
                 })),
-                React.createElement('label', {
-                    style: { fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center' }
-                }, 'Users: '),
-                React.createElement(MultiSelector, {
-                    values: selectedUsers,
-                    onChange: handleUserFilterChange,
-                    placeholder: 'Select users',
-                    style: { minWidth: '200px' },
-                }, uniqueUsers.map(function(u) {
-                    return React.createElement(MultiSelectOption, {
-                        key: u,
-                        label: u,
-                        value: u,
-                    });
-                })),
+                React.createElement('strong', { style: labelStyle }, 'Users:'),
+                React.createElement('div', { style: { width: '250px' } },
+                    React.createElement(MultiSelector, {
+                        values: selectedUsers,
+                        onChange: handleUserFilterChange,
+                        placeholder: 'Select users',
+                        width: '100%',
+                    }, uniqueUsers.map(function(u) {
+                        return React.createElement(MultiSelectOption, {
+                            key: u,
+                            label: u,
+                            value: u,
+                        });
+                    }))
+                ),
+                React.createElement('strong', { style: labelStyle }, 'Search:'),
+                React.createElement('input', {
+                    type: 'text',
+                    value: filterText,
+                    onChange: function(e) { setFilterText(e.target.value); setCurrentPage(1); },
+                    placeholder: 'Search audit log...',
+                    style: Object.assign({}, inputStyle, { minWidth: '200px' }),
+                }),
+                React.createElement('select', {
+                    value: filterType,
+                    onChange: function(e) { setFilterType(e.target.value); },
+                    style: inputStyle,
+                },
+                    React.createElement('option', { value: 'all' }, 'All Fields'),
+                    React.createElement('option', { value: 'timestamp' }, 'Timestamp'),
+                    React.createElement('option', { value: 'user' }, 'User'),
+                    React.createElement('option', { value: 'action' }, 'Action'),
+                    React.createElement('option', { value: 'credential' }, 'Credential'),
+                    React.createElement('option', { value: 'details' }, 'Details')
+                ),
                 React.createElement(Button, {
                     onClick: handleRefresh,
                     appearance: 'subtle',
@@ -268,7 +309,7 @@ function AuditLog({ mvc }) {
                     React.createElement('select', {
                         value: rowsPerPage,
                         onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
-                        style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
+                        style: inputStyle,
                     },
                         React.createElement('option', { value: 10 }, '10'),
                         React.createElement('option', { value: 25 }, '25'),
