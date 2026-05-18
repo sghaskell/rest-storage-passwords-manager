@@ -181,9 +181,10 @@ async function splunkdRequest(path, options = {}) {
     let url = `/en-US/splunkd/__raw${path}`;
 
     // Always append output_mode=json for GET — Splunk defaults to XML.
+    // Do NOT append count=0 — on /results endpoints it returns 0 results.
     if (method === 'GET') {
         const separator = url.includes('?') ? '&' : '?';
-    url += `${separator}output_mode=json&count=0`;
+    url += `${separator}output_mode=json`;
     }
 
     // Replicate exact header set from password-crud.js splunkdFetch().
@@ -191,14 +192,14 @@ async function splunkdRequest(path, options = {}) {
     let body = undefined;
     const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
-    // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
-    const csrfToken = getCSRFToken();
-    if (csrfToken && isMutation) {
-        headers['X-Splunk-Form-Key'] = csrfToken;
-    }
-
-    // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
     if (isMutation && options.body) {
+        // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
+        const csrfToken = getCSRFToken();
+        if (csrfToken && isMutation) {
+            headers['X-Splunk-Form-Key'] = csrfToken;
+        }
+
+        // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
         // Inject output_mode=json into mutation bodies so Splunk returns JSON instead of XML.
         // This fixes .json() parsing on POST/PUT/PATCH responses across all callers:
@@ -755,15 +756,13 @@ const DEFAULT_WRITE_ROLES = ['admin', 'power'];
 
 /**
  * Parse Splunk search results JSON into audit entry objects.
- * Handles the {results: {fields: [{title, name}], rows: [...]}} structure.
+ * Splunk /results?output_mode=json returns:
+ * { fields: [{name: "..."}], results: [{_time: "...", user: "...", ...}] }
  */
 function parseAuditResults(response) {
     var fields = (response.fields && response.fields.map(function(f) { return f.name || ''; })) || [];
-    var rows = (response.results && response.results.map(function(row) {
-        var entry = {};
-        fields.forEach(function(name, i) {
-            entry[name] = row[i];
-        });
+    var results = response.results || [];
+    return results.map(function(entry) {
         return {
             timestamp: entry._time || '',
             user: entry.user || '',
@@ -771,8 +770,7 @@ function parseAuditResults(response) {
             credential: entry.password_id || '',
             info: entry.info || '',
         };
-    })) || [];
-    return rows;
+    });
 }
 
 /**
@@ -780,9 +778,9 @@ function parseAuditResults(response) {
  */
 async function terminateSearchJob(sid) {
     try {
-        await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/control', {
+        await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/control?action=terminate', {
             method: 'POST',
-            body: { action: 'terminate' },
+            body: { output_mode: 'json' },
         });
     } catch (_) { /* cleanup failure is non-critical */ }
 }
@@ -808,14 +806,13 @@ async function fetchAuditLog(timeRangeMs) {
     // Use "search index=_audit" — Splunk's form parser splits on ALL '=' signs,
     // so "index=_audit" at the start gets truncated to just "index".
     // "search index=_audit" survives because the first '=' is after "search index".
-    // Action names are CREATE_PASSWORD, EDIT_PASSWORD, GET_PASSWORD, REMOVE_PASSWORD.
-    // password_id lives in _raw only — extract with rex.
-    var searchQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=GET_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]+)\\\"" | sort -_time | table _time, user, action, password_id, info';
+    // Only CRUD actions — GET_PASSWORD is noise from apps reading credentials.
+    // password_id lives in _raw only — extract with rex. [^\\"]* allows empty values.
+    var searchQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]*)\\\"" | sort -_time | table _time, user, action, password_id, info';
 
     try {
         var jobResponse = await splunkdRequest('/servicesNS/-/-/search/jobs', {
             method: 'POST',
-            queryInUrl: true,
             body: {
                 search: searchQuery,
                 earliest_time: earliestTime,
@@ -841,7 +838,7 @@ async function fetchAuditLog(timeRangeMs) {
             });
 
             var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
-                statusResp.entry[0].content && statusResp.entry[0].content.isDone === '1');
+                statusResp.entry[0].content && (statusResp.entry[0].content.isDone === '1' || statusResp.entry[0].content.isDone === true));
 
             if (isDone) {
                 var resultsResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
