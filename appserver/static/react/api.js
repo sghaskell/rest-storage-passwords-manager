@@ -192,13 +192,15 @@ async function splunkdRequest(path, options = {}) {
     let body = undefined;
     const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
-    if (isMutation && options.body) {
-        // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
+    // CSRF token for ALL mutations — required even for DELETE requests without a body
+    if (isMutation) {
         const csrfToken = getCSRFToken();
-        if (csrfToken && isMutation) {
+        if (csrfToken) {
             headers['X-Splunk-Form-Key'] = csrfToken;
         }
+    }
 
+    if (isMutation && options.body) {
         // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
         // Inject output_mode=json into mutation bodies so Splunk returns JSON instead of XML.
