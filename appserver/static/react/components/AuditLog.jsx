@@ -39,8 +39,50 @@ var AUDIT_COLUMNS = [
     { key: 'user', label: 'User' },
     { key: 'action', label: 'Action' },
     { key: 'credential', label: 'Credential' },
+    { key: 'status', label: 'Status' },
     { key: 'info', label: 'Details' },
 ];
+
+// Chip style helper
+function chipStyle(bg, color, border) {
+    return {
+        display: 'inline-block',
+        padding: '2px 8px',
+        borderRadius: '12px',
+        fontSize: '11px',
+        fontWeight: '600',
+        backgroundColor: bg,
+        color: color,
+        border: '1px solid ' + border,
+        whiteSpace: 'nowrap',
+    };
+}
+
+// Status chip colors
+var STATUS_COLORS = {
+    'Success': { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
+    'Duplicate': { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
+    'Conflict': { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
+    'Not Found': { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
+    'Forbidden': { bg: '#fce4ec', color: '#c62828', border: '#f48fb1' },
+    'Client Error': { bg: '#fce4ec', color: '#c62828', border: '#f48fb1' },
+    'Server Error': { bg: '#f3e5f5', color: '#6a1b9a', border: '#ce93d8' },
+    'Unknown': { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
+};
+
+function getStatusChipStyle(status) {
+    var c = STATUS_COLORS[status] || STATUS_COLORS['Unknown'];
+    return chipStyle(c.bg, c.color, c.border);
+}
+
+// Column chip colors for audit log
+var COLUMN_CHIP_COLORS = {
+    timestamp: { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
+    user: { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
+    action: { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
+    credential: { bg: '#e8eaf6', color: '#283593', border: '#9fa8da' },
+    info: { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
+};
 
 // Time range options — maps label to milliseconds
 var TIME_RANGES = [
@@ -60,6 +102,18 @@ var ACTION_LABELS = {
 
 function getActionLabel(action) {
     return ACTION_LABELS[action] || (action || 'Unknown');
+}
+
+function formatTimestamp(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var mm = String(d.getMonth() + 1).padStart(2, '0');
+    var dd = String(d.getDate()).padStart(2, '0');
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mi = String(d.getMinutes()).padStart(2, '0');
+    var ss = String(d.getSeconds()).padStart(2, '0');
+    return mm + '/' + dd + '/' + d.getFullYear() + ' ' + hh + ':' + mi + ':' + ss;
 }
 
 function AuditLog({ mvc }) {
@@ -138,10 +192,11 @@ function AuditLog({ mvc }) {
             var user = (entry.user || '').toLowerCase();
             var action = (entry.action || '').toLowerCase();
             var credential = (entry.credential || '').toLowerCase();
+            var status = (entry.status || '').toLowerCase();
             var info = (entry.info || '').toLowerCase();
 
             if (filterType === 'all') {
-                return timestamp.includes(search) || user.includes(search) || action.includes(search) || credential.includes(search) || info.includes(search);
+                return timestamp.includes(search) || user.includes(search) || action.includes(search) || credential.includes(search) || status.includes(search) || info.includes(search);
             } else if (filterType === 'timestamp') {
                 return timestamp.includes(search);
             } else if (filterType === 'user') {
@@ -150,6 +205,8 @@ function AuditLog({ mvc }) {
                 return action.includes(search);
             } else if (filterType === 'credential') {
                 return credential.includes(search);
+            } else if (filterType === 'status') {
+                return status.includes(search);
             } else if (filterType === 'details') {
                 return info.includes(search);
             }
@@ -224,8 +281,25 @@ function AuditLog({ mvc }) {
             return React.createElement(TableRow, { key: i },
                 AUDIT_COLUMNS.map(function(col) {
                     var value = entry[col.key] || '';
-                    if (col.key === 'action') {
+                    if (col.key === 'timestamp') {
+                        value = formatTimestamp(value);
+                    } else if (col.key === 'action') {
                         value = getActionLabel(value);
+                    } else if (col.key === 'status') {
+                        return React.createElement(TableCell, { key: col.key },
+                            React.createElement('span', {
+                                style: getStatusChipStyle(value || 'Unknown'),
+                            }, value || 'Unknown')
+                        );
+                    }
+
+                    var cc = COLUMN_CHIP_COLORS[col.key];
+                    if (cc) {
+                        return React.createElement(TableCell, { key: col.key },
+                            React.createElement('span', {
+                                style: chipStyle(cc.bg, cc.color, cc.border),
+                            }, value)
+                        );
                     }
                     return React.createElement(TableCell, { key: col.key }, value);
                 })
@@ -297,6 +371,7 @@ function AuditLog({ mvc }) {
                     React.createElement('option', { value: 'user' }, 'User'),
                     React.createElement('option', { value: 'action' }, 'Action'),
                     React.createElement('option', { value: 'credential' }, 'Credential'),
+                    React.createElement('option', { value: 'status' }, 'Status'),
                     React.createElement('option', { value: 'details' }, 'Details')
                 ),
                 React.createElement(Button, {

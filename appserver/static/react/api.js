@@ -771,6 +771,8 @@ function parseAuditResults(response) {
             action: entry.action || '',
             credential: entry.password_id || '',
             info: entry.info || '',
+            status: entry.status || '',
+            status_code: entry.status_code || '',
         };
     });
 }
@@ -788,11 +790,73 @@ async function terminateSearchJob(sid) {
 }
 
 /**
+ * Submit and poll a Splunk search job until complete, then return parsed results.
+ */
+async function runSearchJob(searchQuery, earliestTime, timeRangeMs) {
+    var jobResponse = await splunkdRequest('/servicesNS/-/-/search/jobs', {
+        method: 'POST',
+        body: {
+            search: searchQuery,
+            earliest_time: earliestTime,
+            latest_time: 'now',
+            exec_mode: 'normal',
+        },
+    });
+
+    var sid = (jobResponse.sid) ||
+        (jobResponse.entry && jobResponse.entry[0] && jobResponse.entry[0].content && jobResponse.entry[0].content.sid) ||
+        null;
+    if (!sid) {
+        throw new Error('Search job failed to start — no SID returned');
+    }
+
+    var maxWaitMs = Math.max(15000, timeRangeMs > 604800000 ? 30000 : 20000);
+    var startTime = Date.now();
+    var pollInterval = 250;
+
+    while (Date.now() - startTime < maxWaitMs) {
+        var statusResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid), {
+            method: 'GET',
+        });
+
+        var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
+            statusResp.entry[0].content && (statusResp.entry[0].content.isDone === '1' || statusResp.entry[0].content.isDone === true));
+
+        if (isDone) {
+            var resultsResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+                method: 'GET',
+            });
+            await terminateSearchJob(sid);
+            return resultsResp;
+        }
+
+        var dispatchState = (statusResp && statusResp.entry && statusResp.entry[0] &&
+            statusResp.entry[0].content && statusResp.entry[0].content.dispatchState);
+        if (dispatchState === 'FAILED' || dispatchState === 'KILLED') {
+            var errorMsg = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                statusResp.entry[0].content && statusResp.entry[0].content.messages) || '';
+            throw new Error('Search job failed: ' + (errorMsg || dispatchState));
+        }
+
+        await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
+        pollInterval = Math.min(pollInterval * 2, 2000);
+    }
+
+    // Timeout — grab partial results
+    var partialResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+        method: 'GET',
+    });
+    await terminateSearchJob(sid);
+    return partialResp;
+}
+
+/**
  * Fetch audit log entries for REST activity against storage/passwords.
- * Submits a search job against the _audit index, polls for completion, then returns results.
+ * Submits two parallel search jobs: one against _audit for actions, one against
+ * _internal/splunkd_ui_access for HTTP status codes. Correlates by timestamp proximity.
  *
  * @param {number} timeRangeMs - Milliseconds to look back (e.g., 3600000 for 1 hour)
- * @returns {Array} Array of audit entry objects with timestamp, user, action, method, path, status
+ * @returns {Array} Array of audit entry objects with timestamp, user, action, credential, info, status, status_code
  */
 async function fetchAuditLog(timeRangeMs) {
     var seconds = Math.round(timeRangeMs / 1000);
@@ -805,69 +869,27 @@ async function fetchAuditLog(timeRangeMs) {
         earliestTime = '-' + Math.round(seconds / 86400) + 'd';
     }
 
-    // Use "search index=_audit" — Splunk's form parser splits on ALL '=' signs,
-    // so "index=_audit" at the start gets truncated to just "index".
-    // "search index=_audit" survives because the first '=' is after "search index".
-    // Only CRUD actions — GET_PASSWORD is noise from apps reading credentials.
-    // password_id lives in _raw only — extract with rex. [^\\"]* allows empty values.
-    var searchQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]*)\\\"" | sort -_time | table _time, user, action, password_id, info';
+    var auditQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]*)\\\"" | sort -_time | table _time, user, action, password_id, info';
+
+    // splunkd_ui_access captures splunkd/__raw REST API calls from the web UI
+    var accessQuery = 'search index=_internal sourcetype=splunkd_ui_access "storage/passwords" | rex "\\" (?<sc_status>\\d\\d\\d) " | rex "\\"(?<cs_method>[A-Z]+) " | sort -_time | table _time, user, sc_status, cs_method';
 
     try {
-        var jobResponse = await splunkdRequest('/servicesNS/-/-/search/jobs', {
-            method: 'POST',
-            body: {
-                search: searchQuery,
-                earliest_time: earliestTime,
-                latest_time: 'now',
-                exec_mode: 'normal',
-            },
-        });
-
-        var sid = (jobResponse.sid) ||
-            (jobResponse.entry && jobResponse.entry[0] && jobResponse.entry[0].content && jobResponse.entry[0].content.sid) ||
-            null;
-        if (!sid) {
-            throw new Error('Search job failed to start — no SID returned');
+        var auditResp, accessResp;
+        try {
+            [auditResp, accessResp] = await Promise.all([
+                runSearchJob(auditQuery, earliestTime, timeRangeMs),
+                runSearchJob(accessQuery, earliestTime, timeRangeMs),
+            ]);
+        } catch (e) {
+            console.warn('Access log search failed, audit entries will lack status codes:', e.message);
+            auditResp = await runSearchJob(auditQuery, earliestTime, timeRangeMs);
+            accessResp = { results: [] };
         }
 
-        var maxWaitMs = Math.max(15000, timeRangeMs > 604800000 ? 30000 : 20000);
-        var startTime = Date.now();
-        var pollInterval = 250;
-
-        while (Date.now() - startTime < maxWaitMs) {
-            var statusResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid), {
-                method: 'GET',
-            });
-
-            var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
-                statusResp.entry[0].content && (statusResp.entry[0].content.isDone === '1' || statusResp.entry[0].content.isDone === true));
-
-            if (isDone) {
-                var resultsResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
-                    method: 'GET',
-                });
-                await terminateSearchJob(sid);
-                return parseAuditResults(resultsResp);
-            }
-
-            var dispatchState = (statusResp && statusResp.entry && statusResp.entry[0] &&
-                statusResp.entry[0].content && statusResp.entry[0].content.dispatchState);
-            if (dispatchState === 'FAILED' || dispatchState === 'KILLED') {
-                var errorMsg = (statusResp && statusResp.entry && statusResp.entry[0] &&
-                    statusResp.entry[0].content && statusResp.entry[0].content.messages) || '';
-                throw new Error('Search job failed: ' + (errorMsg || dispatchState));
-            }
-
-            await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
-            pollInterval = Math.min(pollInterval * 2, 2000);
-        }
-
-        // Timeout — grab partial results
-        var partialResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
-            method: 'GET',
-        });
-        await terminateSearchJob(sid);
-        return parseAuditResults(partialResp);
+        var auditEntries = parseAuditResults(auditResp);
+        var accessEntries = parseAccessLogResults(accessResp);
+        return correlateAuditWithAccess(auditEntries, accessEntries);
     } catch (error) {
         if (error.status === 403 || /permission|capability|access denied/i.test(error.message || '')) {
             var permError = new Error('Insufficient permissions to query audit log. Required capability: search_filter:audit (or equivalent _audit index access).');
@@ -876,6 +898,77 @@ async function fetchAuditLog(timeRangeMs) {
         }
         throw error;
     }
+}
+
+/**
+ * Parse Splunk search results JSON into access log entry objects.
+ */
+function parseAccessLogResults(response) {
+    var results = response.results || [];
+    return results.map(function(entry) {
+        return {
+            timestamp: entry._time || '',
+            user: entry.user || entry.c_user || '',
+            sc_status: entry.sc_status || '',
+            cs_method: entry.cs_method || '',
+        };
+    });
+}
+
+/**
+ * Correlate audit entries with access log HTTP status codes.
+ * Matches by timestamp proximity (within 3 seconds).
+ */
+function correlateAuditWithAccess(auditEntries, accessEntries) {
+    var MUTATION_METHODS = {'POST': true, 'PUT': true, 'PATCH': true, 'DELETE': true};
+    var mutations = accessEntries.filter(function(a) {
+        return MUTATION_METHODS[a.cs_method];
+    });
+
+    var sorted = mutations.slice().sort(function(a, b) {
+        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    });
+
+    var CORRELATION_WINDOW_MS = 3000;
+
+    return auditEntries.map(function(entry) {
+        var auditTime = new Date(entry.timestamp).getTime();
+        var nearest = null;
+        var nearestDiff = Infinity;
+
+        for (var i = 0; i < sorted.length; i++) {
+            var accessTime = new Date(sorted[i].timestamp).getTime();
+            var diff = Math.abs(accessTime - auditTime);
+            if (diff <= CORRELATION_WINDOW_MS && diff < nearestDiff) {
+                nearest = sorted[i];
+                nearestDiff = diff;
+            }
+        }
+
+        var statusCode = nearest ? nearest.sc_status : '';
+        return Object.assign({}, entry, {
+            status_code: statusCode,
+            status: getStatusCodeLabel(statusCode, entry.action),
+        });
+    });
+}
+
+/**
+ * Map HTTP status codes to human-readable labels, aware of the audit action.
+ */
+function getStatusCodeLabel(code, action) {
+    if (!code) return 'Unknown';
+    var num = parseInt(code, 10);
+    if (num >= 200 && num < 300) return 'Success';
+    if (num === 409) {
+        if (action === 'CREATE_PASSWORD') return 'Duplicate';
+        return 'Conflict';
+    }
+    if (num === 404) return 'Not Found';
+    if (num === 403) return 'Forbidden';
+    if (num >= 400 && num < 500) return 'Client Error';
+    if (num >= 500) return 'Server Error';
+    return 'Unknown';
 }
 
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)

@@ -257,45 +257,99 @@ function CredentialTable({
         if (col.key === 'realm') {
             var isGlobal = !cred.realm || cred.realm === 'nobody';
             return React.createElement(TableCell, null,
-                React.createElement(Chip, {
-                    backgroundColor: isGlobal ? '#bdbdbd' : '#e3f2fd',
-                    foregroundColor: isGlobal ? '#212121' : '#1565c0'
+                React.createElement('span', {
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: isGlobal ? '#f5f5f5' : '#e3f2fd',
+                        color: isGlobal ? '#757575' : '#1565c0',
+                        border: '1px solid ' + (isGlobal ? '#e0e0e0' : '#90caf9'),
+                        whiteSpace: 'nowrap',
+                    }
                 }, isGlobal ? 'global' : (cred.realm || ''))
             );
         }
         if (col.key === 'app') {
             return React.createElement(TableCell, null,
-                React.createElement(Chip, {
-                    backgroundColor: '#e8f5e9',
-                    foregroundColor: '#2e7d32'
+                React.createElement('span', {
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: '#e8f5e9',
+                        color: '#2e7d32',
+                        border: '1px solid #a5d6a7',
+                        whiteSpace: 'nowrap',
+                    }
                 }, cred.app || 'search')
             );
         }
         if (col.key === 'owner') {
             return React.createElement(TableCell, null,
-                React.createElement(Chip, {
-                    backgroundColor: '#fff3e0',
-                    foregroundColor: '#e65100'
+                React.createElement('span', {
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: '#fff3e0',
+                        color: '#e65100',
+                        border: '1px solid #ffcc80',
+                        whiteSpace: 'nowrap',
+                    }
                 }, cred[col.key] || '')
             );
         }
         if (col.key === 'aclRead' || col.key === 'aclWrite') {
             var roles = (cred[col.key] || '').split(',').map(function(r) { return r.trim(); }).filter(function(r) { return r; });
+            var c = col.key === 'aclRead' ? { bg: '#f3e5f5', color: '#7b1fa2', border: '#ce93d8' } : { bg: '#fce4ec', color: '#c62828', border: '#f48fb1' };
             return React.createElement(TableCell, null,
                 React.createElement(
                     'div',
                     { style: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' } },
                     roles.map(function(role, i) {
-                        return React.createElement(Chip, {
+                        return React.createElement('span', {
                             key: i,
-                            backgroundColor: col.key === 'aclRead' ? '#f3e5f5' : '#fce4ec',
-                            foregroundColor: col.key === 'aclRead' ? '#7b1fa2' : '#c62828'
+                            style: {
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                backgroundColor: c.bg,
+                                color: c.color,
+                                border: '1px solid ' + c.border,
+                                whiteSpace: 'nowrap',
+                            }
                         }, role);
                     })
                 )
             );
         }
-        // name — plain text
+        // name — pill
+        if (col.key === 'name') {
+            return React.createElement(TableCell, null,
+                React.createElement('span', {
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: '#e8eaf6',
+                        color: '#283593',
+                        border: '1px solid #9fa8da',
+                        whiteSpace: 'nowrap',
+                    }
+                }, cred[col.key] || '')
+            );
+        }
         return React.createElement(TableCell, null, cred[col.key] || '');
     }
 
