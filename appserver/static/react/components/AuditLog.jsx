@@ -98,10 +98,17 @@ var ACTION_LABELS = {
     EDIT_PASSWORD: 'Updated',
     GET_PASSWORD: 'Viewed',
     REMOVE_PASSWORD: 'Deleted',
+    ACL_EDIT: 'ACL Changed',
 };
 
 function getActionLabel(action) {
     return ACTION_LABELS[action] || (action || 'Unknown');
+}
+
+// Strip leading/trailing colons from credential IDs (e.g., ":svc-archive:" → "svc-archive")
+function formatCredential(cred) {
+    if (!cred) return '';
+    return cred.replace(/^:+|:+$/g, '');
 }
 
 function formatTimestamp(iso) {
@@ -285,6 +292,8 @@ function AuditLog({ mvc }) {
                         value = formatTimestamp(value);
                     } else if (col.key === 'action') {
                         value = getActionLabel(value);
+                    } else if (col.key === 'credential') {
+                        value = formatCredential(value);
                     } else if (col.key === 'status') {
                         return React.createElement(TableCell, { key: col.key },
                             React.createElement('span', {

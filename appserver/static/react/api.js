@@ -890,15 +890,20 @@ async function fetchAuditLog(timeRangeMs) {
         earliestTime = '-' + Math.round(seconds / 86400) + 'd';
     }
 
-    var auditQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]*)\\\"" | sort -_time | table _time, user, action, password_id, info';
+    var auditQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) | rex field=_raw "password_id=\\"(?<password_id>[^\\"]*)\\"" | sort -_time | table _time, user, action, password_id, info';
 
     // splunkd_ui_access captures splunkd/__raw REST API calls from the web UI
     var accessQuery = 'search index=_internal sourcetype=splunkd_ui_access "storage/passwords" | rex "\\" (?<sc_status>\\d\\d\\d) " | rex "\\"(?<cs_method>[A-Z]+) " | sort -_time | table _time, user, sc_status, cs_method';
 
+    // ACL-only edits: POST to /acl on conf-passwords, excluding bulk operations (>5/sec)
+    // and excluding windows that have a matching EDIT_PASSWORD in _audit
+    var aclQuery = 'search index=_internal sourcetype=splunkd_ui_access "conf-passwords" POST "/acl" | rex "\\"POST (?<url>[^\\"]+)" | rex field=url "credential%3A(?<cred>[^/]+)" | rex field=url "(?:(?<has_move>/move))$" | eval cred=replace(cred, "%3A", ":") | eval window=strftime(_time, "%Y-%m-%dT%H:%M:%S") | stats values(cred) as credentials, min(_time) as _time, values(user) as users, count as acl_posts by window | where acl_posts <= 5 | eval credential=mvindex(credentials, 0), user=mvindex(users, 0) | sort -_time | table _time, user, credential';
+
     try {
-        var auditResp, accessResp;
+        var auditResp, accessResp, aclResp;
         var auditPromise = runSearchJob(auditQuery, earliestTime, timeRangeMs);
         var accessPromise = runSearchJob(accessQuery, earliestTime, timeRangeMs);
+        var aclPromise = runSearchJob(aclQuery, earliestTime, timeRangeMs);
 
         try {
             auditResp = await auditPromise;
@@ -914,9 +919,18 @@ async function fetchAuditLog(timeRangeMs) {
             accessResp = { results: [] };
         }
 
+        try {
+            aclResp = await aclPromise;
+        } catch (e) {
+            console.warn('ACL search failed, ACL-only edits will not appear:', e.message);
+            aclResp = { results: [] };
+        }
+
         var auditEntries = parseAuditResults(auditResp);
         var accessEntries = parseAccessLogResults(accessResp);
-        return correlateAuditWithAccess(auditEntries, accessEntries);
+        var aclEntries = parseACLEntries(aclResp);
+        var correlated = correlateAuditWithAccess(auditEntries, accessEntries);
+        return mergeACLEntries(correlated, aclEntries);
     } catch (error) {
         if (error.status === 403 || /permission|capability|access denied/i.test(error.message || '')) {
             var permError = new Error('Insufficient permissions to query audit log. Required capability: search_filter:audit (or equivalent _audit index access).');
@@ -925,6 +939,73 @@ async function fetchAuditLog(timeRangeMs) {
         }
         throw error;
     }
+}
+
+/**
+ * Parse Splunk search results JSON into ACL entry objects.
+ */
+function parseACLEntries(response) {
+    var results = response.results || [];
+    return results.map(function(entry) {
+        return {
+            timestamp: entry._time || '',
+            user: entry.user || '',
+            credential: entry.credential || '',
+        };
+    });
+}
+
+/**
+ * Merge ACL-only edits into audit entries.
+ * An ACL edit is "ACL-only" if no _audit event (EDIT_PASSWORD/CREATE_PASSWORD/REMOVE_PASSWORD)
+ * exists within ±3 seconds for the same credential.
+ */
+function mergeACLEntries(auditEntries, aclEntries) {
+    var CORRELATION_WINDOW_MS = 3000;
+
+    // Collect all audit timestamps per credential for dedup
+    var auditTimes = {};
+    auditEntries.forEach(function(entry) {
+        var key = entry.credential;
+        if (!auditTimes[key]) auditTimes[key] = [];
+        var t = new Date(entry.timestamp).getTime();
+        if (!isNaN(t)) auditTimes[key].push(t);
+    });
+
+    // Find ACL-only entries
+    var aclOnly = aclEntries.filter(function(acl) {
+        var aclTime = new Date(acl.timestamp).getTime();
+        if (isNaN(aclTime)) return false;
+        var times = auditTimes[acl.credential] || [];
+        // If any audit event is within window, it's not ACL-only
+        for (var i = 0; i < times.length; i++) {
+            if (Math.abs(times[i] - aclTime) <= CORRELATION_WINDOW_MS) {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    // Convert ACL-only entries to audit format
+    var aclAuditEntries = aclOnly.map(function(acl) {
+        return {
+            timestamp: acl.timestamp,
+            user: acl.user,
+            action: 'ACL_EDIT',
+            credential: acl.credential,
+            info: 'ACL-only edit (app scope, sharing, read/write roles)',
+            status: 'Success',
+            status_code: '200',
+        };
+    });
+
+    // Merge and sort by timestamp descending
+    var merged = auditEntries.concat(aclAuditEntries);
+    merged.sort(function(a, b) {
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+
+    return merged;
 }
 
 /**
