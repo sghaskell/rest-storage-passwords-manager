@@ -790,6 +790,21 @@ async function terminateSearchJob(sid) {
 }
 
 /**
+ * Parse Splunk search results JSON into access log entry objects.
+ */
+function parseAccessLogResults(response) {
+    var results = response.results || [];
+    return results.map(function(entry) {
+        return {
+            timestamp: entry._time || '',
+            user: entry.user || entry.c_user || '',
+            sc_status: entry.sc_status || '',
+            cs_method: entry.cs_method || '',
+        };
+    });
+}
+
+/**
  * Submit and poll a Splunk search job until complete, then return parsed results.
  */
 async function runSearchJob(searchQuery, earliestTime, timeRangeMs) {
@@ -813,41 +828,47 @@ async function runSearchJob(searchQuery, earliestTime, timeRangeMs) {
     var maxWaitMs = Math.max(15000, timeRangeMs > 604800000 ? 30000 : 20000);
     var startTime = Date.now();
     var pollInterval = 250;
+    var result = null;
 
-    while (Date.now() - startTime < maxWaitMs) {
-        var statusResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid), {
-            method: 'GET',
-        });
-
-        var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
-            statusResp.entry[0].content && (statusResp.entry[0].content.isDone === '1' || statusResp.entry[0].content.isDone === true));
-
-        if (isDone) {
-            var resultsResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+    try {
+        while (Date.now() - startTime < maxWaitMs) {
+            var statusResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid), {
                 method: 'GET',
             });
-            await terminateSearchJob(sid);
-            return resultsResp;
+
+            var isDone = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                statusResp.entry[0].content && (statusResp.entry[0].content.isDone === '1' || statusResp.entry[0].content.isDone === true));
+
+            if (isDone) {
+                result = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+                    method: 'GET',
+                });
+                break;
+            }
+
+            var dispatchState = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                statusResp.entry[0].content && statusResp.entry[0].content.dispatchState);
+            if (dispatchState === 'FAILED' || dispatchState === 'KILLED') {
+                var errorMsg = (statusResp && statusResp.entry && statusResp.entry[0] &&
+                    statusResp.entry[0].content && statusResp.entry[0].content.messages) || '';
+                throw new Error('Search job failed: ' + (errorMsg || dispatchState));
+            }
+
+            await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
+            pollInterval = Math.min(pollInterval * 2, 2000);
         }
 
-        var dispatchState = (statusResp && statusResp.entry && statusResp.entry[0] &&
-            statusResp.entry[0].content && statusResp.entry[0].content.dispatchState);
-        if (dispatchState === 'FAILED' || dispatchState === 'KILLED') {
-            var errorMsg = (statusResp && statusResp.entry && statusResp.entry[0] &&
-                statusResp.entry[0].content && statusResp.entry[0].content.messages) || '';
-            throw new Error('Search job failed: ' + (errorMsg || dispatchState));
+        // Timeout — grab partial results
+        if (!result) {
+            result = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
+                method: 'GET',
+            });
         }
-
-        await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
-        pollInterval = Math.min(pollInterval * 2, 2000);
+    } finally {
+        await terminateSearchJob(sid);
     }
 
-    // Timeout — grab partial results
-    var partialResp = await splunkdRequest('/servicesNS/-/-/search/jobs/' + encodeURIComponent(sid) + '/results', {
-        method: 'GET',
-    });
-    await terminateSearchJob(sid);
-    return partialResp;
+    return result;
 }
 
 /**
@@ -876,14 +897,20 @@ async function fetchAuditLog(timeRangeMs) {
 
     try {
         var auditResp, accessResp;
+        var auditPromise = runSearchJob(auditQuery, earliestTime, timeRangeMs);
+        var accessPromise = runSearchJob(accessQuery, earliestTime, timeRangeMs);
+
         try {
-            [auditResp, accessResp] = await Promise.all([
-                runSearchJob(auditQuery, earliestTime, timeRangeMs),
-                runSearchJob(accessQuery, earliestTime, timeRangeMs),
-            ]);
+            auditResp = await auditPromise;
+        } catch (e) {
+            console.warn('Audit log search failed:', e.message);
+            throw e;
+        }
+
+        try {
+            accessResp = await accessPromise;
         } catch (e) {
             console.warn('Access log search failed, audit entries will lack status codes:', e.message);
-            auditResp = await runSearchJob(auditQuery, earliestTime, timeRangeMs);
             accessResp = { results: [] };
         }
 
@@ -901,28 +928,13 @@ async function fetchAuditLog(timeRangeMs) {
 }
 
 /**
- * Parse Splunk search results JSON into access log entry objects.
- */
-function parseAccessLogResults(response) {
-    var results = response.results || [];
-    return results.map(function(entry) {
-        return {
-            timestamp: entry._time || '',
-            user: entry.user || entry.c_user || '',
-            sc_status: entry.sc_status || '',
-            cs_method: entry.cs_method || '',
-        };
-    });
-}
-
-/**
  * Correlate audit entries with access log HTTP status codes.
  * Matches by timestamp proximity (within 3 seconds).
  */
 function correlateAuditWithAccess(auditEntries, accessEntries) {
     var MUTATION_METHODS = {'POST': true, 'PUT': true, 'PATCH': true, 'DELETE': true};
     var mutations = accessEntries.filter(function(a) {
-        return MUTATION_METHODS[a.cs_method];
+        return MUTATION_METHODS[a.cs_method] && !isNaN(new Date(a.timestamp).getTime());
     });
 
     var sorted = mutations.slice().sort(function(a, b) {
@@ -933,6 +945,13 @@ function correlateAuditWithAccess(auditEntries, accessEntries) {
 
     return auditEntries.map(function(entry) {
         var auditTime = new Date(entry.timestamp).getTime();
+        if (isNaN(auditTime)) {
+            return Object.assign({}, entry, {
+                status_code: '',
+                status: getStatusCodeLabel('', entry.action),
+            });
+        }
+
         var nearest = null;
         var nearestDiff = Infinity;
 

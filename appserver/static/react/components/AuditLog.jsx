@@ -311,92 +311,85 @@ function AuditLog({ mvc }) {
     var inputStyle = { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' };
 
     return React.createElement('div', { className: 'audit-log-app' },
-        // Header with controls
+        // Title
+        React.createElement('h1', { style: { margin: '0 0 1rem 0' } }, 'Audit Log'),
+
+        // Filter bar — search left, pagination right (matches CredentialTable layout)
         React.createElement('div', {
-            style: {
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '1rem',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-            }
+            style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' }
         },
-            React.createElement('h1', { style: { margin: 0 } }, 'Audit Log'),
-            React.createElement('div', {
-                style: { display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' }
-            },
-                React.createElement('strong', { style: labelStyle }, 'Time Range:'),
-                React.createElement(Selector, {
-                    value: timeRange,
-                    onChange: handleTimeRangeChange,
-                    style: { minWidth: '140px' },
-                }, TIME_RANGES.map(function(tr) {
-                    return React.createElement(SelectOption, {
-                        key: tr.value,
-                        label: tr.label,
-                        value: tr.value,
+            // Left: time range, users, search
+            React.createElement('strong', { style: labelStyle }, 'Time Range:'),
+            React.createElement(Selector, {
+                value: timeRange,
+                onChange: handleTimeRangeChange,
+                style: { minWidth: '140px' },
+            }, TIME_RANGES.map(function(tr) {
+                return React.createElement(SelectOption, {
+                    key: tr.value,
+                    label: tr.label,
+                    value: tr.value,
+                });
+            })),
+            React.createElement('strong', { style: labelStyle }, 'Users:'),
+            React.createElement('div', { style: { width: '250px' } },
+                React.createElement(MultiSelector, {
+                    values: selectedUsers,
+                    onChange: handleUserFilterChange,
+                    placeholder: 'Select users',
+                    width: '100%',
+                }, uniqueUsers.map(function(u) {
+                    return React.createElement(MultiSelectOption, {
+                        key: u,
+                        label: u,
+                        value: u,
                     });
-                })),
-                React.createElement('strong', { style: labelStyle }, 'Users:'),
-                React.createElement('div', { style: { width: '250px' } },
-                    React.createElement(MultiSelector, {
-                        values: selectedUsers,
-                        onChange: handleUserFilterChange,
-                        placeholder: 'Select users',
-                        width: '100%',
-                    }, uniqueUsers.map(function(u) {
-                        return React.createElement(MultiSelectOption, {
-                            key: u,
-                            label: u,
-                            value: u,
-                        });
-                    }))
-                ),
-                React.createElement('strong', { style: labelStyle }, 'Search:'),
-                React.createElement('input', {
-                    type: 'text',
-                    value: filterText,
-                    onChange: function(e) { setFilterText(e.target.value); setCurrentPage(1); },
-                    placeholder: 'Search audit log...',
-                    style: Object.assign({}, inputStyle, { minWidth: '200px' }),
-                }),
-                React.createElement('select', {
-                    value: filterType,
-                    onChange: function(e) { setFilterType(e.target.value); },
-                    style: inputStyle,
-                },
-                    React.createElement('option', { value: 'all' }, 'All Fields'),
-                    React.createElement('option', { value: 'timestamp' }, 'Timestamp'),
-                    React.createElement('option', { value: 'user' }, 'User'),
-                    React.createElement('option', { value: 'action' }, 'Action'),
-                    React.createElement('option', { value: 'credential' }, 'Credential'),
-                    React.createElement('option', { value: 'status' }, 'Status'),
-                    React.createElement('option', { value: 'details' }, 'Details')
-                ),
+                }))
+            ),
+            React.createElement('strong', { style: labelStyle }, 'Search:'),
+            React.createElement('input', {
+                type: 'text',
+                value: filterText,
+                onChange: function(e) { setFilterText(e.target.value); setCurrentPage(1); },
+                placeholder: 'Search audit log...',
+                style: Object.assign({}, inputStyle, { minWidth: '200px' }),
+            }),
+            React.createElement('select', {
+                value: filterType,
+                onChange: function(e) { setFilterType(e.target.value); },
+                style: inputStyle,
+            },
+                React.createElement('option', { value: 'all' }, 'All Fields'),
+                React.createElement('option', { value: 'timestamp' }, 'Timestamp'),
+                React.createElement('option', { value: 'user' }, 'User'),
+                React.createElement('option', { value: 'action' }, 'Action'),
+                React.createElement('option', { value: 'credential' }, 'Credential'),
+                React.createElement('option', { value: 'status' }, 'Status'),
+                React.createElement('option', { value: 'details' }, 'Details')
+            ),
+            // Right: refresh, rows per page, paginator
+            React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
                 React.createElement(Button, {
                     onClick: handleRefresh,
                     appearance: 'subtle',
                     children: 'Refresh',
                 }),
-                React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
-                    React.createElement('strong', { style: labelStyle }, 'Rows per page:'),
-                    React.createElement('select', {
-                        value: rowsPerPage,
-                        onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
-                        style: inputStyle,
-                    },
-                        React.createElement('option', { value: 10 }, '10'),
-                        React.createElement('option', { value: 25 }, '25'),
-                        React.createElement('option', { value: 50 }, '50'),
-                        React.createElement('option', { value: 100 }, '100')
-                    ),
-                    totalPages > 1 ? React.createElement(Paginator.PageControl, {
-                        current: currentPage,
-                        totalPages: totalPages,
-                        onChange: function(event, data) { setCurrentPage(data.page); },
-                    }) : null
-                )
+                React.createElement('strong', { style: labelStyle }, 'Rows per page:'),
+                React.createElement('select', {
+                    value: rowsPerPage,
+                    onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
+                    style: inputStyle,
+                },
+                    React.createElement('option', { value: 10 }, '10'),
+                    React.createElement('option', { value: 25 }, '25'),
+                    React.createElement('option', { value: 50 }, '50'),
+                    React.createElement('option', { value: 100 }, '100')
+                ),
+                totalPages > 1 ? React.createElement(Paginator.PageControl, {
+                    current: currentPage,
+                    totalPages: totalPages,
+                    onChange: function(event, data) { setCurrentPage(data.page); },
+                }) : null
             )
         ),
 
