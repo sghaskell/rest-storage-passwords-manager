@@ -9,7 +9,6 @@
     "build:dev": "webpack --mode development",
     "package": "find appserver static default -type f | tar -czf rest-storage-passwords-manager.spl -T -",
     "check:bundle-size": "node -e \"const fs=require('fs'); const size=fs.statSync('appserver/static/react/bundle.js').size; if(size > 2097152){console.error('FAIL: bundle.js ('+size+' bytes) exceeds 2MB limit');process.exit(1)} else {console.log('PASS: bundle.js '+size+' bytes (under 2MB)')}\"",
-    "verify:legacy": "node -e \"const fs=require('fs'); const files=['appserver/static/password-crud.js','appserver/static/react/bundle.js']; let missing=files.filter(f=>!fs.existsSync(f)); if(missing.length){console.error('MISSING:',missing);process.exit(1)} else console.log('OK: legacy + react bundle both present')\"",
     "test": "npx playwright test",
     "install": "./bin/install-spl.sh"
   },

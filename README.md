@@ -2,19 +2,22 @@
 
 ## About
 
-An intuitive, full-featured JavaScript CRUD interface to the [Splunk storage/passwords REST endpoint](https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTaccess#storage.2Fpasswords). If you're an app developer looking to securely store passwords for APIs, Custom Alert Actions, Modular Inputs, or any resource that requires a password, this is your tool.
+An intuitive, full-featured React-based CRUD interface to the [Splunk storage/passwords REST endpoint](https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTaccess#storage.2Fpasswords). If you're an app developer looking to securely store passwords for APIs, Custom Alert Actions, Modular Inputs, or any resource that requires a password, this is your tool.
 
-Create, update, delete, and view credentials — plus manage permissions, sharing scope, and app context — all from a single dashboard without touching the Splunk CLI or the REST API directly.
+Create, update, copy, delete, and import credentials — plus manage permissions, sharing scope, app context, and audit trails — all from a single dashboard without touching the Splunk CLI or the REST API directly.
 
-## What's New in 1.1.0
+## Features
 
-- **Modernized UI** — replaced deprecated `splunkjs/mvc` components, jQuery, and Bootstrap 3 table plugin with native DOM, `fetch`, and Splunk's built-in CSS classes. No third-party dependencies remain.
-- **Splunk Cloud compatible** — passes AppInspect `--included-tags cloud` vetting.
-- **Improved ACL controls** — separate role pickers (Read Users / Write Users) and user picker (Owner); `* (all)` wildcard is mutually exclusive with named roles; least-privilege defaults (`admin`, `power`).
-- **App scope warning** — inline hint when creating credentials in the current app explains that credentials stored in an app are lost when that app is uninstalled.
-- **Live filter** — type to filter the credentials table by username, realm, or app without a page reload.
-- **Animated loading indicator** — spinner shown while credentials load.
-- **Reset button** — restores least-privilege defaults after using Select All on role pickers.
+- **Full CRUD** — create, edit, copy, and delete credentials from a single table view
+- **Bulk operations** — multi-select and bulk delete credentials; CSV import for bulk creation (up to 500 rows)
+- **CSV import/export** — download a template, import via drag-and-drop, and export credentials for backup
+- **Password reveal** — view and copy clear-text passwords in a secure modal
+- **Live filtering and sorting** — filter by any field, sort by column, control visible columns
+- **Pagination** — configurable rows per page (10/25/50/100)
+- **ACL management** — granular read/write role pickers with `* (all)` wildcard; least-privilege defaults (`admin`, `power`)
+- **Audit log** — separate view showing all credential activity with HTTP status correlation
+- **Inline help** — collapsible help modal accessible via `?` button or `Shift+/` keyboard shortcut
+- **Splunk Cloud compatible** — passes AppInspect `--included-tags cloud` vetting
 
 ## Dependencies
 
@@ -26,23 +29,41 @@ The **Credential Management** dashboard provides a CRUD interface to create, upd
 
 ### Create Credential
 
-Click **+ New Credential** to reveal the creation form. Fill in a username, password, and optionally a realm (used as a descriptor, e.g., `prod` or `dev`). The form pre-fills with secure defaults for owner, read users, write users, app scope, and sharing — update them before clicking **Create**.
+Click **Create Credential** to open the form. Fill in a username and password. Optionally add a realm (e.g. `prod`, `dev`) — the realm cannot be changed after creation. The form pre-fills with secure defaults for owner, read/write roles, app scope, and sharing.
 
-### Update Credential
+### Edit Credential
 
-Click any row in the table to expand it and reveal the inline update form. You can change the password, permissions, or app context. The realm cannot be changed after creation — this is a limitation of the `storage/passwords` REST endpoint.
+Click the pencil icon in a row's Actions column to open the edit form. You can change the password, app, owner, sharing, and read/write roles. The username and realm are locked.
+
+### Copy Credential
+
+Click the copy icon to duplicate a credential with a date-suffixed username.
 
 ### Delete Credential
 
-Select one or more rows using the checkboxes, then click **Delete**. A confirmation dialog shows the credentials to be deleted before you confirm.
+Single delete: click the trash icon in a row's Actions column and confirm.
+
+Bulk delete: select rows with checkboxes, then click the "Delete Selected (N)" button in the toolbar.
 
 ### Reveal Clear Password
 
-Click the eye icon in the Password column to display the plain-text password in a modal.
+Click the eye icon in a row's Actions column to display the plain-text password in a modal with a copy button.
 
-### Filter Credentials
+### Filter, Sort, and Customize Columns
 
-Type in the filter box at the top of the table to narrow results by username, realm, or app. The filter is case-insensitive and updates live as you type.
+Search across all fields — or narrow to a specific field using the dropdown next to the search box. Click any column header to sort. Click "Show/Hide Columns" to toggle which columns are visible (saved per browser).
+
+### CSV Import
+
+Click **Download Template** to get a CSV template. Click **Import CSV** and drag or select your file. A preview table shows the parsed rows before any credentials are created. Maximum file size is 512 KB, with a limit of 500 rows.
+
+### CSV Export
+
+Click **Export CSV** to download a CSV of all credentials. Passwords are not included — Splunk does not return them in list responses. Add passwords back and re-import if needed.
+
+### Audit Log
+
+The **Audit Log** view (separate tab) shows all REST activity against storage/passwords — creates, updates, deletes, ACL changes, and view events. Filter by time range, specific users, or free-text search.
 
 ## Using Stored Passwords
 

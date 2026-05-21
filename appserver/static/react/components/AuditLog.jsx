@@ -250,7 +250,6 @@ function AuditLog({ mvc }) {
     // Loading state
     if (loading) {
         return React.createElement('div', { className: 'audit-log-app' },
-            React.createElement('h1', { style: { margin: '0 0 1rem 0' } }, 'Audit Log'),
             React.createElement('div', { style: { padding: '2rem', textAlign: 'center', color: '#666' } }, 'Loading audit log...')
         );
     }
@@ -258,7 +257,6 @@ function AuditLog({ mvc }) {
     // Error state
     if (error) {
         return React.createElement('div', { className: 'audit-log-app' },
-            React.createElement('h1', { style: { margin: '0 0 1rem 0' } }, 'Audit Log'),
             React.createElement('div', {
                 style: {
                     padding: '1rem',
@@ -320,9 +318,6 @@ function AuditLog({ mvc }) {
     var inputStyle = { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' };
 
     return React.createElement('div', { className: 'audit-log-app' },
-        // Title
-        React.createElement('h1', { style: { margin: '0 0 1rem 0' } }, 'Audit Log'),
-
         // Filter bar — search left, pagination right (matches CredentialTable layout)
         React.createElement('div', {
             style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' }

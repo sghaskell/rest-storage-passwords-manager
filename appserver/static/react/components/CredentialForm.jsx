@@ -29,6 +29,21 @@ const SHARING_OPTIONS_LABELS = [
   { label: 'User-scoped (Specific users)', value: 'user' },
 ];
 
+// Password strength scoring: 0-5 → weak/fair/good/strong
+function getPasswordStrength(pw) {
+    if (!pw) return null;
+    var score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[a-z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (score <= 1) return { label: 'Weak', color: '#d32f2f', width: '20%' };
+    if (score === 2) return { label: 'Fair', color: '#f57c00', width: '40%' };
+    if (score === 3) return { label: 'Good', color: '#f9a825', width: '60%' };
+    return { label: 'Strong', color: '#2e7d32', width: '100%' };
+}
+
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
     var allItem = { label: '* (all)', value: '* (all)' };
@@ -378,6 +393,18 @@ function CredentialForm({
                     error: !!errors.passwordMismatch,
                 }),
                 { errorText: errors.passwordMismatch, required: true }
+            )
+        ),
+
+        // Password strength indicator
+        showPasswordFields && password.length > 0 && React.createElement('div', { style: { width: '100%' } },
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '4px' } },
+                React.createElement('span', { style: { fontSize: '12px', color: getPasswordStrength(password).color, fontWeight: '600' } },
+                    getPasswordStrength(password).label
+                )
+            ),
+            React.createElement('div', { style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
+                React.createElement('div', { style: { height: '100%', width: getPasswordStrength(password).width, backgroundColor: getPasswordStrength(password).color, borderRadius: '2px', transition: 'width 0.2s, background-color 0.2s' } })
             )
         ),
 

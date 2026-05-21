@@ -643,14 +643,30 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             var successMessages = [];
             var errorMessages = [];
 
+            // Normalize roles: map '* (all)' → '*' for the API
+            function normalizeRoles(rolesStr) {
+                if (!rolesStr) return undefined;
+                var roles = rolesStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+                if (roles.includes('* (all)')) return ['*'];
+                return roles;
+            }
+
             try {
                 var results = await Promise.allSettled(
                     updates.map(function(c) {
-                        return API.updateCredential(c.name, c.realm, c.app, {
-                            aclRead: c.aclRead ? c.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : undefined,
-                            aclWrite: c.aclWrite ? c.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : undefined,
-                            owner: c.owner || undefined,
-                        }).catch(function(err) { throw err; });
+                        // updateCredential(name, realm, password, readRoles, writeRoles, owner, newApp, sharing, sourceApp)
+                        // No password change — only ACL/owner updates
+                        return API.updateCredential(
+                            c.name,
+                            c.realm || '',
+                            null,
+                            normalizeRoles(c.aclRead),
+                            normalizeRoles(c.aclWrite),
+                            c.owner || undefined,
+                            undefined,
+                            c.sharing || 'app',
+                            c.app || 'search'
+                        ).catch(function(err) { throw err; });
                     })
                 );
 
@@ -665,6 +681,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
                 await loadCredentials();
                 handleDeselectAll();
+                setModals(prev => ({ ...prev, bulkEdit: false }));
 
                 if (errorMessages.length === 0) {
                     showSuccess('Bulk Edit Complete', successMessages);
@@ -677,6 +694,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 }
             } catch (err) {
                 console.error('Error in bulk edit:', err);
+                setModals(prev => ({ ...prev, bulkEdit: false }));
                 showError('Bulk Edit Failed', ['Error: ' + getErrorMessage(err)]);
             } finally {
                 if (callback) callback();

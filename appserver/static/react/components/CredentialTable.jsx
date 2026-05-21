@@ -40,6 +40,7 @@ var COLUMNS = [
     { key: 'realm',    label: 'Realm',      sortable: true,  fixed: false },
     { key: 'app',      label: 'App',        sortable: true,  fixed: false },
     { key: 'owner',    label: 'Owner',      sortable: true,  fixed: false },
+    { key: 'mtime',    label: 'Modified',   sortable: true,  fixed: false },
     { key: 'aclRead',  label: 'Read Roles', sortable: true,  fixed: false },
     { key: 'aclWrite', label: 'Write Roles',sortable: true,  fixed: false },
     { key: 'actions',  label: 'Actions',    sortable: false, fixed: true  }
@@ -47,6 +48,8 @@ var COLUMNS = [
 
 var VISIBLE_COLUMNS_KEY = 'credential-table-visible-columns';
 var DEFAULT_VISIBLE = ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'];
+var ROWS_PER_PAGE_KEY = 'credential-table-rows-per-page';
+var DEFAULT_ROWS_PER_PAGE = 10;
 
 function loadVisibleColumns() {
     try {
@@ -57,7 +60,6 @@ function loadVisibleColumns() {
             if (Array.isArray(parsed) && hasAllFixed) {
                 var validKeys = COLUMNS.map(function(c) { return c.key; });
                 var valid = parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
-                // Normalize order against canonical COLUMNS definition
                 return COLUMNS.map(function(c) { return c.key; }).filter(function(k) { return valid.indexOf(k) !== -1; });
             }
         }
@@ -69,13 +71,27 @@ function saveVisibleColumns(columns) {
     try { localStorage.setItem(VISIBLE_COLUMNS_KEY, JSON.stringify(columns)); } catch (e) {}
 }
 
+function loadRowsPerPage() {
+    try {
+        var stored = localStorage.getItem(ROWS_PER_PAGE_KEY);
+        if (stored) {
+            var parsed = parseInt(stored, 10);
+            if ([10, 25, 50, 100].indexOf(parsed) !== -1) return parsed;
+        }
+    } catch (e) {}
+    return DEFAULT_ROWS_PER_PAGE;
+}
+
+function saveRowsPerPage(count) {
+    try { localStorage.setItem(ROWS_PER_PAGE_KEY, String(count)); } catch (e) {}
+}
+
 /**
  * CredentialTable - Table component for credential management
  *
  * @param {Object} props - Component props
- * @param {Array} props.credentials - Array of credential objects
+ * @param {Array} props.credentials - Array of credential objects (already filtered/sorted by parent)
  * @param {Array} props.selectedRows - Currently selected rows for bulk operations
- * @param {boolean} props.isAllSelected - Whether all rows are selected
  * @param {Function} props.onDelete - Callback when delete is clicked
  * @param {Function} props.onReveal - Callback when reveal password is clicked
  * @param {Function} props.onSelectRow - Callback when row checkbox toggled
@@ -83,11 +99,16 @@ function saveVisibleColumns(columns) {
  * @param {Function} props.onDeselectAll - Callback when select-all unchecked
  * @param {Function} props.onEdit - Callback when edit button clicked
  * @param {Function} props.onCopy - Callback when copy button clicked
+ * @param {string} props.filterText - Search text (controlled from parent)
+ * @param {Function} props.onFilterChange - Callback when filter text changes
+ * @param {string} props.filterType - Filter field type (controlled from parent)
+ * @param {Function} props.onFilterTypeChange - Callback when filter type changes
+ * @param {Object} props.sortConfig - Sort config {key, direction} (controlled from parent)
+ * @param {Function} props.onSortChange - Callback when sort changes
  */
 function CredentialTable({
     credentials = [],
     selectedRows = [],
-    isAllSelected = false,
     onDelete,
     onReveal,
     onSelectRow,
@@ -95,23 +116,46 @@ function CredentialTable({
     onDeselectAll,
     onEdit,
     onCopy,
+    filterText: filterTextProp,
+    onFilterChange,
+    filterType: filterTypeProp,
+    onFilterTypeChange,
+    sortConfig: sortConfigProp,
+    onSortChange,
 }) {
-    const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
+    // Filter/sort: accept from parent or fall back to local state for backwards compat
+    const useParentState = filterTextProp !== undefined;
+    const [localFilterText, setLocalFilterText] = React.useState('');
+    const [localFilterType, setLocalFilterType] = React.useState('all');
+    const [localSortConfig, setLocalSortConfig] = React.useState({ key: null, direction: 'asc' });
+
+    const filterText = useParentState ? filterTextProp : localFilterText;
+    const filterType = useParentState ? filterTypeProp : localFilterType;
+    const sortConfig = useParentState ? sortConfigProp : localSortConfig;
+
+    const setFilterText = useParentState ? onFilterChange : setLocalFilterText;
+    const setFilterType = useParentState ? onFilterTypeChange : setLocalFilterType;
+    const setSortConfig = useParentState ? onSortChange : setLocalSortConfig;
+
     const [currentPage, setCurrentPage] = React.useState(1);
-    const [rowsPerPage, setRowsPerPage] = React.useState(10);
-    const [filterText, setFilterText] = React.useState('');
-    const [filterType, setFilterType] = React.useState('all');
+    const [rowsPerPage, setRowsPerPage] = React.useState(loadRowsPerPage);
     const [visibleColumns, setVisibleColumns] = React.useState(loadVisibleColumns);
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
+
+    // Quick filter chips state
+    const [activeChip, setActiveChip] = React.useState(null);
 
     React.useEffect(function() {
         saveVisibleColumns(visibleColumns);
     }, [visibleColumns]);
 
-    // Filter credentials
-    const filteredCredentials = React.useMemo(function() {
-        if (!filterText) return credentials;
+    React.useEffect(function() {
+        saveRowsPerPage(rowsPerPage);
+    }, [rowsPerPage]);
 
+    // Filter credentials — only when using local state; parent already provides filtered data
+    const filteredCredentials = useParentState ? credentials : React.useMemo(function() {
+        if (!filterText) return credentials;
         return credentials.filter(function(credential) {
             var name = (credential.name || '').toLowerCase();
             var realm = (credential.realm || '').toLowerCase();
@@ -119,6 +163,7 @@ function CredentialTable({
             var owner = (credential.owner || '').toLowerCase();
             var aclRead = (credential.aclRead || '').toLowerCase();
             var aclWrite = (credential.aclWrite || '').toLowerCase();
+            var mtime = (credential.mtime || '').toString();
             var search = filterText.toLowerCase();
 
             if (filterType === 'all') {
@@ -128,7 +173,8 @@ function CredentialTable({
                     app.includes(search) ||
                     owner.includes(search) ||
                     aclRead.includes(search) ||
-                    aclWrite.includes(search)
+                    aclWrite.includes(search) ||
+                    mtime.includes(search)
                 );
             } else if (filterType === 'username') {
                 return name.includes(search);
@@ -142,24 +188,48 @@ function CredentialTable({
                 return aclRead.includes(search);
             } else if (filterType === 'writeRoles') {
                 return aclWrite.includes(search);
+            } else if (filterType === 'modified') {
+                return mtime.includes(search);
             }
             return true;
         });
     }, [credentials, filterText, filterType]);
 
-    // Sort credentials
-    const sortedCredentials = React.useMemo(function() {
+    // Sort credentials — only when using local state; parent already provides sorted data
+    const sortedCredentials = useParentState ? credentials : React.useMemo(function() {
         if (!sortConfig.key) return filteredCredentials;
-
         return [...filteredCredentials].sort(function(a, b) {
             var aValue = a[sortConfig.key] || '';
             var bValue = b[sortConfig.key] || '';
-
             if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
             if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
         });
     }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
+
+    // Compute unique realms and apps from sorted credentials
+    const uniqueRealms = React.useMemo(function() {
+        var set = {};
+        sortedCredentials.forEach(function(c) {
+            var r = c.realm || '';
+            var label = (!r || r === 'nobody') ? 'global' : r;
+            set[label] = true;
+        });
+        return Object.keys(set).sort(function(a, b) {
+            if (a === 'global') return -1;
+            if (b === 'global') return 1;
+            return a.localeCompare(b);
+        });
+    }, [sortedCredentials]);
+
+    const uniqueApps = React.useMemo(function() {
+        var set = {};
+        sortedCredentials.forEach(function(c) {
+            var a = c.app || 'search';
+            set[a] = true;
+        });
+        return Object.keys(set).sort();
+    }, [sortedCredentials]);
 
     // Paginate credentials
     const paginatedCredentials = React.useMemo(function() {
@@ -181,13 +251,36 @@ function CredentialTable({
     // Handle filter change
     function handleFilterChange(value) {
         setFilterText(value);
-        setCurrentPage(1); // Reset to first page on filter
+        setActiveChip(null);
+        setCurrentPage(1);
+    }
+
+    // Handle chip click
+    function handleChipClick(type, value) {
+        if (type === 'all' || value === '') {
+            setActiveChip(null);
+            setFilterText('');
+            setFilterType('all');
+            setCurrentPage(1);
+            return;
+        }
+        if (activeChip && activeChip.type === type && activeChip.value === value) {
+            setActiveChip(null);
+            setFilterText('');
+            setFilterType('all');
+            setCurrentPage(1);
+        } else {
+            setActiveChip({ type: type, value: value });
+            setFilterText(value);
+            setFilterType(type === 'realm' ? 'realm' : 'app');
+            setCurrentPage(1);
+        }
     }
 
     // Get sort indicator
     function getSortIndicator(key) {
-        if (sortConfig.key !== key) return '↕';
-        return sortConfig.direction === 'asc' ? '↑' : '↓';
+        if (sortConfig.key !== key) return '\u2195';
+        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
     }
 
     // Check if a row is selected
@@ -202,7 +295,7 @@ function CredentialTable({
 
     // Toggle select-all for visible page
     function handlePageSelectAll() {
-        if (isAllSelected || paginatedCredentials.every(function(c) { return isSelected(c); })) {
+        if (paginatedCredentials.every(function(c) { return isSelected(c); })) {
             onDeselectAll && onDeselectAll();
         } else {
             onSelectAll && onSelectAll(paginatedCredentials);
@@ -218,7 +311,7 @@ function CredentialTable({
     function toggleColumnVisibility(colKey) {
         setVisibleColumns(function(prev) {
             var col = COLUMNS.find(function(c) { return c.key === colKey; });
-            if (col && col.fixed) return prev; // cannot hide fixed columns
+            if (col && col.fixed) return prev;
             var idx = prev.indexOf(colKey);
             if (idx !== -1) {
                 return prev.filter(function(k) { return k !== colKey; });
@@ -240,6 +333,20 @@ function CredentialTable({
         return React.createElement(TableHeadCell, null, col.label);
     }
 
+    // Format mtime epoch seconds to readable date
+    function formatMtime(mtime) {
+        if (!mtime) return '';
+        var d = new Date(Number(mtime) * 1000);
+        if (isNaN(d.getTime())) return String(mtime);
+        var month = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var day = d.getDate();
+        var mon = month[d.getMonth()];
+        var year = d.getFullYear();
+        var hh = String(d.getHours()).padStart(2, '0');
+        var mm = String(d.getMinutes()).padStart(2, '0');
+        return day + ' ' + mon + ' ' + year + ' ' + hh + ':' + mm;
+    }
+
     // Build data cell for a column + credential
     function buildDataCell(col, cred) {
         if (col.key === 'actions') {
@@ -253,6 +360,11 @@ function CredentialTable({
                     React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', title: 'Delete credential', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
                 )
             );
+        }
+        if (col.key === 'mtime') {
+            return React.createElement(TableCell, {
+                style: { fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }
+            }, formatMtime(cred.mtime));
         }
         if (col.key === 'realm') {
             var isGlobal = !cred.realm || cred.realm === 'nobody';
@@ -332,7 +444,6 @@ function CredentialTable({
                 )
             );
         }
-        // name — pill
         if (col.key === 'name') {
             return React.createElement(TableCell, null,
                 React.createElement('span', {
@@ -353,7 +464,7 @@ function CredentialTable({
         return React.createElement(TableCell, null, cred[col.key] || '');
     }
 
-    // Determine rowSelection state for header checkbox: 'all', 'some', or 'none'
+    // Determine rowSelection state for header checkbox
     var someSelected = paginatedCredentials.some(function(c) { return isSelected(c); });
     var allSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
     var rowSelectionState = allSelected ? 'all' : (someSelected ? 'some' : 'none');
@@ -364,7 +475,7 @@ function CredentialTable({
         return buildHeaderCell(col);
     });
 
-    // Build data rows — TableRow with selection and actions
+    // Build data rows
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
             return React.createElement(TableRow, {
@@ -384,9 +495,63 @@ function CredentialTable({
 
     var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
 
+    // Quick filter chips
+    var renderChip = function(label, type, value, isActive) {
+        var isRealm = type === 'realm';
+        var bg = isActive ? (isRealm ? '#bbdefb' : '#a5d6a7') : (isRealm ? '#e3f2fd' : '#e8f5e9');
+        var color = isActive ? (isRealm ? '#0d47a1' : '#1b5e20') : (isRealm ? '#1565c0' : '#2e7d32');
+        var border = isActive ? (isRealm ? '#1565c0' : '#2e7d32') : (isRealm ? '#90caf9' : '#a5d6a7');
+        return React.createElement(
+            'span',
+            {
+                key: type + '-' + value,
+                onClick: function() { handleChipClick(type, value); },
+                style: {
+                    display: 'inline-block',
+                    padding: '2px 10px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: isActive ? '700' : '600',
+                    backgroundColor: bg,
+                    color: color,
+                    border: '2px solid ' + border,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                }
+            },
+            label
+        );
+    };
+
+    var chipsContent = React.createElement(
+        'div',
+        { style: { overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '4px', marginBottom: '0.5rem' } },
+        React.createElement(
+            'span',
+            { style: { marginRight: '0.5rem', fontSize: '11px', color: '#888', lineHeight: '24px' } },
+            'Realms: '
+        ),
+        renderChip('All', 'all', '', !activeChip),
+        uniqueRealms.map(function(r) {
+            return renderChip(r, 'realm', r, activeChip && activeChip.type === 'realm' && activeChip.value === r);
+        }),
+        React.createElement(
+            'span',
+            { style: { display: 'inline-block', marginRight: '0.5rem', marginLeft: '1rem', fontSize: '11px', color: '#888', lineHeight: '24px' } },
+            'Apps: '
+        ),
+        uniqueApps.map(function(a) {
+            return renderChip(a, 'app', a, activeChip && activeChip.type === 'app' && activeChip.value === a);
+        })
+    );
+
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
+        // Quick filter chips
+        chipsContent,
+
         // Filter bar + pagination controls
         React.createElement(
             'div',
@@ -417,6 +582,7 @@ function CredentialTable({
                 React.createElement('option', { value: 'realm' }, 'Realm'),
                 React.createElement('option', { value: 'app' }, 'App'),
                 React.createElement('option', { value: 'owner' }, 'Owner'),
+                React.createElement('option', { value: 'modified' }, 'Modified'),
                 React.createElement('option', { value: 'readRoles' }, 'Read Roles'),
                 React.createElement('option', { value: 'writeRoles' }, 'Write Roles')
             ),
@@ -464,7 +630,7 @@ function CredentialTable({
             )
         ),
 
-        // Credentials table — rowSelection + onRequestToggleAllRows on Table
+        // Credentials table
         React.createElement(Table, {
             outerStyle: { width: '100%', marginBottom: '1rem' },
             tableStyle: { width: '100%' },
@@ -476,19 +642,21 @@ function CredentialTable({
             React.createElement(TableBody, null, ...dataRows)
         ),
 
-        // Pagination
-        totalPages > 1 ? React.createElement(
+        // Row count + Pagination
+        React.createElement(
             'div',
-            { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' } },
-            React.createElement(Paginator, {
+            { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' } },
+            React.createElement('span', { style: { fontSize: '12px', color: '#666' } },
+                'Showing ' + ((currentPage - 1) * rowsPerPage + 1) + '-' + Math.min(currentPage * rowsPerPage, sortedCredentials.length) + ' of ' + sortedCredentials.length + ' credential' + (sortedCredentials.length !== 1 ? 's' : '')
+            ),
+            totalPages > 1 ? React.createElement(Paginator, {
                 current: currentPage,
                 totalPages: totalPages,
                 numPageLinks: totalPages,
                 onChange: function(event, data) { setCurrentPage(data.page); },
-            })
-        ) : null
+            }) : null
+        )
     );
 }
 
-// Export component
 module.exports = CredentialTable;
