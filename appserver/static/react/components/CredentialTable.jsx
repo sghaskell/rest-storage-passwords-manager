@@ -118,23 +118,23 @@ function CredentialTable({
     onCopy,
     filterText: filterTextProp,
     onFilterChange,
-    filterType: filterTypeProp,
-    onFilterTypeChange,
+    activeFilters: activeFiltersProp,
+    onActiveFiltersChange,
     sortConfig: sortConfigProp,
     onSortChange,
 }) {
     // Filter/sort: accept from parent or fall back to local state for backwards compat
     const useParentState = filterTextProp !== undefined;
     const [localFilterText, setLocalFilterText] = React.useState('');
-    const [localFilterType, setLocalFilterType] = React.useState('all');
+    const [localActiveFilters, setLocalActiveFilters] = React.useState([]);
     const [localSortConfig, setLocalSortConfig] = React.useState({ key: null, direction: 'asc' });
 
     const filterText = useParentState ? filterTextProp : localFilterText;
-    const filterType = useParentState ? filterTypeProp : localFilterType;
+    const activeFilters = useParentState ? activeFiltersProp : localActiveFilters;
     const sortConfig = useParentState ? sortConfigProp : localSortConfig;
 
     const setFilterText = useParentState ? onFilterChange : setLocalFilterText;
-    const setFilterType = useParentState ? onFilterTypeChange : setLocalFilterType;
+    const setActiveFilters = useParentState ? onActiveFiltersChange : setLocalActiveFilters;
     const setSortConfig = useParentState ? onSortChange : setLocalSortConfig;
 
     const [currentPage, setCurrentPage] = React.useState(1);
@@ -142,8 +142,7 @@ function CredentialTable({
     const [visibleColumns, setVisibleColumns] = React.useState(loadVisibleColumns);
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
-    // Quick filter chips state
-    const [activeChip, setActiveChip] = React.useState(null);
+
 
     React.useEffect(function() {
         saveVisibleColumns(visibleColumns);
@@ -155,7 +154,6 @@ function CredentialTable({
 
     // Filter credentials — only when using local state; parent already provides filtered data
     const filteredCredentials = useParentState ? credentials : React.useMemo(function() {
-        if (!filterText) return credentials;
         return credentials.filter(function(credential) {
             var name = (credential.name || '').toLowerCase();
             var realm = (credential.realm || '').toLowerCase();
@@ -164,36 +162,36 @@ function CredentialTable({
             var aclRead = (credential.aclRead || '').toLowerCase();
             var aclWrite = (credential.aclWrite || '').toLowerCase();
             var mtime = (credential.mtime || '').toString();
-            var search = filterText.toLowerCase();
 
-            if (filterType === 'all') {
-                return (
-                    name.includes(search) ||
-                    realm.includes(search) ||
-                    app.includes(search) ||
-                    owner.includes(search) ||
-                    aclRead.includes(search) ||
-                    aclWrite.includes(search) ||
-                    mtime.includes(search)
-                );
-            } else if (filterType === 'username') {
-                return name.includes(search);
-            } else if (filterType === 'realm') {
-                return realm.includes(search);
-            } else if (filterType === 'app') {
-                return app.includes(search);
-            } else if (filterType === 'owner') {
-                return owner.includes(search);
-            } else if (filterType === 'readRoles') {
-                return aclRead.includes(search);
-            } else if (filterType === 'writeRoles') {
-                return aclWrite.includes(search);
-            } else if (filterType === 'modified') {
-                return mtime.includes(search);
+            // Text search across all fields
+            if (filterText) {
+                var search = filterText.toLowerCase();
+                if (!(name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search))) {
+                    return false;
+                }
             }
+
+            // Active filters — AND logic, exact match per field
+            for (var i = 0; i < activeFilters.length; i++) {
+                var f = activeFilters[i];
+                var val = f.value.toLowerCase();
+                if (f.field === 'username' && !name.includes(val)) return false;
+                if (f.field === 'realm') {
+                    var realmStr = (credential.realm || '').toLowerCase();
+                    var isGlobal = !credential.realm || credential.realm === 'nobody';
+                    if (val === 'global' && !isGlobal) return false;
+                    if (val !== 'global' && !realmStr.includes(val)) return false;
+                }
+                if (f.field === 'app' && !(credential.app || '').toLowerCase().includes(val)) return false;
+                if (f.field === 'owner' && !(credential.owner || '').toLowerCase().includes(val)) return false;
+                if (f.field === 'readRoles' && !aclRead.includes(val)) return false;
+                if (f.field === 'writeRoles' && !aclWrite.includes(val)) return false;
+                if (f.field === 'modified' && !mtime.includes(val)) return false;
+            }
+
             return true;
         });
-    }, [credentials, filterText, filterType]);
+    }, [credentials, filterText, activeFilters]);
 
     // Sort credentials — only when using local state; parent already provides sorted data
     const sortedCredentials = useParentState ? credentials : React.useMemo(function() {
@@ -206,30 +204,6 @@ function CredentialTable({
             return 0;
         });
     }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
-
-    // Compute unique realms and apps from sorted credentials
-    const uniqueRealms = React.useMemo(function() {
-        var set = {};
-        sortedCredentials.forEach(function(c) {
-            var r = c.realm || '';
-            var label = (!r || r === 'nobody') ? 'global' : r;
-            set[label] = true;
-        });
-        return Object.keys(set).sort(function(a, b) {
-            if (a === 'global') return -1;
-            if (b === 'global') return 1;
-            return a.localeCompare(b);
-        });
-    }, [sortedCredentials]);
-
-    const uniqueApps = React.useMemo(function() {
-        var set = {};
-        sortedCredentials.forEach(function(c) {
-            var a = c.app || 'search';
-            set[a] = true;
-        });
-        return Object.keys(set).sort();
-    }, [sortedCredentials]);
 
     // Paginate credentials
     const paginatedCredentials = React.useMemo(function() {
@@ -251,36 +225,54 @@ function CredentialTable({
     // Handle filter change
     function handleFilterChange(value) {
         setFilterText(value);
-        setActiveChip(null);
         setCurrentPage(1);
     }
 
-    // Handle chip click
-    function handleChipClick(type, value) {
-        if (type === 'all' || value === '') {
-            setActiveChip(null);
-            setFilterText('');
-            setFilterType('all');
-            setCurrentPage(1);
-            return;
-        }
-        if (activeChip && activeChip.type === type && activeChip.value === value) {
-            setActiveChip(null);
-            setFilterText('');
-            setFilterType('all');
-            setCurrentPage(1);
-        } else {
-            setActiveChip({ type: type, value: value });
-            setFilterText(value);
-            setFilterType(type === 'realm' ? 'realm' : 'app');
-            setCurrentPage(1);
-        }
+    // Handle adding a filter from clicking a cell pill
+    function handleAddFilter(field, value) {
+        var exists = activeFilters.some(function(f) { return f.field === field && f.value === value; });
+        if (exists) return;
+        setActiveFilters(activeFilters.concat([{ field: field, value: value }]));
+        setCurrentPage(1);
     }
 
-    // Get sort indicator
-    function getSortIndicator(key) {
-        if (sortConfig.key !== key) return '\u2195';
-        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
+    // Handle removing a filter
+    function handleRemoveFilter(index) {
+        var next = activeFilters.slice();
+        next.splice(index, 1);
+        setActiveFilters(next);
+        setCurrentPage(1);
+    }
+
+    // Clear all filters
+    function handleClearFilters() {
+        setActiveFilters([]);
+        setCurrentPage(1);
+    }
+
+    // Field definitions — maps column key to filter field key & label
+    var FILTER_FIELDS = [
+        { key: 'username', label: 'Username' },
+        { key: 'realm', label: 'Realm' },
+        { key: 'app', label: 'App' },
+        { key: 'owner', label: 'Owner' },
+        { key: 'readRoles', label: 'Read Roles' },
+        { key: 'writeRoles', label: 'Write Roles' },
+    ];
+
+    // Column key → filter field key mapping
+    var COLUMN_TO_FILTER = {
+        name: 'username',
+        realm: 'realm',
+        app: 'app',
+        owner: 'owner',
+        aclRead: 'readRoles',
+        aclWrite: 'writeRoles',
+    };
+
+    // Check if a filter is active for a given field/value
+    function isFilterActive(field, value) {
+        return activeFilters.some(function(f) { return f.field === field && f.value === value; });
     }
 
     // Check if a row is selected
@@ -320,6 +312,12 @@ function CredentialTable({
                     .filter(function(k) { return k === colKey || prev.indexOf(k) !== -1; });
             }
         });
+    }
+
+    // Get sort indicator
+    function getSortIndicator(key) {
+        if (sortConfig.key !== key) return '\u2195';
+        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
     }
 
     // Build header cell for a column definition
@@ -368,76 +366,92 @@ function CredentialTable({
         }
         if (col.key === 'realm') {
             var isGlobal = !cred.realm || cred.realm === 'nobody';
+            var realmLabel = isGlobal ? 'global' : (cred.realm || '');
+            var realmActive = isFilterActive('realm', realmLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
+                    onClick: function() { handleAddFilter('realm', realmLabel); },
                     style: {
                         display: 'inline-block',
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: isGlobal ? '#f5f5f5' : '#e3f2fd',
-                        color: isGlobal ? '#757575' : '#1565c0',
-                        border: '1px solid ' + (isGlobal ? '#e0e0e0' : '#90caf9'),
+                        backgroundColor: realmActive ? '#bbdefb' : (isGlobal ? '#f5f5f5' : '#e3f2fd'),
+                        color: realmActive ? '#0d47a1' : (isGlobal ? '#757575' : '#1565c0'),
+                        border: '1px solid ' + (realmActive ? '#1565c0' : (isGlobal ? '#e0e0e0' : '#90caf9')),
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                     }
-                }, isGlobal ? 'global' : (cred.realm || ''))
+                }, realmLabel)
             );
         }
         if (col.key === 'app') {
+            var appLabel = cred.app || 'search';
+            var appActive = isFilterActive('app', appLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
+                    onClick: function() { handleAddFilter('app', appLabel); },
                     style: {
                         display: 'inline-block',
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: '#e8f5e9',
-                        color: '#2e7d32',
-                        border: '1px solid #a5d6a7',
+                        backgroundColor: appActive ? '#a5d6a7' : '#e8f5e9',
+                        color: appActive ? '#1b5e20' : '#2e7d32',
+                        border: '1px solid ' + (appActive ? '#2e7d32' : '#a5d6a7'),
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                     }
-                }, cred.app || 'search')
+                }, appLabel)
             );
         }
         if (col.key === 'owner') {
+            var ownerLabel = cred[col.key] || '';
+            var ownerActive = isFilterActive('owner', ownerLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
+                    onClick: function() { handleAddFilter('owner', ownerLabel); },
                     style: {
                         display: 'inline-block',
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: '#fff3e0',
-                        color: '#e65100',
-                        border: '1px solid #ffcc80',
+                        backgroundColor: ownerActive ? '#ffe0b2' : '#fff3e0',
+                        color: ownerActive ? '#e65100' : '#e65100',
+                        border: '1px solid ' + (ownerActive ? '#e65100' : '#ffcc80'),
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                     }
-                }, cred[col.key] || '')
+                }, ownerLabel)
             );
         }
         if (col.key === 'aclRead' || col.key === 'aclWrite') {
             var roles = (cred[col.key] || '').split(',').map(function(r) { return r.trim(); }).filter(function(r) { return r; });
-            var c = col.key === 'aclRead' ? { bg: '#f3e5f5', color: '#7b1fa2', border: '#ce93d8' } : { bg: '#fce4ec', color: '#c62828', border: '#f48fb1' };
+            var filterField = col.key === 'aclRead' ? 'readRoles' : 'writeRoles';
+            var c = col.key === 'aclRead' ? { bg: '#f3e5f5', color: '#7b1fa2', border: '#ce93d8', activeBg: '#e1bee7', activeBorder: '#7b1fa2' } : { bg: '#fce4ec', color: '#c62828', border: '#f48fb1', activeBg: '#f8bbd0', activeBorder: '#c62828' };
             return React.createElement(TableCell, null,
                 React.createElement(
                     'div',
                     { style: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' } },
                     roles.map(function(role, i) {
+                        var roleActive = isFilterActive(filterField, role);
                         return React.createElement('span', {
                             key: i,
+                            onClick: function() { handleAddFilter(filterField, role); },
                             style: {
                                 display: 'inline-block',
                                 padding: '2px 8px',
                                 borderRadius: '12px',
                                 fontSize: '11px',
                                 fontWeight: '600',
-                                backgroundColor: c.bg,
+                                backgroundColor: roleActive ? c.activeBg : c.bg,
                                 color: c.color,
-                                border: '1px solid ' + c.border,
+                                border: '1px solid ' + (roleActive ? c.activeBorder : c.border),
                                 whiteSpace: 'nowrap',
+                                cursor: 'pointer',
                             }
                         }, role);
                     })
@@ -445,20 +459,24 @@ function CredentialTable({
             );
         }
         if (col.key === 'name') {
+            var nameLabel = cred[col.key] || '';
+            var nameActive = isFilterActive('username', nameLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
+                    onClick: function() { handleAddFilter('username', nameLabel); },
                     style: {
                         display: 'inline-block',
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: '#e8eaf6',
-                        color: '#283593',
-                        border: '1px solid #9fa8da',
+                        backgroundColor: nameActive ? '#c5cae9' : '#e8eaf6',
+                        color: nameActive ? '#1a237e' : '#283593',
+                        border: '1px solid ' + (nameActive ? '#283593' : '#9fa8da'),
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                     }
-                }, cred[col.key] || '')
+                }, nameLabel)
             );
         }
         return React.createElement(TableCell, null, cred[col.key] || '');
@@ -495,64 +513,73 @@ function CredentialTable({
 
     var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
 
-    // Quick filter chips
-    var renderChip = function(label, type, value, isActive) {
-        var isRealm = type === 'realm';
-        var bg = isActive ? (isRealm ? '#bbdefb' : '#a5d6a7') : (isRealm ? '#e3f2fd' : '#e8f5e9');
-        var color = isActive ? (isRealm ? '#0d47a1' : '#1b5e20') : (isRealm ? '#1565c0' : '#2e7d32');
-        var border = isActive ? (isRealm ? '#1565c0' : '#2e7d32') : (isRealm ? '#90caf9' : '#a5d6a7');
-        return React.createElement(
-            'span',
-            {
-                key: type + '-' + value,
-                onClick: function() { handleChipClick(type, value); },
-                style: {
-                    display: 'inline-block',
-                    padding: '2px 10px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: isActive ? '700' : '600',
-                    backgroundColor: bg,
-                    color: color,
-                    border: '2px solid ' + border,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s',
-                }
-            },
-            label
-        );
-    };
-
-    var chipsContent = React.createElement(
+    // Active filter pills row
+    var activeFilterPills = activeFilters.length > 0 ? React.createElement(
         'div',
-        { style: { overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '4px', marginBottom: '0.5rem' } },
+        { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' } },
         React.createElement(
             'span',
-            { style: { marginRight: '0.5rem', fontSize: '11px', color: '#888', lineHeight: '24px' } },
-            'Realms: '
+            { style: { fontSize: '12px', color: '#555', marginRight: '4px' } },
+            'Active filters:'
         ),
-        renderChip('All', 'all', '', !activeChip),
-        uniqueRealms.map(function(r) {
-            return renderChip(r, 'realm', r, activeChip && activeChip.type === 'realm' && activeChip.value === r);
+        activeFilters.map(function(f, i) {
+            var fieldLabel = FILTER_FIELDS.find(function(ff) { return ff.key === f.field; });
+            return React.createElement(
+                'span',
+                {
+                    key: i,
+                    style: {
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: '#e3f2fd',
+                        color: '#1565c0',
+                        border: '1px solid #90caf9',
+                        whiteSpace: 'nowrap',
+                    }
+                },
+                React.createElement('span', null, (fieldLabel ? fieldLabel.label : f.field) + ': ' + f.value),
+                React.createElement(
+                    'span',
+                    {
+                        onClick: function() { handleRemoveFilter(i); },
+                        style: { cursor: 'pointer', fontWeight: 'bold', marginLeft: '2px', fontSize: '13px' }
+                    },
+                    '\u00d7'
+                )
+            );
         }),
         React.createElement(
             'span',
-            { style: { display: 'inline-block', marginRight: '0.5rem', marginLeft: '1rem', fontSize: '11px', color: '#888', lineHeight: '24px' } },
-            'Apps: '
-        ),
-        uniqueApps.map(function(a) {
-            return renderChip(a, 'app', a, activeChip && activeChip.type === 'app' && activeChip.value === a);
-        })
-    );
+            {
+                onClick: handleClearFilters,
+                style: {
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: '500',
+                    color: '#888',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    marginLeft: '8px',
+                }
+            },
+            'Clear all'
+        )
+    ) : null;
 
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
-        // Quick filter chips
-        chipsContent,
+        // Active filter pills row
+        activeFilterPills,
 
-        // Filter bar + pagination controls
+        // Search + pagination controls
         React.createElement(
             'div',
             { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' } },
@@ -561,7 +588,7 @@ function CredentialTable({
                 type: 'text',
                 value: filterText,
                 onChange: function(e) { handleFilterChange(e.target.value); },
-                placeholder: 'Search credentials...',
+                placeholder: 'Search across all fields...',
                 style: {
                     padding: '0.25rem 0.5rem',
                     border: '1px solid #ccc',
@@ -572,20 +599,6 @@ function CredentialTable({
                     boxSizing: 'border-box',
                 },
             }),
-            React.createElement('select', {
-                value: filterType,
-                onChange: function(e) { setFilterType(e.target.value); },
-                style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
-            },
-                React.createElement('option', { value: 'all' }, 'All Fields'),
-                React.createElement('option', { value: 'username' }, 'Username'),
-                React.createElement('option', { value: 'realm' }, 'Realm'),
-                React.createElement('option', { value: 'app' }, 'App'),
-                React.createElement('option', { value: 'owner' }, 'Owner'),
-                React.createElement('option', { value: 'modified' }, 'Modified'),
-                React.createElement('option', { value: 'readRoles' }, 'Read Roles'),
-                React.createElement('option', { value: 'writeRoles' }, 'Write Roles')
-            ),
             React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
                 React.createElement(Dropdown, {
                     open: dropdownOpen,

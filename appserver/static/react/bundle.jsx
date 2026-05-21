@@ -206,7 +206,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
         // Filter/sort state — lifted from CredentialTable so parent can access filtered data for export
         const [filterText, setFilterText] = React.useState('');
-        const [filterType, setFilterType] = React.useState('all');
+        const [activeFilters, setActiveFilters] = React.useState([]);
         const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
 
         // Undo delete state — array of credentials for single + bulk undo
@@ -246,7 +246,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
         // Compute filtered credentials (same logic as CredentialTable)
         const filteredCredentials = React.useMemo(function() {
-            if (!filterText) return credentials;
             return credentials.filter(function(credential) {
                 var name = (credential.name || '').toLowerCase();
                 var realm = (credential.realm || '').toLowerCase();
@@ -255,27 +254,35 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 var aclRead = (credential.aclRead || '').toLowerCase();
                 var aclWrite = (credential.aclWrite || '').toLowerCase();
                 var mtime = (credential.mtime || '').toString();
-                var search = filterText.toLowerCase();
-                if (filterType === 'all') {
-                    return name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search);
-                } else if (filterType === 'username') {
-                    return name.includes(search);
-                } else if (filterType === 'realm') {
-                    return realm.includes(search);
-                } else if (filterType === 'app') {
-                    return app.includes(search);
-                } else if (filterType === 'owner') {
-                    return owner.includes(search);
-                } else if (filterType === 'readRoles') {
-                    return aclRead.includes(search);
-                } else if (filterType === 'writeRoles') {
-                    return aclWrite.includes(search);
-                } else if (filterType === 'modified') {
-                    return mtime.includes(search);
+
+                // Text search across all fields
+                if (filterText) {
+                    var search = filterText.toLowerCase();
+                    if (!(name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search))) {
+                        return false;
+                    }
                 }
+
+                // Active filters — AND logic, exact match per field
+                for (var i = 0; i < activeFilters.length; i++) {
+                    var f = activeFilters[i];
+                    var val = f.value.toLowerCase();
+                    if (f.field === 'username' && !name.includes(val)) return false;
+                    if (f.field === 'realm') {
+                        var isGlobal = !credential.realm || credential.realm === 'nobody';
+                        if (val === 'global' && !isGlobal) return false;
+                        if (val !== 'global' && !((credential.realm || '').toLowerCase()).includes(val)) return false;
+                    }
+                    if (f.field === 'app' && !(credential.app || '').toLowerCase().includes(val)) return false;
+                    if (f.field === 'owner' && !(credential.owner || '').toLowerCase().includes(val)) return false;
+                    if (f.field === 'readRoles' && !aclRead.includes(val)) return false;
+                    if (f.field === 'writeRoles' && !aclWrite.includes(val)) return false;
+                    if (f.field === 'modified' && !mtime.includes(val)) return false;
+                }
+
                 return true;
             });
-        }, [credentials, filterText, filterType]);
+        }, [credentials, filterText, activeFilters]);
 
         // Compute sorted credentials (same logic as CredentialTable)
         const sortedCredentials = React.useMemo(function() {
@@ -335,8 +342,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                     return;
                 }
 
-                // Ctrl+N — open create credential
-                if (e.ctrlKey && e.key === 'n' && !inInput) {
+                // Ctrl+Shift+N — open create credential (Ctrl+N is browser new window)
+                if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n') && !inInput) {
                     e.preventDefault();
                     setEditingCredential(null);
                     setModals(prev => ({ ...prev, form: true }));
@@ -923,8 +930,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
                 filterText: filterText,
                 onFilterChange: setFilterText,
-                filterType: filterType,
-                onFilterTypeChange: setFilterType,
+                activeFilters: activeFilters,
+                onActiveFiltersChange: setActiveFilters,
                 sortConfig: sortConfig,
                 onSortChange: setSortConfig,
             }),
