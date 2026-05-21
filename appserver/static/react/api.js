@@ -288,10 +288,64 @@ function buildAclPath(stanzaKey, owner, app) {
 /**
  * Get all credentials
  */
+/**
+ * Parse a credential name from configs/conf-passwords format.
+ * Format: credential::username: or credential:realm:username:
+ * Returns { name, realm }
+ */
+function parseCredentialName(fullName) {
+    var str = fullName || '';
+    // Strip 'credential:' prefix
+    if (str.startsWith('credential:')) {
+        str = str.substring(11);
+    }
+    // Format is now realm:username: (trailing colon)
+    // Remove trailing colon
+    if (str.endsWith(':')) {
+        str = str.substring(0, str.length - 1);
+    }
+    // Split on first colon to get realm:username
+    var colonIdx = str.indexOf(':');
+    if (colonIdx === -1) {
+        return { name: str, realm: '' };
+    }
+    return {
+        realm: str.substring(0, colonIdx),
+        name: str.substring(colonIdx + 1),
+    };
+}
+
+/**
+ * Flatten a configs/conf-passwords entry to the shape expected by components.
+ */
+function flattenConfigEntry(entry) {
+    var acl = entry.acl || {};
+    var content = entry.content || {};
+    var perms = acl.perms || {};
+    var fullName = entry.name || '';
+    var parsed = parseCredentialName(fullName);
+
+    return {
+        name: parsed.name,
+        realm: parsed.realm,
+        app: acl.app || 'search',
+        owner: acl.owner || 'nobody',
+        aclRead: (perms.read || []).join(', '),
+        aclWrite: (perms.write || []).join(', '),
+        sharing: acl.sharing || 'app',
+        stanzaKey: fullName,
+        editLink: (entry.links && entry.links.edit) || null,
+        mtime: entry.mtime || '',
+    };
+}
+
 async function getAllCredentials() {
     try {
-        const data = await apiRequest('');
-        return (data.entry || []).map(flattenCredential);
+        // Use configs/conf-passwords which returns ALL credentials including user-scoped
+        // /storage/passwords filters out user-scoped credentials
+        var data = await splunkdRequest('/servicesNS/-/-/configs/conf-passwords?count=0', { method: 'GET' });
+        var credentials = (data.entry || []).map(flattenConfigEntry);
+        return credentials;
     } catch (error) {
         console.error('Error fetching credentials:', error);
         throw error;
