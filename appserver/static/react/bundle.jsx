@@ -11,6 +11,8 @@ const ReactDOM = require('react-dom/client');
 // Import UI components from Splunk design system
 const ButtonMod = require('@splunk/react-ui/Button');
 const { default: Button } = ButtonMod;
+const DropdownMod = require('@splunk/react-ui/Dropdown');
+const { default: Dropdown } = DropdownMod;
 const ModalMod = require('@splunk/react-ui/Modal');
 var Modal = ModalMod.default;
 ModalMod.Header && (Modal.Header = ModalMod.Header);
@@ -51,6 +53,89 @@ var GlobalStyles = _sc.createGlobalStyle`
         background-color: #e3f2fd !important;
     }
 
+    /* Dark theme overrides — scoped to app containers */
+    .credential-manager-app.dark-theme,
+    .audit-log-app.dark-theme {
+        color: #e0e0e0 !important;
+
+        table, table tbody, table thead, table tr, table th, table td {
+            background-color: #2d2d2d !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+
+        table tbody tr:nth-child(even) {
+            background-color: #363636 !important;
+        }
+
+        table tbody tr:hover {
+            background-color: #455a64 !important;
+        }
+
+        input, select, textarea {
+            background-color: #363636 !important;
+            border-color: #555 !important;
+            color: #e0e0e0 !important;
+        }
+
+        input::placeholder {
+            color: #888 !important;
+        }
+
+        .column-picker {
+            background-color: #2d2d2d !important;
+            color: #e0e0e0 !important;
+        }
+
+        /* Chip colors for dark */
+        span[style*="background-color: #e3f2fd"] {
+            background-color: #1a3a5c !important;
+            color: #90caf9 !important;
+            border-color: #1565c0 !important;
+        }
+        span[style*="background-color: #e8f5e9"] {
+            background-color: #1b3a1b !important;
+            color: #a5d6a7 !important;
+            border-color: #2e7d32 !important;
+        }
+        span[style*="background-color: #fff3e0"] {
+            background-color: #4a3000 !important;
+            color: #ffcc80 !important;
+            border-color: #e65100 !important;
+        }
+        span[style*="background-color: #f3e5f5"] {
+            background-color: #3a1a3a !important;
+            color: #ce93d8 !important;
+            border-color: #7b1fa2 !important;
+        }
+        span[style*="background-color: #fce4ec"] {
+            background-color: #3a1a1a !important;
+            color: #f48fb1 !important;
+            border-color: #c62828 !important;
+        }
+        span[style*="background-color: #e8eaf6"] {
+            background-color: #1a1a3a !important;
+            color: #9fa8da !important;
+            border-color: #283593 !important;
+        }
+        span[style*="background-color: #f5f5f5"] {
+            background-color: #424242 !important;
+            color: #bdbdbd !important;
+            border-color: #616161 !important;
+        }
+
+        /* Modal dark overrides */
+        .sc-gsnKVre {
+            background-color: #2d2d2d !important;
+            color: #e0e0e0 !important;
+        }
+
+        code, pre {
+            background-color: #363636 !important;
+            color: #e0e0e0 !important;
+        }
+    }
+
     /* Kill blue focus ring on all interactive elements (modals, forms, table) */
     button:focus,
     button:focus-visible,
@@ -70,7 +155,7 @@ const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
 const AuditLog = require('./components/AuditLog');
 const API = require('./api');
-const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./components/Modal');
+const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal } = require('./components/Modal');
 
 (function() {
     'use strict';
@@ -96,8 +181,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             password: false,
             delete: false,
             import: false,
-            result: false,
             bulkDelete: false,
+            bulkEdit: false,
+            result: false,
+            help: false,
         });
 
         // Modal data
@@ -113,6 +200,103 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
 
         // Bulk selection
         const [selectedRows, setSelectedRows] = React.useState([]);
+
+        // More actions dropdown
+        const [moreDropdownOpen, setMoreDropdownOpen] = React.useState(false);
+
+        // Filter/sort state — lifted from CredentialTable so parent can access filtered data for export
+        const [filterText, setFilterText] = React.useState('');
+        const [filterType, setFilterType] = React.useState('all');
+        const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
+
+        // Undo delete state — array of credentials for single + bulk undo
+        const [undoState, setUndoState] = React.useState({ credentials: [], secondsLeft: 0 });
+
+        // Countdown timer for undo toast
+        React.useEffect(() => {
+            if (undoState.credentials.length > 0 && undoState.secondsLeft > 0) {
+                var timer = setInterval(function() {
+                    setUndoState(function(prev) {
+                        if (prev.secondsLeft <= 1) {
+                            return { credentials: [], secondsLeft: 0 };
+                        }
+                        return { credentials: prev.credentials, secondsLeft: prev.secondsLeft - 1 };
+                    });
+                }, 1000);
+                return function() { clearInterval(timer); };
+            }
+        }, [undoState]);
+
+        // Dark theme — persist preference in localStorage
+        const [darkTheme, setDarkTheme] = React.useState(function() {
+            try {
+                return localStorage.getItem('credManager_darkTheme') === 'true';
+            } catch (e) {
+                return false;
+            }
+        });
+
+        function toggleDarkTheme() {
+            setDarkTheme(function(prev) {
+                var next = !prev;
+                try { localStorage.setItem('credManager_darkTheme', String(next)); } catch (e) {}
+                return next;
+            });
+        }
+
+        // Compute filtered credentials (same logic as CredentialTable)
+        const filteredCredentials = React.useMemo(function() {
+            if (!filterText) return credentials;
+            return credentials.filter(function(credential) {
+                var name = (credential.name || '').toLowerCase();
+                var realm = (credential.realm || '').toLowerCase();
+                var app = (credential.app || '').toLowerCase();
+                var owner = (credential.owner || '').toLowerCase();
+                var aclRead = (credential.aclRead || '').toLowerCase();
+                var aclWrite = (credential.aclWrite || '').toLowerCase();
+                var mtime = (credential.mtime || '').toString();
+                var search = filterText.toLowerCase();
+                if (filterType === 'all') {
+                    return name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search);
+                } else if (filterType === 'username') {
+                    return name.includes(search);
+                } else if (filterType === 'realm') {
+                    return realm.includes(search);
+                } else if (filterType === 'app') {
+                    return app.includes(search);
+                } else if (filterType === 'owner') {
+                    return owner.includes(search);
+                } else if (filterType === 'readRoles') {
+                    return aclRead.includes(search);
+                } else if (filterType === 'writeRoles') {
+                    return aclWrite.includes(search);
+                } else if (filterType === 'modified') {
+                    return mtime.includes(search);
+                }
+                return true;
+            });
+        }, [credentials, filterText, filterType]);
+
+        // Compute sorted credentials (same logic as CredentialTable)
+        const sortedCredentials = React.useMemo(function() {
+            if (!sortConfig.key) return filteredCredentials;
+            return [...filteredCredentials].sort(function(a, b) {
+                var aValue = a[sortConfig.key] || '';
+                var bValue = b[sortConfig.key] || '';
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
+
+        // Refs for export — dropdown renders via portal, so onClick handlers capture stale closures.
+        // Reading from refs at click time ensures we get the latest filtered/selected data.
+        const sortedCredentialsRef = React.useRef(sortedCredentials);
+        const filteredCredentialsRef = React.useRef(filteredCredentials);
+        const selectedRowsRef = React.useRef(selectedRows);
+        sortedCredentialsRef.current = sortedCredentials;
+        filteredCredentialsRef.current = filteredCredentials;
+        selectedRowsRef.current = selectedRows;
 
         // Reference data — apps, users, roles for form dropdowns
         const [refData, setRefData] = React.useState({
@@ -133,6 +317,49 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         // Default role constants from API -- prevents empty ACL stripping access (GAP-V03/V04)
         const DEFAULT_READ = API.DEFAULT_READ_ROLES ? API.DEFAULT_READ_ROLES.join(', ') : 'admin, power';
         const DEFAULT_WRITE = API.DEFAULT_WRITE_ROLES ? API.DEFAULT_WRITE_ROLES.join(', ') : 'admin, power';
+
+        // Keyboard shortcuts
+        React.useEffect(() => {
+            function isInputField(el) {
+                var tag = (el.tagName || '').toLowerCase();
+                return tag === 'input' || tag === 'textarea' || tag === 'select' || el.getAttribute('contenteditable') === 'true';
+            }
+
+            function handleKeyDown(e) {
+                var inInput = isInputField(document.activeElement);
+
+                // ? toggles help modal
+                if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+                    e.preventDefault();
+                    setModals(prev => ({ ...prev, help: !prev.help }));
+                    return;
+                }
+
+                // Ctrl+N — open create credential
+                if (e.ctrlKey && e.key === 'n' && !inInput) {
+                    e.preventDefault();
+                    setEditingCredential(null);
+                    setModals(prev => ({ ...prev, form: true }));
+                    return;
+                }
+
+                // Escape — close any open modal
+                if (e.key === 'Escape' && !inInput) {
+                    setModals(prev => ({
+                        form: false,
+                        password: false,
+                        delete: false,
+                        import: false,
+                        bulkDelete: false,
+                        result: false,
+                        help: false,
+                    }));
+                    return;
+                }
+            }
+            document.addEventListener('keydown', handleKeyDown);
+            return function() { document.removeEventListener('keydown', handleKeyDown); };
+        }, []);
 
         // Load credentials on mount
         React.useEffect(() => {
@@ -251,6 +478,19 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         async function handleDeleteCredential() {
             if (!selectedCredential) return;
             try {
+                // Fetch password for undo before deleting
+                var password;
+                try {
+                    password = await API.getCredentialPassword(
+                        selectedCredential.name, selectedCredential.realm,
+                        selectedCredential.app, selectedCredential.owner || 'nobody',
+                        selectedCredential.sharing || 'app'
+                    );
+                } catch (e) {
+                    console.warn('Could not fetch password for undo:', e);
+                }
+                var credForUndo = Object.assign({}, selectedCredential);
+                credForUndo._password = password;
                 await API.deleteCredential(
                     selectedCredential.name, selectedCredential.realm,
                     selectedCredential.app, selectedCredential.owner || 'nobody',
@@ -260,11 +500,60 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 );
                 await loadCredentials();
                 setModals(prev => ({ ...prev, delete: false }));
+                setUndoState({ credentials: [credForUndo], secondsLeft: 10 });
                 setSelectedCredential(null);
-                showSuccess('Credential Deleted', [`Deleted <strong>${escapeHtml(selectedCredential.name)}</strong>`]);
             } catch (err) {
                 console.error('Error deleting credential:', err);
-                showError('Failed to Delete Credential', [`Error: ${getErrorMessage(err)}`]);
+                showError('Failed to Delete Credential', ['Error: ' + getErrorMessage(err)]);
+            }
+        }
+
+        // Undo delete — recreate credential(s)
+        async function handleUndoDelete() {
+            if (!undoState.credentials.length) return;
+            var creds = undoState.credentials;
+            setUndoState({ credentials: [], secondsLeft: 0 });
+            try {
+                const results = await Promise.allSettled(
+                    creds.map(function(cred) {
+                        if (!cred._password) {
+                            return Promise.reject(new Error('Password was not available for undo'));
+                        }
+                        return API.createCredential(
+                            cred.name,
+                            cred._password,
+                            cred.realm || '',
+                            cred.app || 'search',
+                            cred.owner || 'nobody',
+                            cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+                            cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+                            cred.sharing || 'app'
+                        );
+                    })
+                );
+                await loadCredentials();
+                var successMsgs = [];
+                var errorMsgs = [];
+                results.forEach(function(result, i) {
+                    var c = creds[i];
+                    if (result.status === 'fulfilled') {
+                        successMsgs.push('Restored ' + escapeHtml(c.name));
+                    } else {
+                        errorMsgs.push(escapeHtml(c.name) + ': ' + getErrorMessage(result.reason));
+                    }
+                });
+                if (errorMsgs.length === 0) {
+                    showSuccess('Undo Delete', successMsgs);
+                } else if (successMsgs.length === 0) {
+                    showError('Undo Failed', errorMsgs);
+                } else {
+                    var allMsgs = successMsgs.concat(['---'], errorMsgs);
+                    setResult({ title: 'Undo Delete — Partial', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
+                }
+            } catch (err) {
+                console.error('Error undoing delete:', err);
+                showError('Undo Failed', ['Error: ' + getErrorMessage(err)]);
             }
         }
 
@@ -274,6 +563,25 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             const successMessages = [];
 
             try {
+                // Fetch passwords for undo before deleting
+                var credsForUndo = await Promise.all(
+                    selectedRows.map(async function(row) {
+                        var password;
+                        try {
+                            password = await API.getCredentialPassword(
+                                row.name, row.realm, row.app,
+                                row.owner || 'nobody',
+                                row.sharing || 'app'
+                            );
+                        } catch (e) {
+                            console.warn('Could not fetch password for undo (' + row.name + '):', e);
+                        }
+                        var cred = Object.assign({}, row);
+                        cred._password = password;
+                        return cred;
+                    })
+                );
+
                 const results = await Promise.allSettled(
                     selectedRows.map(row =>
                         API.deleteCredential(
@@ -287,12 +595,71 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 );
 
                 let errorMessages = [];
+                var deletedForUndo = [];
                 results.forEach((result, i) => {
                     const row = selectedRows[i];
                     if (result.status === 'fulfilled') {
-                        successMessages.push(`Deleted <strong>${escapeHtml(row.name)}</strong>`);
+                        successMessages.push('Deleted ' + escapeHtml(row.name));
+                        deletedForUndo.push(credsForUndo[i]);
                     } else {
-                        errorMessages.push(`<strong>${escapeHtml(row.name)}</strong>: ${getErrorMessage(result.reason)}`);
+                        errorMessages.push(escapeHtml(row.name) + ': ' + getErrorMessage(result.reason));
+                    }
+                });
+
+                await loadCredentials();
+                handleDeselectAll();
+
+                // Set undo state for successfully deleted credentials
+                if (deletedForUndo.length > 0) {
+                    setUndoState({ credentials: deletedForUndo, secondsLeft: 10 });
+                }
+
+                if (errorMessages.length === 0) {
+                    // Toast will show, skip redundant success modal
+                    if (deletedForUndo.length === selectedRows.length) {
+                        return;
+                    }
+                }
+                if (errorMessages.length === 0) {
+                    showSuccess('Bulk Delete Complete', successMessages);
+                } else if (successMessages.length === 0) {
+                    showError('Bulk Delete Failed', errorMessages.map(m => 'ERROR: ' + m));
+                } else {
+                    const allMsgs = successMessages.concat(
+                        ['---'],
+                        errorMessages.map(m => 'ERROR: ' + m)
+                    );
+                    setResult({ title: 'Bulk Delete -- Partial Success', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
+                }
+            } catch (err) {
+                console.error('Error in bulk delete:', err);
+                showError('Bulk Delete Failed', ['Error: ' + getErrorMessage(err)]);
+            }
+        }
+
+        // ─── Bulk edit handler ───────────────────────────────────────
+        async function handleBulkEdit(updates, callback) {
+            var successMessages = [];
+            var errorMessages = [];
+
+            try {
+                var results = await Promise.allSettled(
+                    updates.map(function(c) {
+                        return API.updateCredential(c.name, c.realm, c.app, {
+                            aclRead: c.aclRead ? c.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : undefined,
+                            aclWrite: c.aclWrite ? c.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : undefined,
+                            owner: c.owner || undefined,
+                        }).catch(function(err) { throw err; });
+                    })
+                );
+
+                results.forEach(function(result, i) {
+                    var c = updates[i];
+                    if (result.status === 'fulfilled') {
+                        successMessages.push('Updated <strong>' + escapeHtml(c.name) + '</strong>');
+                    } else {
+                        errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong>: ' + getErrorMessage(result.reason));
                     }
                 });
 
@@ -300,21 +667,19 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 handleDeselectAll();
 
                 if (errorMessages.length === 0) {
-                    showSuccess('Bulk Delete Complete', successMessages);
+                    showSuccess('Bulk Edit Complete', successMessages);
                 } else if (successMessages.length === 0) {
-                    showError('Bulk Delete Failed', errorMessages.map(m => `ERROR: ${m}`));
+                    showError('Bulk Edit Failed', errorMessages.map(function(m) { return 'ERROR: ' + m; }));
                 } else {
-                    // Partial success
-                    const allMsgs = successMessages.concat(
-                        ['---'],
-                        errorMessages.map(m => `ERROR: ${m}`)
-                    );
-                    setResult({ title: 'Bulk Delete -- Partial Success', messages: allMsgs });
+                    var allMsgs = successMessages.concat(['---'], errorMessages.map(function(m) { return 'ERROR: ' + m; }));
+                    setResult({ title: 'Bulk Edit -- Partial Success', messages: allMsgs });
                     setModals(prev => ({ ...prev, result: true }));
                 }
             } catch (err) {
-                console.error('Error in bulk delete:', err);
-                showError('Bulk Delete Failed', [`Error: ${getErrorMessage(err)}`]);
+                console.error('Error in bulk edit:', err);
+                showError('Bulk Edit Failed', ['Error: ' + getErrorMessage(err)]);
+            } finally {
+                if (callback) callback();
             }
         }
 
@@ -399,6 +764,32 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             URL.revokeObjectURL(url);
         }
 
+        // ─── CSV export handler ───────────────────────────────────────
+        function handleExportCSV(mode) {
+            var credsToExport;
+            var filename;
+            if (mode === 'selected') {
+                credsToExport = selectedRowsRef.current.length > 0 ? selectedRowsRef.current : credentials;
+                filename = 'credentials-selected-export.csv';
+            } else if (mode === 'filtered') {
+                credsToExport = filteredCredentialsRef.current;
+                filename = 'credentials-filtered-export.csv';
+            } else {
+                credsToExport = credentials;
+                filename = 'credentials-export.csv';
+            }
+            const content = API.generateExportCSV(credsToExport);
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         // ─── Selection handlers ────────────────────────────────────────
         
         function handleSelectRow(cred) {
@@ -419,8 +810,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             setSelectedRows([]);
         }
 
-        const isAllSelected = credentials.length > 0 && selectedRows.length === credentials.length;
-
         /** HTML escape helper -- sanitizes dynamic content for innerHTML rendering */
         function escapeHtml(str) {
             return String(str ?? '')
@@ -431,39 +820,82 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         }
 
         if (loading) {
-            return React.createElement('div', { className: 'credential-manager-app', style: { padding: '2rem' } }, React.createElement('p', null, 'Loading credentials...'));
+            return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : ''), style: { padding: '2rem' } }, React.createElement('p', null, 'Loading credentials...'));
         }
 
         if (error) {
-            return React.createElement('div', { className: 'credential-manager-app', style: { padding: '2rem', border: '1px solid #ff4444', borderRadius: '8px', backgroundColor: '#fff5f5' } },
+            return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : ''), style: { padding: '2rem', border: '1px solid #ff4444', borderRadius: '8px', backgroundColor: '#fff5f5' } },
                 React.createElement('div', { style: { color: '#d32f2f', marginBottom: '1rem', fontWeight: 'bold' } }, 'Error: ' + error),
                 React.createElement('p', { style: { fontSize: '14px', color: '#666', marginBottom: '1rem' } }, 'Check browser console for details. Ensure you have the required Splunk capabilities (admin_all_objects, list_storage_passwords).'),
                 React.createElement(Button, { onClick: loadCredentials, children: 'Retry' })
             );
         }
 
-        return React.createElement('div', { className: 'credential-manager-app' },
+        return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : '') },
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
-                React.createElement('h1', { style: { margin: 0 } }, 'Credential Manager'),
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
                     selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px' } }, `${selectedRows.length} selected`),
+                    selectedRows.length > 0 && React.createElement(Button, {
+                        onClick: () => setModals(prev => ({ ...prev, bulkEdit: true })),
+                        appearance: 'subtle',
+                        children: `Edit Selected (${selectedRows.length})`
+                    }),
                     selectedRows.length > 0 && React.createElement(Button, {
                         onClick: () => setModals(prev => ({ ...prev, bulkDelete: true })),
                         appearance: 'destructive',
                         children: `Delete Selected (${selectedRows.length})`
                     }),
-                    React.createElement(Button, { onClick: handleDownloadTemplate, children: 'Download Template' }),
-                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, import: true })), children: 'Import CSV' }),
-                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' })
+                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
+                    React.createElement(Dropdown, {
+                        open: moreDropdownOpen,
+                        onRequestOpen: () => setMoreDropdownOpen(true),
+                        onRequestClose: () => setMoreDropdownOpen(false),
+                        closeReasons: ['clickAway', 'escapeKey', 'toggleClick'],
+                        toggle: React.createElement(Button, { label: '⋮', appearance: 'subtle', title: 'Import/Export' })
+                    },
+                        React.createElement('div', { style: { padding: '0.25rem 0' } },
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleDownloadTemplate(); },
+                                appearance: 'subtle',
+                                children: 'Download Template',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); setModals(prev => ({ ...prev, import: true })); },
+                                appearance: 'subtle',
+                                children: 'Import CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('all'); },
+                                appearance: 'subtle',
+                                children: 'Export All CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('filtered'); },
+                                appearance: 'subtle',
+                                children: 'Export Filtered CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('selected'); },
+                                appearance: 'subtle',
+                                children: 'Export Selected CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            })
+                        )
+                    ),
+                    React.createElement(Button, { onClick: toggleDarkTheme, appearance: 'subtle', title: darkTheme ? 'Light mode' : 'Dark mode', children: darkTheme ? '☀' : '🌙' }),
+                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, help: true })), appearance: 'subtle', title: 'Help', children: '?' })
                 )
             ),
 
             // Credentials table
             React.createElement(CredentialTable, {
-                credentials,
+                credentials: sortedCredentials,
                 selectedRows,
-                isAllSelected,
                 onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
                 onReveal: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, password: true })); },
                 onSelectRow: handleSelectRow,
@@ -471,6 +903,12 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onDeselectAll: handleDeselectAll,
                 onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
                 onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
+                filterText: filterText,
+                onFilterChange: setFilterText,
+                filterType: filterType,
+                onFilterTypeChange: setFilterType,
+                sortConfig: sortConfig,
+                onSortChange: setSortConfig,
             }),
 
             // Form modal — dedicated modal wrapper for CredentialForm
@@ -513,6 +951,16 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             }),
 
             // Bulk delete confirmation modal
+            modals.bulkEdit && React.createElement(BulkEditModal, {
+                isOpen: modals.bulkEdit,
+                selectedRows: selectedRows,
+                availableRoles: refData.roles,
+                availableUsers: refData.users,
+                onClose: () => setModals(prev => ({ ...prev, bulkEdit: false })),
+                onApply: handleBulkEdit,
+            }),
+
+            // Bulk delete confirmation modal
             modals.bulkDelete && React.createElement(BulkDeleteModal, {
                 isOpen: modals.bulkDelete,
                 selectedRows: selectedRows,
@@ -525,7 +973,49 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 title: result.title,
                 messages: result.messages,
                 onClose: () => setModals(prev => ({ ...prev, result: false })),
-            })
+            }),
+
+            // Help modal
+            modals.help && React.createElement(HelpModal, {
+                isOpen: modals.help,
+                onClose: () => setModals(prev => ({ ...prev, help: false })),
+            }),
+
+            // Undo delete toast
+            undoState.credentials.length > 0 && React.createElement(
+                'div',
+                {
+                    style: {
+                        position: 'fixed',
+                        bottom: '2rem',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        backgroundColor: '#333',
+                        color: '#fff',
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem',
+                        fontSize: '14px',
+                        zIndex: 9999,
+                    }
+                },
+                React.createElement('span', null,
+                    undoState.credentials.length + ' credential(s) deleted',
+                    undoState.credentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoState.credentials[0].name)) : null
+                ),
+                React.createElement(Button, {
+                    onClick: handleUndoDelete,
+                    appearance: 'primary',
+                    children: 'Undo',
+                    style: { padding: '4px 12px', fontSize: '13px' }
+                }),
+                React.createElement('span', {
+                    style: { fontSize: '12px', color: '#aaa' }
+                }, undoState.secondsLeft + 's')
+            )
         );
     }
 

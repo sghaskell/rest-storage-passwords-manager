@@ -265,6 +265,7 @@ function flattenCredential(entry) {
         sharing: acl.sharing || 'app',
         stanzaKey: entry.name || '',
         editLink: (entry.links && entry.links.edit) || null,
+        mtime: entry.mtime || '',
     };
 }
 
@@ -724,9 +725,43 @@ function parseCSV(text) {
 }
 
 /**
-  * Generate CSV template for download — all 8 columns with comments and example row.
-  * Matches JS version downloadCSVTemplate() exactly (password-crud.js L926-1101).
-  */
+ * Generate a CSV export of credentials — metadata only (passwords are not stored in the list response).
+ * Outputs the same 8-column format as the import template so the file can be re-imported after adding passwords.
+ */
+function generateExportCSV(credentials) {
+    var lines = [
+        '# REST storage/passwords Manager — Credential Export',
+        '# Passwords are NOT included — Splunk does not return them in list responses.',
+        '# Add passwords back, then re-import using "Import CSV".',
+        '#',
+        'username,password,realm,app,owner,sharing,read,write',
+    ];
+    credentials.forEach(function(c) {
+        var esc = function(s) {
+            s = (s || '').toString();
+            if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+                return '"' + s.replace(/"/g, '""') + '"';
+            }
+            return s;
+        };
+        lines.push([
+            esc(c.name),
+            '',
+            esc(c.realm),
+            esc(c.app),
+            esc(c.owner),
+            esc(c.sharing),
+            esc(c.aclRead),
+            esc(c.aclWrite),
+        ].join(','));
+    });
+    return lines.join('\n') + '\n';
+}
+
+/**
+ * Generate CSV template for download — all 8 columns with comments and example row.
+ * Matches JS version downloadCSVTemplate() exactly (password-crud.js L926-1101).
+ */
  function generateCSVTemplate() {
      const app = getCurrentApp();
      const owner = getCurrentUser();
@@ -1080,6 +1115,7 @@ module.exports = {
     getCurrentUser,
     parseCSV,
     generateCSVTemplate,
+    generateExportCSV,
     getAllCredentials,
     getCredential,
     createCredential,
