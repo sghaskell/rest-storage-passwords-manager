@@ -175,18 +175,18 @@ function CredentialTable({
             for (var i = 0; i < activeFilters.length; i++) {
                 var f = activeFilters[i];
                 var val = f.value.toLowerCase();
-                if (f.field === 'username' && !name.includes(val)) return false;
+                if (f.field === 'username' && name !== val) return false;
                 if (f.field === 'realm') {
                     var realmStr = (credential.realm || '').toLowerCase();
                     var isGlobal = !credential.realm || credential.realm === 'nobody';
                     if (val === 'global' && !isGlobal) return false;
-                    if (val !== 'global' && !realmStr.includes(val)) return false;
+                    if (val !== 'global' && realmStr !== val) return false;
                 }
-                if (f.field === 'app' && !(credential.app || '').toLowerCase().includes(val)) return false;
-                if (f.field === 'owner' && !(credential.owner || '').toLowerCase().includes(val)) return false;
-                if (f.field === 'readRoles' && !aclRead.includes(val)) return false;
-                if (f.field === 'writeRoles' && !aclWrite.includes(val)) return false;
-                if (f.field === 'modified' && !mtime.includes(val)) return false;
+                if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
+                if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                if (f.field === 'readRoles' && aclRead !== val) return false;
+                if (f.field === 'writeRoles' && aclWrite !== val) return false;
+                if (f.field === 'modified' && mtime !== val) return false;
             }
 
             return true;
@@ -229,18 +229,23 @@ function CredentialTable({
     }
 
     // Handle adding a filter from clicking a cell pill
+    // Uses functional updater to avoid stale closure
     function handleAddFilter(field, value) {
-        var exists = activeFilters.some(function(f) { return f.field === field && f.value === value; });
-        if (exists) return;
-        setActiveFilters(activeFilters.concat([{ field: field, value: value }]));
+        setActiveFilters(function(prev) {
+            var exists = prev.some(function(f) { return f.field === field && f.value === value; });
+            if (exists) return prev;
+            return prev.concat([{ field: field, value: value }]);
+        });
         setCurrentPage(1);
     }
 
     // Handle removing a filter
     function handleRemoveFilter(index) {
-        var next = activeFilters.slice();
-        next.splice(index, 1);
-        setActiveFilters(next);
+        setActiveFilters(function(prev) {
+            var next = prev.slice();
+            next.splice(index, 1);
+            return next;
+        });
         setCurrentPage(1);
     }
 
@@ -361,7 +366,7 @@ function CredentialTable({
         }
         if (col.key === 'mtime') {
             return React.createElement(TableCell, {
-                style: { fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }
+                style: { fontSize: '12px', color: 'var(--ct-text-muted)', whiteSpace: 'nowrap' }
             }, formatMtime(cred.mtime));
         }
         if (col.key === 'realm') {
@@ -377,9 +382,9 @@ function CredentialTable({
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: realmActive ? '#bbdefb' : (isGlobal ? '#f5f5f5' : '#e3f2fd'),
-                        color: realmActive ? '#0d47a1' : (isGlobal ? '#757575' : '#1565c0'),
-                        border: '1px solid ' + (realmActive ? '#1565c0' : (isGlobal ? '#e0e0e0' : '#90caf9')),
+                        backgroundColor: realmActive ? 'var(--ct-pill-realm-active-bg)' : (isGlobal ? 'var(--ct-pill-realm-global-bg)' : 'var(--ct-pill-realm-bg)'),
+                        color: realmActive ? 'var(--ct-pill-realm-active-color)' : (isGlobal ? 'var(--ct-pill-realm-global-color)' : 'var(--ct-pill-realm-color)'),
+                        border: '1px solid ' + (realmActive ? 'var(--ct-pill-realm-active-border)' : (isGlobal ? 'var(--ct-pill-realm-global-border)' : 'var(--ct-pill-realm-border)')),
                         whiteSpace: 'nowrap',
                         cursor: 'pointer',
                     }
@@ -398,9 +403,9 @@ function CredentialTable({
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: appActive ? '#a5d6a7' : '#e8f5e9',
-                        color: appActive ? '#1b5e20' : '#2e7d32',
-                        border: '1px solid ' + (appActive ? '#2e7d32' : '#a5d6a7'),
+                        backgroundColor: appActive ? 'var(--ct-pill-app-active-bg)' : 'var(--ct-pill-app-bg)',
+                        color: appActive ? 'var(--ct-pill-app-active-color)' : 'var(--ct-pill-app-color)',
+                        border: '1px solid ' + (appActive ? 'var(--ct-pill-app-active-border)' : 'var(--ct-pill-app-border)'),
                         whiteSpace: 'nowrap',
                         cursor: 'pointer',
                     }
@@ -419,9 +424,9 @@ function CredentialTable({
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: ownerActive ? '#ffe0b2' : '#fff3e0',
-                        color: ownerActive ? '#e65100' : '#e65100',
-                        border: '1px solid ' + (ownerActive ? '#e65100' : '#ffcc80'),
+                        backgroundColor: ownerActive ? 'var(--ct-pill-owner-active-bg)' : 'var(--ct-pill-owner-bg)',
+                        color: ownerActive ? 'var(--ct-pill-owner-active-color)' : 'var(--ct-pill-owner-color)',
+                        border: '1px solid ' + (ownerActive ? 'var(--ct-pill-owner-active-border)' : 'var(--ct-pill-owner-border)'),
                         whiteSpace: 'nowrap',
                         cursor: 'pointer',
                     }
@@ -431,7 +436,14 @@ function CredentialTable({
         if (col.key === 'aclRead' || col.key === 'aclWrite') {
             var roles = (cred[col.key] || '').split(',').map(function(r) { return r.trim(); }).filter(function(r) { return r; });
             var filterField = col.key === 'aclRead' ? 'readRoles' : 'writeRoles';
-            var c = col.key === 'aclRead' ? { bg: '#f3e5f5', color: '#7b1fa2', border: '#ce93d8', activeBg: '#e1bee7', activeBorder: '#7b1fa2' } : { bg: '#fce4ec', color: '#c62828', border: '#f48fb1', activeBg: '#f8bbd0', activeBorder: '#c62828' };
+            var prefix = col.key === 'aclRead' ? 'read' : 'write';
+            var c = {
+                bg: 'var(--ct-pill-' + prefix + '-bg)',
+                color: 'var(--ct-pill-' + prefix + '-color)',
+                border: 'var(--ct-pill-' + prefix + '-border)',
+                activeBg: 'var(--ct-pill-' + prefix + '-active-bg)',
+                activeBorder: 'var(--ct-pill-' + prefix + '-active-border)',
+            };
             return React.createElement(TableCell, null,
                 React.createElement(
                     'div',
@@ -470,9 +482,9 @@ function CredentialTable({
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: nameActive ? '#c5cae9' : '#e8eaf6',
-                        color: nameActive ? '#1a237e' : '#283593',
-                        border: '1px solid ' + (nameActive ? '#283593' : '#9fa8da'),
+                        backgroundColor: nameActive ? 'var(--ct-pill-name-active-bg)' : 'var(--ct-pill-name-bg)',
+                        color: nameActive ? 'var(--ct-pill-name-active-color)' : 'var(--ct-pill-name-color)',
+                        border: '1px solid ' + (nameActive ? 'var(--ct-pill-name-active-border)' : 'var(--ct-pill-name-border)'),
                         whiteSpace: 'nowrap',
                         cursor: 'pointer',
                     }
@@ -508,7 +520,7 @@ function CredentialTable({
             );
         })
         : [React.createElement(TableRow, { key: 'empty' },
-            React.createElement(TableCell, { colSpan: getColSpan(), style: { textAlign: 'center', padding: '2rem', color: '#666' } }, 'No credentials found')
+            React.createElement(TableCell, { colSpan: getColSpan(), style: { textAlign: 'center', padding: '2rem', color: 'var(--ct-empty-text)' } }, 'No credentials found')
         )];
 
     var labelStyle = { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' };
@@ -519,7 +531,7 @@ function CredentialTable({
         { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' } },
         React.createElement(
             'span',
-            { style: { fontSize: '12px', color: '#555', marginRight: '4px' } },
+            { style: { fontSize: '12px', color: 'var(--ct-text-label)', marginRight: '4px' } },
             'Active filters:'
         ),
         activeFilters.map(function(f, i) {
@@ -536,9 +548,9 @@ function CredentialTable({
                         borderRadius: '12px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        backgroundColor: '#e3f2fd',
-                        color: '#1565c0',
-                        border: '1px solid #90caf9',
+                        backgroundColor: 'var(--ct-filter-pill-bg)',
+                        color: 'var(--ct-filter-pill-color)',
+                        border: '1px solid var(--ct-filter-pill-border)',
                         whiteSpace: 'nowrap',
                     }
                 },
@@ -563,7 +575,7 @@ function CredentialTable({
                     padding: '2px 8px',
                     fontSize: '11px',
                     fontWeight: '500',
-                    color: '#888',
+                    color: 'var(--ct-clear-text)',
                     cursor: 'pointer',
                     textDecoration: 'underline',
                     marginLeft: '8px',
@@ -573,9 +585,58 @@ function CredentialTable({
         )
     ) : null;
 
+    // Inject theme-aware CSS custom properties
+    var themeStyles = React.createElement('style', null,
+        '.credential-table-container {',
+        '  --ct-text: #333;',
+        '  --ct-text-muted: #666;',
+        '  --ct-text-label: #555;',
+        '  --ct-border: #ccc;',
+        '  --ct-pill-realm-bg: #e3f2fd; --ct-pill-realm-color: #1565c0; --ct-pill-realm-border: #90caf9;',
+        '  --ct-pill-realm-global-bg: #f5f5f5; --ct-pill-realm-global-color: #757575; --ct-pill-realm-global-border: #e0e0e0;',
+        '  --ct-pill-realm-active-bg: #bbdefb; --ct-pill-realm-active-color: #0d47a1; --ct-pill-realm-active-border: #1565c0;',
+        '  --ct-pill-app-bg: #e8f5e9; --ct-pill-app-color: #2e7d32; --ct-pill-app-border: #a5d6a7;',
+        '  --ct-pill-app-active-bg: #a5d6a7; --ct-pill-app-active-color: #1b5e20; --ct-pill-app-active-border: #2e7d32;',
+        '  --ct-pill-owner-bg: #fff3e0; --ct-pill-owner-color: #e65100; --ct-pill-owner-border: #ffcc80;',
+        '  --ct-pill-owner-active-bg: #ffe0b2; --ct-pill-owner-active-color: #e65100; --ct-pill-owner-active-border: #e65100;',
+        '  --ct-pill-name-bg: #e8eaf6; --ct-pill-name-color: #283593; --ct-pill-name-border: #9fa8da;',
+        '  --ct-pill-name-active-bg: #c5cae9; --ct-pill-name-active-color: #1a237e; --ct-pill-name-active-border: #283593;',
+        '  --ct-pill-read-bg: #f3e5f5; --ct-pill-read-color: #7b1fa2; --ct-pill-read-border: #ce93d8;',
+        '  --ct-pill-read-active-bg: #e1bee7; --ct-pill-read-active-color: #7b1fa2; --ct-pill-read-active-border: #7b1fa2;',
+        '  --ct-pill-write-bg: #fce4ec; --ct-pill-write-color: #c62828; --ct-pill-write-border: #f48fb1;',
+        '  --ct-pill-write-active-bg: #f8bbd0; --ct-pill-write-active-color: #c62828; --ct-pill-write-active-border: #c62828;',
+        '  --ct-filter-pill-bg: #e3f2fd; --ct-filter-pill-color: #1565c0; --ct-filter-pill-border: #90caf9;',
+        '  --ct-clear-text: #888;',
+        '  --ct-empty-text: #666;',
+        '}',
+        '.dark-theme .credential-table-container {',
+        '  --ct-text: #e0e0e0;',
+        '  --ct-text-muted: #aaa;',
+        '  --ct-text-label: #bbb;',
+        '  --ct-border: #555;',
+        '  --ct-pill-realm-bg: #1a3a5c; --ct-pill-realm-color: #90caf9; --ct-pill-realm-border: #1565c0;',
+        '  --ct-pill-realm-global-bg: #2a2a2a; --ct-pill-realm-global-color: #999; --ct-pill-realm-global-border: #444;',
+        '  --ct-pill-realm-active-bg: #1a4a7a; --ct-pill-realm-active-color: #bbdefb; --ct-pill-realm-active-border: #42a5f5;',
+        '  --ct-pill-app-bg: #1a3a1a; --ct-pill-app-color: #a5d6a7; --ct-pill-app-border: #2e7d32;',
+        '  --ct-pill-app-active-bg: #1b5e20; --ct-pill-app-active-color: #c8e6c9; --ct-pill-app-active-border: #66bb6a;',
+        '  --ct-pill-owner-bg: #3a2a1a; --ct-pill-owner-color: #ffcc80; --ct-pill-owner-border: #e65100;',
+        '  --ct-pill-owner-active-bg: #4a3020; --ct-pill-owner-active-color: #ffe0b2; --ct-pill-owner-active-border: #ff8f00;',
+        '  --ct-pill-name-bg: #1a1a3a; --ct-pill-name-color: #9fa8da; --ct-pill-name-border: #283593;',
+        '  --ct-pill-name-active-bg: #2a2a5a; --ct-pill-name-active-color: #c5cae9; --ct-pill-name-active-border: #5c6bc0;',
+        '  --ct-pill-read-bg: #2a1a2a; --ct-pill-read-color: #ce93d8; --ct-pill-read-border: #7b1fa2;',
+        '  --ct-pill-read-active-bg: #3a2040; --ct-pill-read-active-color: #e1bee7; --ct-pill-read-active-border: #ab47bc;',
+        '  --ct-pill-write-bg: #3a1a1a; --ct-pill-write-color: #f48fb1; --ct-pill-write-border: #c62828;',
+        '  --ct-pill-write-active-bg: #5a2030; --ct-pill-write-active-color: #f8bbd0; --ct-pill-write-active-border: #ef5350;',
+        '  --ct-filter-pill-bg: #1a3a5c; --ct-filter-pill-color: #90caf9; --ct-filter-pill-border: #1565c0;',
+        '  --ct-clear-text: #999;',
+        '  --ct-empty-text: #aaa;',
+        '}'
+    );
+
     return React.createElement(
         'div',
         { className: 'credential-table-container' },
+        themeStyles,
         // Active filter pills row
         activeFilterPills,
 
@@ -591,7 +652,7 @@ function CredentialTable({
                 placeholder: 'Search across all fields...',
                 style: {
                     padding: '0.25rem 0.5rem',
-                    border: '1px solid #ccc',
+                    border: '1px solid var(--ct-border)',
                     borderRadius: '4px',
                     minWidth: '200px',
                     fontSize: '13px',
@@ -628,7 +689,7 @@ function CredentialTable({
                 React.createElement('select', {
                     value: rowsPerPage,
                     onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
-                    style: { padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
+                    style: { padding: '0.25rem 0.5rem', border: '1px solid var(--ct-border)', borderRadius: '4px', fontSize: '13px', height: '28px', boxSizing: 'border-box' },
                 },
                     React.createElement('option', { value: 10 }, '10'),
                     React.createElement('option', { value: 25 }, '25'),
@@ -649,17 +710,17 @@ function CredentialTable({
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
-            stripeRows: true,
+
         },
             React.createElement(TableHead, null, ...headerCells),
-            React.createElement(TableBody, null, ...dataRows)
+            React.createElement(TableBody, { key: sortedCredentials.map(function(c) { return c.stanzaKey; }).join(',') }, ...dataRows)
         ),
 
         // Row count + Pagination
         React.createElement(
             'div',
             { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' } },
-            React.createElement('span', { style: { fontSize: '12px', color: '#666' } },
+            React.createElement('span', { style: { fontSize: '12px', color: 'var(--ct-text-muted)' } },
                 'Showing ' + ((currentPage - 1) * rowsPerPage + 1) + '-' + Math.min(currentPage * rowsPerPage, sortedCredentials.length) + ' of ' + sortedCredentials.length + ' credential' + (sortedCredentials.length !== 1 ? 's' : '')
             ),
             totalPages > 1 ? React.createElement(Paginator, {
