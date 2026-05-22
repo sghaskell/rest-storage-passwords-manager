@@ -284,6 +284,17 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             }
         });
 
+        // Sync dark-theme class to document.body so modal portals (rendered outside the app
+        // container) pick up the .dark-theme CSS selectors.
+        React.useEffect(function() {
+            if (darkTheme) {
+                document.body.classList.add('dark-theme');
+            } else {
+                document.body.classList.remove('dark-theme');
+            }
+            return function() { document.body.classList.remove('dark-theme'); };
+        }, [darkTheme]);
+
         function toggleDarkTheme() {
             setDarkTheme(function(prev) {
                 var next = !prev;
