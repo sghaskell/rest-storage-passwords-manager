@@ -275,14 +275,33 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             return function() { clearInterval(timer); };
         }, [undoCredentials]);
 
-        // Dark theme — persist preference in localStorage
-        const [darkTheme, setDarkTheme] = React.useState(function() {
-            try {
-                return localStorage.getItem('credManager_darkTheme') === 'true';
-            } catch (e) {
-                return false;
+        // Dark theme — auto-detect from Splunk's dashboard theme setting
+        function detectSplunkDarkTheme() {
+            var html = document.documentElement;
+            if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
+            if (html.getAttribute('data-theme') === 'dark') return true;
+            var bg = getComputedStyle(document.body).backgroundColor;
+            var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (match) {
+                var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                return brightness < 128;
             }
-        });
+            return false;
+        }
+
+        const [darkTheme, setDarkTheme] = React.useState(false);
+
+        // Detect Splunk's theme on mount and watch for changes
+        React.useEffect(function() {
+            setDarkTheme(detectSplunkDarkTheme());
+            var observer = new MutationObserver(function() {
+                setDarkTheme(detectSplunkDarkTheme());
+            });
+            observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            return function() { observer.disconnect(); };
+        }, []);
 
         // Sync dark-theme class to document.body so modal portals (rendered outside the app
         // container) pick up the .dark-theme CSS selectors.
@@ -294,14 +313,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             }
             return function() { document.body.classList.remove('dark-theme'); };
         }, [darkTheme]);
-
-        function toggleDarkTheme() {
-            setDarkTheme(function(prev) {
-                var next = !prev;
-                try { localStorage.setItem('credManager_darkTheme', String(next)); } catch (e) {}
-                return next;
-            });
-        }
 
         // Compute filtered credentials (same logic as CredentialTable)
         const filteredCredentials = React.useMemo(function() {
@@ -1037,7 +1048,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                             })
                         )
                     ),
-                    React.createElement(Button, { onClick: toggleDarkTheme, appearance: 'subtle', title: darkTheme ? 'Light mode' : 'Dark mode', children: darkTheme ? '☀' : '🌙' }),
                     React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, help: true })), appearance: 'subtle', title: 'Help', children: '?' })
                 )
             ),
