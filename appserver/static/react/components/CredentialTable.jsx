@@ -142,8 +142,6 @@ function CredentialTable({
     const [visibleColumns, setVisibleColumns] = React.useState(loadVisibleColumns);
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
-
-
     React.useEffect(function() {
         saveVisibleColumns(visibleColumns);
     }, [visibleColumns]);
@@ -504,7 +502,7 @@ function CredentialTable({
     var allSelected = paginatedCredentials.length > 0 && paginatedCredentials.every(function(c) { return isSelected(c); });
     var rowSelectionState = allSelected ? 'all' : (someSelected ? 'some' : 'none');
 
-    // Build header cells dynamically from visible columns
+    // Build header cells from visible columns
     var headerCells = visibleColumns.map(function(k) {
         var col = COLUMNS.find(function(c) { return c.key === k; });
         return buildHeaderCell(col);
@@ -514,7 +512,7 @@ function CredentialTable({
     var dataRows = paginatedCredentials.length > 0
         ? paginatedCredentials.map(function(cred) {
             return React.createElement(TableRow, {
-                key: cred.stanzaKey,
+                key: credKey(cred),
                 selected: isSelected(cred),
                 onRequestToggle: function() { handleToggleSelect(cred); },
             },
