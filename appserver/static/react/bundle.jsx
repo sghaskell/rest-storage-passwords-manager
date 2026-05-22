@@ -53,134 +53,41 @@ var GlobalStyles = _sc.createGlobalStyle`
         background-color: #e3f2fd !important;
     }
 
-    /* Dark theme overrides — scoped to app containers */
-    .credential-manager-app.dark-theme,
-    .audit-log-app.dark-theme {
-        color: #e0e0e0 !important;
-
-        table, table tbody, table thead, table tr, table th, table td {
-            background-color: #2d2d2d !important;
-            color: #e0e0e0 !important;
-            border-color: #444 !important;
-        }
-
-        table tbody tr:nth-child(even) {
-            background-color: #363636 !important;
-        }
-
-        table tbody tr:hover {
-            background-color: #455a64 !important;
-        }
-
-        input, select, textarea {
-            background-color: #363636 !important;
-            border-color: #555 !important;
-            color: #e0e0e0 !important;
-        }
-
-        input::placeholder {
-            color: #888 !important;
-        }
-
-        .column-picker {
-            background-color: #2d2d2d !important;
-            color: #e0e0e0 !important;
-        }
-
-        code, pre {
-            background-color: #363636 !important;
-            color: #e0e0e0 !important;
-        }
+    /* Dark theme row hover — SplunkThemeProvider handles table cell colors, but we override
+       the hover to a darker blue-gray for contrast against the dark background */
+    html.dark-theme .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover,
+    html.theme-dark .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover,
+    html[data-theme="dark"] .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover {
+        background-color: rgba(69, 90, 100, 0.8) !important;
     }
 
-    /* Modal & form dark overrides — modals portal to body, so target .dark-theme globally */
-    /* Modal root */
-    .dark-theme [role="dialog"],
-    .dark-theme .Modal {
-        background-color: #2d2d2d !important;
+    /* Dark theme table header — Splunk's HeadCell styled-component doesn't fully respect
+        the theme provider in the Splunk app shell; override to match dark background */
+    html.dark-theme .credential-table-container table thead th,
+    html.theme-dark .credential-table-container table thead th,
+    html[data-theme="dark"] .credential-table-container table thead th {
+        background-color: #15191e !important;
         color: #e0e0e0 !important;
+        border-color: #333 !important;
     }
 
-    /* Modal backdrop */
-    .dark-theme .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.7) !important;
-    }
-
-    /* Modal header — target h2 and any div with border-bottom */
-    .dark-theme [role="dialog"] h2,
-    .dark-theme [role="dialog"] h3,
-    .dark-theme [role="dialog"] .ModalHeader,
-    .dark-theme [role="dialog"] > div > div:first-child {
-        color: #e0e0e0 !important;
+    /* Password generator panel — custom element, not a Splunk component, needs explicit dark override */
+    html.dark-theme .credential-form-generator-panel,
+    html.theme-dark .credential-form-generator-panel,
+    html[data-theme="dark"] .credential-form-generator-panel {
         border-color: #444 !important;
-        background-color: #2d2d2d !important;
     }
-
-    /* Modal body */
-    .dark-theme [role="dialog"] > div > div:nth-child(2),
-    .dark-theme [role="dialog"] .ModalBody {
-        color: #e0e0e0 !important;
-        background-color: #2d2d2d !important;
-    }
-
-    /* Modal footer */
-    .dark-theme [role="dialog"] > div > div:last-child,
-    .dark-theme [role="dialog"] .ModalFooter {
-        border-color: #444 !important;
-        background-color: #2d2d2d !important;
-    }
-
-    /* Form inputs inside modals */
-    .dark-theme [role="dialog"] input,
-    .dark-theme [role="dialog"] select,
-    .dark-theme [role="dialog"] textarea {
+    html.dark-theme .credential-form-generator-header,
+    html.theme-dark .credential-form-generator-header,
+    html[data-theme="dark"] .credential-form-generator-header {
         background-color: #363636 !important;
-        border-color: #555 !important;
         color: #e0e0e0 !important;
     }
-
-    .dark-theme [role="dialog"] input::placeholder,
-    .dark-theme [role="dialog"] textarea::placeholder {
-        color: #888 !important;
-    }
-
-    /* Form labels inside modals */
-    .dark-theme [role="dialog"] label,
-    .dark-theme [role="dialog"] .Label,
-    .dark-theme [role="dialog"] .Field-label,
-    .dark-theme [role="dialog"] span[style*="font-weight"],
-    .dark-theme [role="dialog"] div[style*="font-weight"] {
-        color: #ccc !important;
-    }
-
-    /* Buttons inside modals */
-    .dark-theme [role="dialog"] button,
-    .dark-theme [role="dialog"] .Button {
-        color: #e0e0e0 !important;
-    }
-
-    /* Splunk styled-component modal containers — only inside dialog */
-    .dark-theme [role="dialog"] [class*="sc-"] {
-        background-color: #2d2d2d !important;
-        color: #e0e0e0 !important;
-    }
-
-    /* Dropdown / popover dark overrides */
-    .dark-theme [role="listbox"],
-    .dark-theme .Dropdown-menu,
-    .dark-theme div[role="menu"],
-    .dark-theme [role="tooltip"] {
-        background-color: #2d2d2d !important;
-        color: #e0e0e0 !important;
-    }
-
-    /* Catch-all: any white bg element under dark theme */
-    .dark-theme [style*="background-color: rgb(255, 255, 255)"],
-    .dark-theme [style*="background-color:#fff"],
-    .dark-theme [style*="background-color: #fff"],
-    .dark-theme [style*="backgroundColor: #fff"],
-    .dark-theme [style*="backgroundColor: rgb(255"] {
-        background-color: #2d2d2d !important;
+    /* Password strength bar track — hardcoded #e0e0e0 in CredentialForm */
+    html.dark-theme .credential-form-password-strength-track,
+    html.theme-dark .credential-form-password-strength-track,
+    html[data-theme="dark"] .credential-form-password-strength-track {
+        background-color: #444 !important;
     }
 
     /* Kill blue focus ring on all interactive elements (modals, forms, table) */
@@ -274,148 +181,6 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             }, 1000);
             return function() { clearInterval(timer); };
         }, [undoCredentials]);
-
-        // Dark theme — auto-detect from Splunk's dashboard theme setting
-        function detectSplunkDarkTheme() {
-            var html = document.documentElement;
-            if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
-            if (html.getAttribute('data-theme') === 'dark') return true;
-            var bg = getComputedStyle(document.body).backgroundColor;
-            var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            if (match) {
-                var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
-                var brightness = (r * 299 + g * 587 + b * 114) / 1000;
-                return brightness < 128;
-            }
-            return false;
-        }
-
-        const [darkTheme, setDarkTheme] = React.useState(false);
-
-        // Detect Splunk's theme on mount and watch for changes
-        React.useEffect(function() {
-            setDarkTheme(detectSplunkDarkTheme());
-            var observer = new MutationObserver(function() {
-                setDarkTheme(detectSplunkDarkTheme());
-            });
-            observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-            return function() { observer.disconnect(); };
-        }, []);
-
-        // Sync dark-theme class to document.body so modal portals (rendered outside the app
-        // container) pick up the .dark-theme CSS selectors.
-        React.useEffect(function() {
-            if (darkTheme) {
-                document.body.classList.add('dark-theme');
-            } else {
-                document.body.classList.remove('dark-theme');
-            }
-            return function() { document.body.classList.remove('dark-theme'); };
-        }, [darkTheme]);
-
-        // Compute filtered credentials (same logic as CredentialTable)
-        const filteredCredentials = React.useMemo(function() {
-            return credentials.filter(function(credential) {
-                var name = (credential.name || '').toLowerCase();
-                var realm = (credential.realm || '').toLowerCase();
-                var app = (credential.app || '').toLowerCase();
-                var owner = (credential.owner || '').toLowerCase();
-                var aclRead = (credential.aclRead || '').toLowerCase();
-                var aclWrite = (credential.aclWrite || '').toLowerCase();
-                var mtime = (credential.mtime || '').toString();
-
-                // Text search across all fields
-                if (filterText) {
-                    var search = filterText.toLowerCase();
-                    if (!(name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search))) {
-                        return false;
-                    }
-                }
-
-                // Active filters — AND logic, exact match per field
-                for (var i = 0; i < activeFilters.length; i++) {
-                    var f = activeFilters[i];
-                    var val = f.value.toLowerCase();
-                    if (f.field === 'username' && name !== val) return false;
-                    if (f.field === 'realm') {
-                        var isGlobal = !credential.realm || credential.realm === 'nobody';
-                        if (val === 'global' && !isGlobal) return false;
-                        if (val !== 'global' && ((credential.realm || '').toLowerCase()) !== val) return false;
-                    }
-                    if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
-                    if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
-                    if (f.field === 'readRoles' && aclRead !== val) return false;
-                    if (f.field === 'writeRoles' && aclWrite !== val) return false;
-                    if (f.field === 'modified' && mtime !== val) return false;
-                }
-
-                return true;
-            });
-        }, [credentials, filterText, activeFilters]);
-
-        // Compute sorted credentials (same logic as CredentialTable)
-        const sortedCredentials = React.useMemo(function() {
-            if (!sortConfig.key) return filteredCredentials;
-            return [...filteredCredentials].sort(function(a, b) {
-                var aValue = a[sortConfig.key] || '';
-                var bValue = b[sortConfig.key] || '';
-                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-        }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
-
-        // Refs for export — dropdown renders via portal, so onClick handlers capture stale closures.
-        // Reading from refs at click time ensures we get the latest filtered/selected data.
-        const sortedCredentialsRef = React.useRef(sortedCredentials);
-        const filteredCredentialsRef = React.useRef(filteredCredentials);
-        const selectedRowsRef = React.useRef(selectedRows);
-        sortedCredentialsRef.current = sortedCredentials;
-        filteredCredentialsRef.current = filteredCredentials;
-        selectedRowsRef.current = selectedRows;
-
-        // Dark theme modal patcher — injects a high-specificity <style> tag to override
-        // Splunk Modal's emotion/styled-components CSS. Modals portal to <body> so we need
-        // a global style that only activates under .dark-theme.
-        React.useLayoutEffect(function() {
-            var isDark = document.body.classList.contains('dark-theme');
-            if (!isDark) return;
-
-            var styleId = 'dark-theme-modal-overrides';
-            var existing = document.getElementById(styleId);
-            if (existing) return;
-
-            var styleEl = document.createElement('style');
-            styleEl.id = styleId;
-            styleEl.textContent = [
-                // Modal root container
-                '.dark-theme [role="dialog"] { background-color: #2d2d2d !important; color: #e0e0e0 !important; }',
-                // All divs inside modal
-                '.dark-theme [role="dialog"] > div, .dark-theme [role="dialog"] > div > div { background-color: #2d2d2d !important; }',
-                // Modal header
-                '.dark-theme [role="dialog"] h2, .dark-theme [role="dialog"] h3 { color: #e0e0e0 !important; border-color: #444 !important; }',
-                // Modal body text
-                '.dark-theme [role="dialog"] p, .dark-theme [role="dialog"] span, .dark-theme [role="dialog"] div, .dark-theme [role="dialog"] label { color: #e0e0e0 !important; }',
-                // Modal footer
-                '.dark-theme [role="dialog"] > div > div:last-child { border-color: #444 !important; }',
-                // Inputs
-                '.dark-theme [role="dialog"] input, .dark-theme [role="dialog"] select, .dark-theme [role="dialog"] textarea { background-color: #363636 !important; border-color: #555 !important; color: #e0e0e0 !important; }',
-                '.dark-theme [role="dialog"] input::placeholder, .dark-theme [role="dialog"] textarea::placeholder { color: #888 !important; }',
-                // Buttons — preserve their own styling but ensure text is readable
-                '.dark-theme [role="dialog"] button:not([class*="primary"]):not([class*="destructive"]) { color: #e0e0e0 !important; }',
-                // Catch emotion styled-components inside modal
-                '.dark-theme [role="dialog"] [class*="sc-"] { background-color: #2d2d2d !important; color: #e0e0e0 !important; }',
-                // Checkbox
-                '.dark-theme [role="dialog"] input[type="checkbox"] { accent-color: #00a4fd !important; }',
-            ].join('\n');
-            document.head.appendChild(styleEl);
-
-            return function() {
-                if (existing) return;
-                document.head.removeChild(styleEl);
-            };
-        }, []);
 
         // Reference data — apps, users, roles for form dropdowns
         const [refData, setRefData] = React.useState({
@@ -517,6 +282,67 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             }
             fetchReferenceData();
         }, []);
+
+        // Compute filtered credentials (same logic as CredentialTable)
+        const filteredCredentials = React.useMemo(function() {
+            return credentials.filter(function(credential) {
+                var name = (credential.name || '').toLowerCase();
+                var realm = (credential.realm || '').toLowerCase();
+                var app = (credential.app || '').toLowerCase();
+                var owner = (credential.owner || '').toLowerCase();
+                var aclRead = (credential.aclRead || '').toLowerCase();
+                var aclWrite = (credential.aclWrite || '').toLowerCase();
+                var mtime = (credential.mtime || '').toString();
+
+                // Text search across all fields
+                if (filterText) {
+                    var search = filterText.toLowerCase();
+                    if (!(name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search))) {
+                        return false;
+                    }
+                }
+
+                // Active filters — AND logic, exact match per field
+                for (var i = 0; i < activeFilters.length; i++) {
+                    var f = activeFilters[i];
+                    var val = f.value.toLowerCase();
+                    if (f.field === 'username' && name !== val) return false;
+                    if (f.field === 'realm') {
+                        var isGlobal = !credential.realm || credential.realm === 'nobody';
+                        if (val === 'global' && !isGlobal) return false;
+                        if (val !== 'global' && ((credential.realm || '').toLowerCase()) !== val) return false;
+                    }
+                    if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
+                    if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                    if (f.field === 'readRoles' && aclRead !== val) return false;
+                    if (f.field === 'writeRoles' && aclWrite !== val) return false;
+                    if (f.field === 'modified' && mtime !== val) return false;
+                }
+
+                return true;
+            });
+        }, [credentials, filterText, activeFilters]);
+
+        // Compute sorted credentials (same logic as CredentialTable)
+        const sortedCredentials = React.useMemo(function() {
+            if (!sortConfig.key) return filteredCredentials;
+            return [...filteredCredentials].sort(function(a, b) {
+                var aValue = a[sortConfig.key] || '';
+                var bValue = b[sortConfig.key] || '';
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
+
+        // Refs for export — dropdown renders via portal, so onClick handlers capture stale closures.
+        // Reading from refs at click time ensures we get the latest filtered/selected data.
+        const sortedCredentialsRef = React.useRef(sortedCredentials);
+        const filteredCredentialsRef = React.useRef(filteredCredentials);
+        const selectedRowsRef = React.useRef(selectedRows);
+        sortedCredentialsRef.current = sortedCredentials;
+        filteredCredentialsRef.current = filteredCredentials;
+        selectedRowsRef.current = selectedRows;
 
         // ─── Result modal helpers ──────────────────────────────────────
         function showSuccess(title, messages) {
@@ -974,18 +800,18 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         }
 
         if (loading) {
-            return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : ''), style: { padding: '2rem' } }, React.createElement('p', null, 'Loading credentials...'));
+            return React.createElement('div', { className: 'credential-manager-app', style: { padding: '2rem' } }, React.createElement('p', null, 'Loading credentials...'));
         }
 
         if (error) {
-            return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : ''), style: { padding: '2rem', border: '1px solid #ff4444', borderRadius: '8px', backgroundColor: '#fff5f5' } },
+            return React.createElement('div', { className: 'credential-manager-app', style: { padding: '2rem', border: '1px solid #ff4444', borderRadius: '8px', backgroundColor: '#fff5f5' } },
                 React.createElement('div', { style: { color: '#d32f2f', marginBottom: '1rem', fontWeight: 'bold' } }, 'Error: ' + error),
                 React.createElement('p', { style: { fontSize: '14px', color: '#666', marginBottom: '1rem' } }, 'Check browser console for details. Ensure you have the required Splunk capabilities (admin_all_objects, list_storage_passwords).'),
                 React.createElement(Button, { onClick: loadCredentials, children: 'Retry' })
             );
         }
 
-        return React.createElement('div', { className: 'credential-manager-app' + (darkTheme ? ' dark-theme' : '') },
+        return React.createElement('div', { className: 'credential-manager-app' },
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -1071,6 +897,25 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onSortChange: setSortConfig,
             }),
 
+            // Undo delete toast
+            undoCredentials.length > 0 && React.createElement(
+                'div',
+                { style: { position: 'fixed', bottom: '1rem', left: '50%', transform: 'translateX(-50%)', background: '#333', color: '#fff', padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 9999 } },
+                React.createElement('span', null,
+                    undoCredentials.length + ' credential(s) deleted',
+                    undoCredentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoCredentials[0].name)) : null
+                ),
+                React.createElement(Button, {
+                    onClick: handleUndoDelete,
+                    appearance: 'primary',
+                    children: 'Undo',
+                    style: { padding: '4px 12px', fontSize: '13px' }
+                }),
+                React.createElement('span', {
+                    style: { fontSize: '12px', color: '#aaa' }
+                }, undoSecondsLeft + 's')
+            ),
+
             // Form modal — dedicated modal wrapper for CredentialForm
             modals.form && React.createElement(FormModal, {
                 isOpen: modals.form,
@@ -1110,7 +955,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onImport: handleCSVImport,
             }),
 
-            // Bulk delete confirmation modal
+            // Bulk edit modal
             modals.bulkEdit && React.createElement(BulkEditModal, {
                 isOpen: modals.bulkEdit,
                 selectedRows: selectedRows,
@@ -1128,7 +973,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onConfirm: handleBulkDeleteConfirm,
             }),
 
-            // Result modal — replaces all alert() calls
+            // Result modal
             modals.result && React.createElement(ResultModal, {
                 title: result.title,
                 messages: result.messages,
@@ -1137,45 +982,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
             // Help modal
             modals.help && React.createElement(HelpModal, {
-                isOpen: modals.help,
                 onClose: () => setModals(prev => ({ ...prev, help: false })),
-            }),
-
-            // Undo delete toast
-            undoCredentials.length > 0 && React.createElement(
-                'div',
-                {
-                    style: {
-                        position: 'fixed',
-                        bottom: '2rem',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        backgroundColor: '#333',
-                        color: '#fff',
-                        padding: '0.75rem 1.5rem',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '1rem',
-                        fontSize: '14px',
-                        zIndex: 9999,
-                    }
-                },
-                React.createElement('span', null,
-                    undoCredentials.length + ' credential(s) deleted',
-                    undoCredentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoCredentials[0].name)) : null
-                ),
-                React.createElement(Button, {
-                    onClick: handleUndoDelete,
-                    appearance: 'primary',
-                    children: 'Undo',
-                    style: { padding: '4px 12px', fontSize: '13px' }
-                }),
-                React.createElement('span', {
-                    style: { fontSize: '12px', color: '#aaa' }
-                }, undoSecondsLeft + 's')
-            )
+            })
         );
     }
 
@@ -1367,6 +1175,69 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
 
 
+    /**
+     * ThemeAwareApp — detects Splunk's theme and wraps children with SplunkThemeProvider
+     * using the correct colorScheme. This lives outside CredentialManager so the provider
+     * sits at the top of the tree, allowing Splunk's styled-components to resolve tokens
+     * (interactiveColorOverlayDrag, etc.) correctly.
+     */
+    function ThemeAwareApp({ appComponent: App, appProps }) {
+        function detectDark() {
+            var html = document.documentElement;
+            if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
+            if (html.getAttribute('data-theme') === 'dark') return true;
+            var body = document.body;
+            if (body && body.classList.contains('dark-theme')) return true;
+            // Fallback: check computed background brightness — Splunk may use a different class name
+            try {
+                var bg = getComputedStyle(body || html).backgroundColor;
+                var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (match) {
+                    var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                    var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                    if (brightness < 128) return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        var _dark = React.useState(detectDark);
+        var darkTheme = _dark[0];
+        var setDarkTheme = _dark[1];
+
+        React.useEffect(function() {
+            setDarkTheme(detectDark());
+            var observer = new MutationObserver(function() {
+                setDarkTheme(detectDark());
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            if (document.body) {
+                observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            }
+            return function() { observer.disconnect(); };
+        }, []);
+
+        // Sync dark-theme class to document.documentElement BEFORE children render.
+        // This must be imperative (not useEffect) so CredentialTable.jsx reads isDark correctly
+        // on its initial render. Clean up on unmount or theme change.
+        if (darkTheme) {
+            document.documentElement.classList.add('dark-theme');
+        } else {
+            document.documentElement.classList.remove('dark-theme');
+        }
+        React.useEffect(function() {
+            return function() { document.documentElement.classList.remove('dark-theme'); };
+        }, []);
+
+        return React.createElement(SplunkThemeProvider, {
+            family: 'enterprise',
+            colorScheme: darkTheme ? 'dark' : 'light'
+        },
+            React.createElement(GlobalStyles, null),
+            React.createElement(App, appProps || null)
+        );
+    }
+
     window.CredentialManager = {
         Component: CredentialManager,
         _initialized: false,
@@ -1385,10 +1256,9 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 return;
             }
             const root = ReactDOM.createRoot(container);
-            root.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
-                React.createElement(GlobalStyles, null),
-                React.createElement(CredentialManager, null)
-            ));
+            root.render(React.createElement(ThemeAwareApp, {
+                appComponent: CredentialManager
+            }));
             console.log('Credential Manager: Render complete');
         }
     };
@@ -1403,10 +1273,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             var auditContainer = document.getElementById('audit-log-app');
             if (auditContainer) {
                 var auditRoot = ReactDOM.createRoot(auditContainer);
-                auditRoot.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
-                    React.createElement(GlobalStyles, null),
-                    React.createElement(AuditLog, { mvc: mvc })
-                ));
+                auditRoot.render(React.createElement(ThemeAwareApp, {
+                    appComponent: AuditLog,
+                    appProps: { mvc: mvc }
+                }));
             }
         });
     } else {

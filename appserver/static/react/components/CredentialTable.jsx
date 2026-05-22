@@ -307,6 +307,19 @@ function CredentialTable({
         return visibleColumns.length + 1;
     }
 
+    // Handle column reorder — Splunk Table fires this with fromIndex, toIndex
+    function handleRequestMoveColumn({ fromIndex, toIndex }) {
+        setVisibleColumns(function(prev) {
+            var next = prev.slice();
+            var headerToMove = next[fromIndex];
+            var insertionIndex = toIndex < fromIndex ? toIndex : toIndex + 1;
+            next.splice(insertionIndex, 0, headerToMove);
+            var removalIndex = toIndex < fromIndex ? fromIndex + 1 : fromIndex;
+            next.splice(removalIndex, 1);
+            return next;
+        });
+    }
+
     // Toggle column visibility — respects fixed flag
     function toggleColumnVisibility(colKey) {
         setVisibleColumns(function(prev) {
@@ -503,9 +516,9 @@ function CredentialTable({
     var rowSelectionState = allSelected ? 'all' : (someSelected ? 'some' : 'none');
 
     // Build header cells from visible columns
-    var headerCells = visibleColumns.map(function(k) {
+    var headerCells = visibleColumns.map(function(k, index) {
         var col = COLUMNS.find(function(c) { return c.key === k; });
-        return buildHeaderCell(col);
+        return buildHeaderCell(col, index);
     });
 
     // Build data rows
@@ -588,51 +601,42 @@ function CredentialTable({
         )
     ) : null;
 
-    // Inject theme-aware CSS custom properties
+    // Detect dark theme at render time — ThemeAwareApp syncs .dark-theme to document.documentElement
+    var isDark = document.documentElement.classList.contains('dark-theme') ||
+        document.documentElement.classList.contains('theme-dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (document.body && document.body.classList.contains('dark-theme'));
+
+    // Inject theme-aware CSS custom properties — inline variables so they resolve at render time
     var themeStyles = React.createElement('style', null,
         '.credential-table-container {',
-        '  --ct-text: #333;',
-        '  --ct-text-muted: #666;',
-        '  --ct-text-label: #555;',
-        '  --ct-border: #ccc;',
-        '  --ct-pill-realm-bg: #e3f2fd; --ct-pill-realm-color: #1565c0; --ct-pill-realm-border: #90caf9;',
-        '  --ct-pill-realm-global-bg: #f5f5f5; --ct-pill-realm-global-color: #757575; --ct-pill-realm-global-border: #e0e0e0;',
-        '  --ct-pill-realm-active-bg: #bbdefb; --ct-pill-realm-active-color: #0d47a1; --ct-pill-realm-active-border: #1565c0;',
-        '  --ct-pill-app-bg: #e8f5e9; --ct-pill-app-color: #2e7d32; --ct-pill-app-border: #a5d6a7;',
-        '  --ct-pill-app-active-bg: #a5d6a7; --ct-pill-app-active-color: #1b5e20; --ct-pill-app-active-border: #2e7d32;',
-        '  --ct-pill-owner-bg: #fff3e0; --ct-pill-owner-color: #e65100; --ct-pill-owner-border: #ffcc80;',
-        '  --ct-pill-owner-active-bg: #ffe0b2; --ct-pill-owner-active-color: #e65100; --ct-pill-owner-active-border: #e65100;',
-        '  --ct-pill-name-bg: #e8eaf6; --ct-pill-name-color: #283593; --ct-pill-name-border: #9fa8da;',
-        '  --ct-pill-name-active-bg: #c5cae9; --ct-pill-name-active-color: #1a237e; --ct-pill-name-active-border: #283593;',
-        '  --ct-pill-read-bg: #f3e5f5; --ct-pill-read-color: #7b1fa2; --ct-pill-read-border: #ce93d8;',
-        '  --ct-pill-read-active-bg: #e1bee7; --ct-pill-read-active-color: #7b1fa2; --ct-pill-read-active-border: #7b1fa2;',
-        '  --ct-pill-write-bg: #fce4ec; --ct-pill-write-color: #c62828; --ct-pill-write-border: #f48fb1;',
-        '  --ct-pill-write-active-bg: #f8bbd0; --ct-pill-write-active-color: #c62828; --ct-pill-write-active-border: #c62828;',
-        '  --ct-filter-pill-bg: #e3f2fd; --ct-filter-pill-color: #1565c0; --ct-filter-pill-border: #90caf9;',
-        '  --ct-clear-text: #888;',
-        '  --ct-empty-text: #666;',
+        '  --ct-text: ' + (isDark ? '#e0e0e0' : '#333') + ';',
+        '  --ct-text-muted: ' + (isDark ? '#aaa' : '#666') + ';',
+        '  --ct-text-label: ' + (isDark ? '#bbb' : '#555') + ';',
+        '  --ct-border: ' + (isDark ? '#555' : '#ccc') + ';',
+        '  --ct-header-bg: ' + (isDark ? '#15191e' : '#f5f5f5') + ';',
+        '  --ct-header-color: ' + (isDark ? '#e0e0e0' : '#333') + ';',
+        '  --ct-pill-realm-bg: ' + (isDark ? '#0d47a1' : '#e3f2fd') + '; --ct-pill-realm-color: ' + (isDark ? '#bbdefb' : '#1565c0') + '; --ct-pill-realm-border: ' + (isDark ? '#42a5f5' : '#90caf9') + ';',
+        '  --ct-pill-realm-global-bg: ' + (isDark ? '#37474f' : '#f5f5f5') + '; --ct-pill-realm-global-color: ' + (isDark ? '#b0bec5' : '#757575') + '; --ct-pill-realm-global-border: ' + (isDark ? '#546e7a' : '#e0e0e0') + ';',
+        '  --ct-pill-realm-active-bg: ' + (isDark ? '#1565c0' : '#bbdefb') + '; --ct-pill-realm-active-color: ' + (isDark ? '#e3f2fd' : '#0d47a1') + '; --ct-pill-realm-active-border: ' + (isDark ? '#64b5f6' : '#1565c0') + ';',
+        '  --ct-pill-app-bg: ' + (isDark ? '#1b5e20' : '#e8f5e9') + '; --ct-pill-app-color: ' + (isDark ? '#a5d6a7' : '#2e7d32') + '; --ct-pill-app-border: ' + (isDark ? '#66bb6a' : '#a5d6a7') + ';',
+        '  --ct-pill-app-active-bg: ' + (isDark ? '#2e7d32' : '#a5d6a7') + '; --ct-pill-app-active-color: ' + (isDark ? '#e8f5e9' : '#1b5e20') + '; --ct-pill-app-active-border: ' + (isDark ? '#81c784' : '#2e7d32') + ';',
+        '  --ct-pill-owner-bg: ' + (isDark ? '#4e342e' : '#fff3e0') + '; --ct-pill-owner-color: ' + (isDark ? '#ffcc80' : '#e65100') + '; --ct-pill-owner-border: ' + (isDark ? '#ffa726' : '#ffcc80') + ';',
+        '  --ct-pill-owner-active-bg: ' + (isDark ? '#6d4c41' : '#ffe0b2') + '; --ct-pill-owner-active-color: ' + (isDark ? '#ffe0b2' : '#e65100') + '; --ct-pill-owner-active-border: ' + (isDark ? '#ffb74d' : '#e65100') + ';',
+        '  --ct-pill-name-bg: ' + (isDark ? '#1a237e' : '#e8eaf6') + '; --ct-pill-name-color: ' + (isDark ? '#c5cae9' : '#283593') + '; --ct-pill-name-border: ' + (isDark ? '#5c6bc0' : '#9fa8da') + ';',
+        '  --ct-pill-name-active-bg: ' + (isDark ? '#283593' : '#c5cae9') + '; --ct-pill-name-active-color: ' + (isDark ? '#e8eaf6' : '#1a237e') + '; --ct-pill-name-active-border: ' + (isDark ? '#7986cb' : '#283593') + ';',
+        '  --ct-pill-read-bg: ' + (isDark ? '#4a148c' : '#f3e5f5') + '; --ct-pill-read-color: ' + (isDark ? '#e1bee7' : '#7b1fa2') + '; --ct-pill-read-border: ' + (isDark ? '#ab47bc' : '#ce93d8') + ';',
+        '  --ct-pill-read-active-bg: ' + (isDark ? '#6a1b9a' : '#e1bee7') + '; --ct-pill-read-active-color: ' + (isDark ? '#f3e5f5' : '#7b1fa2') + '; --ct-pill-read-active-border: ' + (isDark ? '#ba68c8' : '#7b1fa2') + ';',
+        '  --ct-pill-write-bg: ' + (isDark ? '#b71c1c' : '#fce4ec') + '; --ct-pill-write-color: ' + (isDark ? '#f8bbd0' : '#c62828') + '; --ct-pill-write-border: ' + (isDark ? '#e57373' : '#f48fb1') + ';',
+        '  --ct-pill-write-active-bg: ' + (isDark ? '#c62828' : '#f8bbd0') + '; --ct-pill-write-active-color: ' + (isDark ? '#fce4ec' : '#c62828') + '; --ct-pill-write-active-border: ' + (isDark ? '#ef9a9a' : '#c62828') + ';',
+        '  --ct-filter-pill-bg: ' + (isDark ? '#0a2a66' : '#e3f2fd') + '; --ct-filter-pill-color: ' + (isDark ? '#90caf9' : '#1565c0') + '; --ct-filter-pill-border: ' + (isDark ? '#1e88e5' : '#90caf9') + ';',
+        '  --ct-clear-text: ' + (isDark ? '#999' : '#888') + ';',
+        '  --ct-empty-text: ' + (isDark ? '#aaa' : '#666') + ';',
         '}',
-        '.dark-theme .credential-table-container {',
-        '  --ct-text: #e0e0e0;',
-        '  --ct-text-muted: #aaa;',
-        '  --ct-text-label: #bbb;',
-        '  --ct-border: #555;',
-        '  --ct-pill-realm-bg: #1a3a5c; --ct-pill-realm-color: #90caf9; --ct-pill-realm-border: #1565c0;',
-        '  --ct-pill-realm-global-bg: #2a2a2a; --ct-pill-realm-global-color: #999; --ct-pill-realm-global-border: #444;',
-        '  --ct-pill-realm-active-bg: #1a4a7a; --ct-pill-realm-active-color: #bbdefb; --ct-pill-realm-active-border: #42a5f5;',
-        '  --ct-pill-app-bg: #1a3a1a; --ct-pill-app-color: #a5d6a7; --ct-pill-app-border: #2e7d32;',
-        '  --ct-pill-app-active-bg: #1b5e20; --ct-pill-app-active-color: #c8e6c9; --ct-pill-app-active-border: #66bb6a;',
-        '  --ct-pill-owner-bg: #3a2a1a; --ct-pill-owner-color: #ffcc80; --ct-pill-owner-border: #e65100;',
-        '  --ct-pill-owner-active-bg: #4a3020; --ct-pill-owner-active-color: #ffe0b2; --ct-pill-owner-active-border: #ff8f00;',
-        '  --ct-pill-name-bg: #1a1a3a; --ct-pill-name-color: #9fa8da; --ct-pill-name-border: #283593;',
-        '  --ct-pill-name-active-bg: #2a2a5a; --ct-pill-name-active-color: #c5cae9; --ct-pill-name-active-border: #5c6bc0;',
-        '  --ct-pill-read-bg: #2a1a2a; --ct-pill-read-color: #ce93d8; --ct-pill-read-border: #7b1fa2;',
-        '  --ct-pill-read-active-bg: #3a2040; --ct-pill-read-active-color: #e1bee7; --ct-pill-read-active-border: #ab47bc;',
-        '  --ct-pill-write-bg: #3a1a1a; --ct-pill-write-color: #f48fb1; --ct-pill-write-border: #c62828;',
-        '  --ct-pill-write-active-bg: #5a2030; --ct-pill-write-active-color: #f8bbd0; --ct-pill-write-active-border: #ef5350;',
-        '  --ct-filter-pill-bg: #1a3a5c; --ct-filter-pill-color: #90caf9; --ct-filter-pill-border: #1565c0;',
-        '  --ct-clear-text: #999;',
-        '  --ct-empty-text: #aaa;',
+        // Force header row dark styling — targets Splunk's generated HeadCell class names
+        '.credential-table-container table thead th, .credential-table-container table thead th [class*="sc-"], .credential-table-container table thead th [class*="HeadCell"] {',
+        '  background-color: var(--ct-header-bg) !important;',
+        '  color: var(--ct-header-color) !important;',
         '}'
     );
 
@@ -713,7 +717,7 @@ function CredentialTable({
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
-            stripeRows: true,
+            onRequestMoveColumn: handleRequestMoveColumn,
         },
             React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, { key: currentPage }, ...dataRows)
