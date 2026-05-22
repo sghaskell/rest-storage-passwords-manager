@@ -967,7 +967,14 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
-                    selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px' } }, `${selectedRows.length} selected`),
+                    selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '0.35rem' } },
+                        `${selectedRows.length} selected`,
+                        React.createElement('span', {
+                            onClick: handleDeselectAll,
+                            style: { cursor: 'pointer', color: '#999', fontSize: '16px', fontWeight: 'bold', marginLeft: '0.25rem' },
+                            title: 'Clear selection'
+                        }, '\u00d7')
+                    ),
                     selectedRows.length > 0 && React.createElement(Button, {
                         onClick: () => setModals(prev => ({ ...prev, bulkEdit: true })),
                         appearance: 'subtle',
