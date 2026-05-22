@@ -96,7 +96,7 @@ function saveRowsPerPage(count) {
  * @param {Function} props.onReveal - Callback when reveal password is clicked
  * @param {Function} props.onSelectRow - Callback when row checkbox toggled
  * @param {Function} props.onSelectAll - Callback when select-all checked
- * @param {Function} props.onDeselectAll - Callback when select-all unchecked
+     * @param {Function} props.onDeselectPage - Callback when select-all unchecked for current page
  * @param {Function} props.onEdit - Callback when edit button clicked
  * @param {Function} props.onCopy - Callback when copy button clicked
  * @param {string} props.filterText - Search text (controlled from parent)
@@ -113,7 +113,7 @@ function CredentialTable({
     onReveal,
     onSelectRow,
     onSelectAll,
-    onDeselectAll,
+    onDeselectPage,
     onEdit,
     onCopy,
     filterText: filterTextProp,
@@ -280,9 +280,14 @@ function CredentialTable({
         return activeFilters.some(function(f) { return f.field === field && f.value === value; });
     }
 
+    // Unique key for a credential — stanzaKey can repeat across apps/owners/sharing
+    function credKey(cred) {
+        return cred.stanzaKey + ':' + cred.app + ':' + cred.owner + ':' + cred.sharing;
+    }
+
     // Check if a row is selected
     function isSelected(cred) {
-        return selectedRows.some(function(r) { return r.stanzaKey === cred.stanzaKey; });
+        return selectedRows.some(function(r) { return credKey(r) === credKey(cred); });
     }
 
     // Toggle row selection
@@ -293,13 +298,13 @@ function CredentialTable({
     // Toggle select-all for visible page
     function handlePageSelectAll() {
         if (paginatedCredentials.every(function(c) { return isSelected(c); })) {
-            onDeselectAll && onDeselectAll();
+            onDeselectPage && onDeselectPage(paginatedCredentials);
         } else {
             onSelectAll && onSelectAll(paginatedCredentials);
         }
     }
 
-    // colSpan = visible columns + 1 (checkbox column from rowSelection)
+    // colSpan = visible columns + 1 (checkbox column from Splunk rowSelection)
     function getColSpan() {
         return visibleColumns.length + 1;
     }
@@ -710,10 +715,10 @@ function CredentialTable({
             tableStyle: { width: '100%' },
             rowSelection: rowSelectionState,
             onRequestToggleAllRows: handlePageSelectAll,
-
+            stripeRows: true,
         },
             React.createElement(TableHead, null, ...headerCells),
-            React.createElement(TableBody, { key: sortedCredentials.map(function(c) { return c.stanzaKey; }).join(',') }, ...dataRows)
+            React.createElement(TableBody, { key: currentPage }, ...dataRows)
         ),
 
         // Row count + Pagination

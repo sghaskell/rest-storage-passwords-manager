@@ -87,53 +87,100 @@ var GlobalStyles = _sc.createGlobalStyle`
             color: #e0e0e0 !important;
         }
 
-        /* Chip colors for dark */
-        span[style*="background-color: #e3f2fd"] {
-            background-color: #1a3a5c !important;
-            color: #90caf9 !important;
-            border-color: #1565c0 !important;
-        }
-        span[style*="background-color: #e8f5e9"] {
-            background-color: #1b3a1b !important;
-            color: #a5d6a7 !important;
-            border-color: #2e7d32 !important;
-        }
-        span[style*="background-color: #fff3e0"] {
-            background-color: #4a3000 !important;
-            color: #ffcc80 !important;
-            border-color: #e65100 !important;
-        }
-        span[style*="background-color: #f3e5f5"] {
-            background-color: #3a1a3a !important;
-            color: #ce93d8 !important;
-            border-color: #7b1fa2 !important;
-        }
-        span[style*="background-color: #fce4ec"] {
-            background-color: #3a1a1a !important;
-            color: #f48fb1 !important;
-            border-color: #c62828 !important;
-        }
-        span[style*="background-color: #e8eaf6"] {
-            background-color: #1a1a3a !important;
-            color: #9fa8da !important;
-            border-color: #283593 !important;
-        }
-        span[style*="background-color: #f5f5f5"] {
-            background-color: #424242 !important;
-            color: #bdbdbd !important;
-            border-color: #616161 !important;
-        }
-
-        /* Modal dark overrides */
-        .sc-gsnKVre {
-            background-color: #2d2d2d !important;
-            color: #e0e0e0 !important;
-        }
-
         code, pre {
             background-color: #363636 !important;
             color: #e0e0e0 !important;
         }
+    }
+
+    /* Modal & form dark overrides — modals portal to body, so target .dark-theme globally */
+    /* Modal root */
+    .dark-theme [role="dialog"],
+    .dark-theme .Modal {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+    }
+
+    /* Modal backdrop */
+    .dark-theme .modal-backdrop {
+        background-color: rgba(0, 0, 0, 0.7) !important;
+    }
+
+    /* Modal header — target h2 and any div with border-bottom */
+    .dark-theme [role="dialog"] h2,
+    .dark-theme [role="dialog"] h3,
+    .dark-theme [role="dialog"] .ModalHeader,
+    .dark-theme [role="dialog"] > div > div:first-child {
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+        background-color: #2d2d2d !important;
+    }
+
+    /* Modal body */
+    .dark-theme [role="dialog"] > div > div:nth-child(2),
+    .dark-theme [role="dialog"] .ModalBody {
+        color: #e0e0e0 !important;
+        background-color: #2d2d2d !important;
+    }
+
+    /* Modal footer */
+    .dark-theme [role="dialog"] > div > div:last-child,
+    .dark-theme [role="dialog"] .ModalFooter {
+        border-color: #444 !important;
+        background-color: #2d2d2d !important;
+    }
+
+    /* Form inputs inside modals */
+    .dark-theme [role="dialog"] input,
+    .dark-theme [role="dialog"] select,
+    .dark-theme [role="dialog"] textarea {
+        background-color: #363636 !important;
+        border-color: #555 !important;
+        color: #e0e0e0 !important;
+    }
+
+    .dark-theme [role="dialog"] input::placeholder,
+    .dark-theme [role="dialog"] textarea::placeholder {
+        color: #888 !important;
+    }
+
+    /* Form labels inside modals */
+    .dark-theme [role="dialog"] label,
+    .dark-theme [role="dialog"] .Label,
+    .dark-theme [role="dialog"] .Field-label,
+    .dark-theme [role="dialog"] span[style*="font-weight"],
+    .dark-theme [role="dialog"] div[style*="font-weight"] {
+        color: #ccc !important;
+    }
+
+    /* Buttons inside modals */
+    .dark-theme [role="dialog"] button,
+    .dark-theme [role="dialog"] .Button {
+        color: #e0e0e0 !important;
+    }
+
+    /* Splunk styled-component modal containers — only inside dialog */
+    .dark-theme [role="dialog"] [class*="sc-"] {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+    }
+
+    /* Dropdown / popover dark overrides */
+    .dark-theme [role="listbox"],
+    .dark-theme .Dropdown-menu,
+    .dark-theme div[role="menu"],
+    .dark-theme [role="tooltip"] {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+    }
+
+    /* Catch-all: any white bg element under dark theme */
+    .dark-theme [style*="background-color: rgb(255, 255, 255)"],
+    .dark-theme [style*="background-color:#fff"],
+    .dark-theme [style*="background-color: #fff"],
+    .dark-theme [style*="backgroundColor: #fff"],
+    .dark-theme [style*="backgroundColor: rgb(255"] {
+        background-color: #2d2d2d !important;
     }
 
     /* Kill blue focus ring on all interactive elements (modals, forms, table) */
@@ -210,22 +257,23 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
 
         // Undo delete state — array of credentials for single + bulk undo
-        const [undoState, setUndoState] = React.useState({ credentials: [], secondsLeft: 0 });
+        const [undoCredentials, setUndoCredentials] = React.useState([]);
+        const [undoSecondsLeft, setUndoSecondsLeft] = React.useState(0);
 
-        // Countdown timer for undo toast
+        // Countdown timer for undo toast — only recreates when credentials change
         React.useEffect(() => {
-            if (undoState.credentials.length > 0 && undoState.secondsLeft > 0) {
-                var timer = setInterval(function() {
-                    setUndoState(function(prev) {
-                        if (prev.secondsLeft <= 1) {
-                            return { credentials: [], secondsLeft: 0 };
-                        }
-                        return { credentials: prev.credentials, secondsLeft: prev.secondsLeft - 1 };
-                    });
-                }, 1000);
-                return function() { clearInterval(timer); };
-            }
-        }, [undoState]);
+            if (undoCredentials.length === 0) return;
+            var timer = setInterval(function() {
+                setUndoSecondsLeft(function(prev) {
+                    if (prev <= 1) {
+                        setUndoCredentials([]);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+            return function() { clearInterval(timer); };
+        }, [undoCredentials]);
 
         // Dark theme — persist preference in localStorage
         const [darkTheme, setDarkTheme] = React.useState(function() {
@@ -267,17 +315,17 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 for (var i = 0; i < activeFilters.length; i++) {
                     var f = activeFilters[i];
                     var val = f.value.toLowerCase();
-                    if (f.field === 'username' && !name.includes(val)) return false;
+                    if (f.field === 'username' && name !== val) return false;
                     if (f.field === 'realm') {
                         var isGlobal = !credential.realm || credential.realm === 'nobody';
                         if (val === 'global' && !isGlobal) return false;
-                        if (val !== 'global' && !((credential.realm || '').toLowerCase()).includes(val)) return false;
+                        if (val !== 'global' && ((credential.realm || '').toLowerCase()) !== val) return false;
                     }
-                    if (f.field === 'app' && !(credential.app || '').toLowerCase().includes(val)) return false;
-                    if (f.field === 'owner' && !(credential.owner || '').toLowerCase().includes(val)) return false;
-                    if (f.field === 'readRoles' && !aclRead.includes(val)) return false;
-                    if (f.field === 'writeRoles' && !aclWrite.includes(val)) return false;
-                    if (f.field === 'modified' && !mtime.includes(val)) return false;
+                    if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
+                    if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                    if (f.field === 'readRoles' && aclRead !== val) return false;
+                    if (f.field === 'writeRoles' && aclWrite !== val) return false;
+                    if (f.field === 'modified' && mtime !== val) return false;
                 }
 
                 return true;
@@ -304,6 +352,48 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         sortedCredentialsRef.current = sortedCredentials;
         filteredCredentialsRef.current = filteredCredentials;
         selectedRowsRef.current = selectedRows;
+
+        // Dark theme modal patcher — injects a high-specificity <style> tag to override
+        // Splunk Modal's emotion/styled-components CSS. Modals portal to <body> so we need
+        // a global style that only activates under .dark-theme.
+        React.useLayoutEffect(function() {
+            var isDark = document.body.classList.contains('dark-theme');
+            if (!isDark) return;
+
+            var styleId = 'dark-theme-modal-overrides';
+            var existing = document.getElementById(styleId);
+            if (existing) return;
+
+            var styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            styleEl.textContent = [
+                // Modal root container
+                '.dark-theme [role="dialog"] { background-color: #2d2d2d !important; color: #e0e0e0 !important; }',
+                // All divs inside modal
+                '.dark-theme [role="dialog"] > div, .dark-theme [role="dialog"] > div > div { background-color: #2d2d2d !important; }',
+                // Modal header
+                '.dark-theme [role="dialog"] h2, .dark-theme [role="dialog"] h3 { color: #e0e0e0 !important; border-color: #444 !important; }',
+                // Modal body text
+                '.dark-theme [role="dialog"] p, .dark-theme [role="dialog"] span, .dark-theme [role="dialog"] div, .dark-theme [role="dialog"] label { color: #e0e0e0 !important; }',
+                // Modal footer
+                '.dark-theme [role="dialog"] > div > div:last-child { border-color: #444 !important; }',
+                // Inputs
+                '.dark-theme [role="dialog"] input, .dark-theme [role="dialog"] select, .dark-theme [role="dialog"] textarea { background-color: #363636 !important; border-color: #555 !important; color: #e0e0e0 !important; }',
+                '.dark-theme [role="dialog"] input::placeholder, .dark-theme [role="dialog"] textarea::placeholder { color: #888 !important; }',
+                // Buttons — preserve their own styling but ensure text is readable
+                '.dark-theme [role="dialog"] button:not([class*="primary"]):not([class*="destructive"]) { color: #e0e0e0 !important; }',
+                // Catch emotion styled-components inside modal
+                '.dark-theme [role="dialog"] [class*="sc-"] { background-color: #2d2d2d !important; color: #e0e0e0 !important; }',
+                // Checkbox
+                '.dark-theme [role="dialog"] input[type="checkbox"] { accent-color: #00a4fd !important; }',
+            ].join('\n');
+            document.head.appendChild(styleEl);
+
+            return function() {
+                if (existing) return;
+                document.head.removeChild(styleEl);
+            };
+        }, []);
 
         // Reference data — apps, users, roles for form dropdowns
         const [refData, setRefData] = React.useState({
@@ -507,7 +597,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 );
                 await loadCredentials();
                 setModals(prev => ({ ...prev, delete: false }));
-                setUndoState({ credentials: [credForUndo], secondsLeft: 10 });
+                setUndoCredentials([credForUndo]);
+                setUndoSecondsLeft(10);
                 setSelectedCredential(null);
             } catch (err) {
                 console.error('Error deleting credential:', err);
@@ -517,9 +608,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
         // Undo delete — recreate credential(s)
         async function handleUndoDelete() {
-            if (!undoState.credentials.length) return;
-            var creds = undoState.credentials;
-            setUndoState({ credentials: [], secondsLeft: 0 });
+            if (!undoCredentials.length) return;
+            var creds = undoCredentials;
+            setUndoCredentials([]);
+            setUndoSecondsLeft(0);
             try {
                 const results = await Promise.allSettled(
                     creds.map(function(cred) {
@@ -618,7 +710,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
                 // Set undo state for successfully deleted credentials
                 if (deletedForUndo.length > 0) {
-                    setUndoState({ credentials: deletedForUndo, secondsLeft: 10 });
+                    setUndoCredentials(deletedForUndo);
+                    setUndoSecondsLeft(10);
                 }
 
                 if (errorMessages.length === 0) {
@@ -816,10 +909,15 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         }
 
         // ─── Selection handlers ────────────────────────────────────────
-        
+
+        // Unique key for a credential — stanzaKey can repeat across apps/owners/sharing
+        function credKey(cred) {
+            return cred.stanzaKey + ':' + cred.app + ':' + cred.owner + ':' + cred.sharing;
+        }
+
         function handleSelectRow(cred) {
             setSelectedRows(prev => {
-                const exists = prev.findIndex(r => r.stanzaKey === cred.stanzaKey);
+                const exists = prev.findIndex(r => credKey(r) === credKey(cred));
                 if (exists >= 0) {
                     return prev.filter((_, i) => i !== exists);
                 }
@@ -828,7 +926,16 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         }
 
         function handleSelectAll(filtered) {
-            setSelectedRows(filtered || credentials);
+            setSelectedRows(prev => {
+                var pageKeys = new Set(filtered.map(function(r) { return credKey(r); }));
+                var existing = prev.filter(function(r) { return !pageKeys.has(credKey(r)); });
+                return existing.concat(filtered);
+            });
+        }
+
+        function handleDeselectPage(pageCredentials) {
+            var pageKeys = new Set(pageCredentials.map(function(r) { return credKey(r); }));
+            setSelectedRows(prev => prev.filter(function(r) { return !pageKeys.has(credKey(r)); }));
         }
 
         function handleDeselectAll() {
@@ -925,7 +1032,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onReveal: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, password: true })); },
                 onSelectRow: handleSelectRow,
                 onSelectAll: handleSelectAll,
-                onDeselectAll: handleDeselectAll,
+                onDeselectPage: handleDeselectPage,
                 onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
                 onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
                 filterText: filterText,
@@ -1007,7 +1114,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             }),
 
             // Undo delete toast
-            undoState.credentials.length > 0 && React.createElement(
+            undoCredentials.length > 0 && React.createElement(
                 'div',
                 {
                     style: {
@@ -1028,8 +1135,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                     }
                 },
                 React.createElement('span', null,
-                    undoState.credentials.length + ' credential(s) deleted',
-                    undoState.credentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoState.credentials[0].name)) : null
+                    undoCredentials.length + ' credential(s) deleted',
+                    undoCredentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoCredentials[0].name)) : null
                 ),
                 React.createElement(Button, {
                     onClick: handleUndoDelete,
@@ -1039,7 +1146,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 }),
                 React.createElement('span', {
                     style: { fontSize: '12px', color: '#aaa' }
-                }, undoState.secondsLeft + 's')
+                }, undoSecondsLeft + 's')
             )
         );
     }
@@ -1234,7 +1341,10 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
     window.CredentialManager = {
         Component: CredentialManager,
+        _initialized: false,
         init: function(mvc) {
+            if (window.CredentialManager._initialized) return;
+            window.CredentialManager._initialized = true;
             console.log('Credential Manager: Initializing...');
             if (mvc) {
                 window.CredentialManager.mvc = mvc;
@@ -1259,7 +1369,9 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         window.require(['splunkjs/mvc/simplexml/ready!', 'splunkjs/mvc'], function(ready, mvc) {
             window.CredentialManager.init(mvc);
 
-            // AuditLog init — renders when #audit-log-app container exists
+            // AuditLog init — guard against double init
+            if (window.CredentialManager._auditInitialized) return;
+            window.CredentialManager._auditInitialized = true;
             var auditContainer = document.getElementById('audit-log-app');
             if (auditContainer) {
                 var auditRoot = ReactDOM.createRoot(auditContainer);
