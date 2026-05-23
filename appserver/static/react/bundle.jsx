@@ -830,7 +830,22 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                         }, '\u00d7')
                     ),
                     selectedRows.length > 0 && React.createElement(Button, {
-                        onClick: () => setModals(prev => ({ ...prev, bulkEdit: true })),
+                        onClick: () => {
+                            if (selectedRows.length === 1) {
+                                setEditingCredential({
+                                    name: selectedRows[0].name,
+                                    realm: selectedRows[0].realm,
+                                    app: selectedRows[0].app,
+                                    owner: selectedRows[0].owner,
+                                    sharing: selectedRows[0].sharing,
+                                    aclRead: selectedRows[0].aclRead || '',
+                                    aclWrite: selectedRows[0].aclWrite || '',
+                                });
+                                setModals(prev => ({ ...prev, form: true }));
+                            } else {
+                                setModals(prev => ({ ...prev, bulkEdit: true }));
+                            }
+                        },
                         appearance: 'subtle',
                         children: `Edit Selected (${selectedRows.length})`
                     }),
