@@ -130,6 +130,25 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
 
     const MAX_CSV_SIZE = 512 * 1024;
 
+    // Detect dark theme synchronously at render time — no state needed.
+    // Check classes first, then fall back to computed body background brightness
+    // (Splunk may not set dark-theme class on html/body in all versions).
+    var detectDark = function() {
+        var html = document.documentElement;
+        if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
+        if (html.getAttribute('data-theme') === 'dark') return true;
+        if (document.body.classList.contains('dark-theme')) return true;
+        var bg = getComputedStyle(document.body).backgroundColor;
+        var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (match) {
+            var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+            var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness < 128;
+        }
+        return false;
+    };
+    var isDark = detectDark();
+
     var prevRef = React.useRef(null);
     React.useEffect(function() {
         prevRef.current = document.activeElement;
@@ -207,6 +226,16 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
     // ── Preview phase: parsed table with errors + Import/Back buttons ──
     if (phase === 'preview') {
         var headerLabels = ['Username', 'Realm', 'Password', 'App', 'Owner', 'Sharing', 'Read', 'Write'];
+        var warnBg = isDark ? '#3d3400' : '#fff3cd';
+        var warnBorder = isDark ? '#665c00' : '#ffc107';
+        var warnColor = isDark ? '#ffd54f' : '#856404';
+        var errorBg = isDark ? '#3d0000' : '#fff5f5';
+        var errorBorder = isDark ? '#660000' : '#de350b';
+        var errorColor = isDark ? '#ef9a9a' : '#d32f2f';
+        var tableBorder = isDark ? '#444' : '#e0e0e0';
+        var tableColor = isDark ? '#e0e0e0' : '#172b4d';
+        var rowBorder = isDark ? '#333' : '#eee';
+        var headerBorder = isDark ? '#555' : '#e0e0e0';
         return React.createElement(SplunkModal, {
             open: true,
             onRequestClose: function() { resetState(); onClose(); },
@@ -219,38 +248,42 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
                     React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, `Import Preview \u2014 ${parsedRows.length} credential${parsedRows.length !== 1 ? 's' : ''}`)
                 ),
                 React.createElement(SplunkModal.Body, { style: { maxHeight: '60vh', overflowY: 'auto' } },
-                    parseErrors.length > 0 && React.createElement(
-                        'div',
-                        { style: { backgroundColor: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem', color: '#856404' } },
-                        parseErrors.map(function(err, i) { return React.createElement('div', { key: i }, '\u26a0 ', err); })
-                    ),
-                    parsedRows.length > 0 ? React.createElement(
-                        'p', { style: { margin: '0 0 8px' } }, `<b>${parsedRows.length}</b> credential${parsedRows.length !== 1 ? 's' : ''} ready to import.`)
-                        : React.createElement('div', { style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem' } }, 'No valid rows to import.')
-                    ,
-                    parsedRows.length > 0 && React.createElement(
-                        'div', { style: { maxHeight: '300px', overflowY: 'auto', marginTop: '8px', border: '1px solid #e0e0e0' } },
-                        React.createElement('table', { style: { width: '100%', borderWidth: 0, fontSize: '12px', color: '#172b4d' } },
-                            React.createElement('thead', null,
-                                React.createElement('tr', { style: { textAlign: 'left', borderBottom: '2px solid #e0e0e0' } },
-                                    headerLabels.map(function(h) {
-                                        return React.createElement('th', { key: h, style: { padding: '6px 8px', fontWeight: 500, borderBottom: '1px solid #e0e0e0' } }, h);
+                    isDark && React.createElement('style', null, '.import-csv-modal-body * { color: #e0e0e0 !important; }'),
+                    React.createElement('div', { className: 'import-csv-modal-body', style: { color: isDark ? '#e0e0e0' : 'inherit' } },
+                        parseErrors.length > 0 && React.createElement(
+                            'div',
+                            { style: { backgroundColor: warnBg, border: '1px solid ' + warnBorder, borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem', color: warnColor } },
+                            parseErrors.map(function(err, i) { return React.createElement('div', { key: i }, '\u26a0 ', err); })
+                        ),
+                        parsedRows.length > 0 ? React.createElement(
+                            'p', { style: { margin: '0 0 8px', color: isDark ? '#e0e0e0' : '#333' } },
+                                React.createElement('b', null, parsedRows.length),
+                                ` credential${parsedRows.length !== 1 ? 's' : ''} ready to import.`)
+                            : React.createElement('div', { style: { backgroundColor: errorBg, color: errorColor, border: '1px solid ' + errorBorder, borderRadius: '4px', padding: '0.5rem 0.75rem' } }, 'No valid rows to import.'),
+                        parsedRows.length > 0 && React.createElement(
+                            'div', { style: { maxHeight: '300px', overflowY: 'auto', marginTop: '8px', border: '1px solid ' + tableBorder } },
+                            React.createElement('table', { style: { width: '100%', borderWidth: 0, fontSize: '12px', color: tableColor } },
+                                React.createElement('thead', null,
+                                    React.createElement('tr', { style: { textAlign: 'left', borderBottom: '2px solid ' + headerBorder } },
+                                        headerLabels.map(function(h) {
+                                            return React.createElement('th', { key: h, style: { padding: '6px 8px', fontWeight: 500, borderBottom: '1px solid ' + headerBorder } }, h);
+                                        })
+                                    )
+                                ),
+                                React.createElement('tbody', null,
+                                    parsedRows.map(function(row, idx) {
+                                        return React.createElement('tr', { key: idx, style: { textAlign: 'left', borderBottom: '1px solid ' + rowBorder } },
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, row.username || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, row.realm || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, '\u2022\u2022\u2022\u2022\u2022'),
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, row.app || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, row.owner || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px' } }, row.sharing || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.read || ''),
+                                            React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.write || '')
+                                        );
                                     })
                                 )
-                            ),
-                            React.createElement('tbody', null,
-                                parsedRows.map(function(row, idx) {
-                                    return React.createElement('tr', { key: idx, style: { textAlign: 'left', borderBottom: '1px solid #eee' } },
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.username || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.realm || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, '\u2022\u2022\u2022\u2022\u2022'),
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.app || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.owner || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px' } }, row.sharing || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.read || ''),
-                                        React.createElement('td', { style: { padding: '4px 8px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.write || '')
-                                    );
-                                })
                             )
                         )
                     )
@@ -269,6 +302,13 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
     }
 
     // ── Select phase: drag/drop zone + browse button ──
+    var dropBg = isDark ? (dragActive ? '#1a2a3a' : '#2d2d2d') : (dragActive ? '#f0f7ff' : '#fff');
+    var dropBorder = isDark ? (dragActive ? '2px solid #42a5f5' : '2px dashed #555') : (dragActive ? '2px solid #0066cc' : '2px dashed #ccc');
+    var dropArrowColor = isDark ? '#aaa' : '#555';
+    var dropTextColor = isDark ? '#888' : '#888';
+    var fileErrorBg = isDark ? '#3d0000' : '#fff5f5';
+    var fileErrorBorder = isDark ? '#660000' : '#de350b';
+    var fileErrorColor = isDark ? '#ef9a9a' : '#d32f2f';
     return React.createElement(SplunkModal, {
         open: true,
         onRequestClose: function() { onClose && onClose(); },
@@ -288,15 +328,15 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
                     {
                         onDragEnter: handleDrag, onDragLeave: handleDrag, onDragOver: handleDrag, onDrop: handleDrop,
                         onClick: function() { if (fileInputRef.current) fileInputRef.current.click(); },
-                        style: { border: `${dragActive ? '2px solid #0066cc' : '2px dashed #ccc'}`, borderRadius: '4px', padding: '3rem 1.5rem', textAlign: 'center', backgroundColor: dragActive ? '#f0f7ff' : '#fff', marginTop: '1rem', cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s' }
+                        style: { border: dropBorder, borderRadius: '4px', padding: '3rem 1.5rem', textAlign: 'center', backgroundColor: dropBg, marginTop: '1rem', cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s' }
                     },
                     file ? React.createElement('p', null, file.name) : React.createElement(React.Fragment, null,
-                        React.createElement('p', { style: { margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#555' } }, '\u2B07'),
-                        React.createElement('p', { style: { margin: '4px 0 0', fontSize: '13px', color: '#888' } }, 'Click to select or drag file')
+                        React.createElement('p', { style: { margin: 0, fontSize: '14px', fontWeight: 'bold', color: dropArrowColor } }, '\u2B07'),
+                        React.createElement('p', { style: { margin: '4px 0 0', fontSize: '13px', color: dropTextColor } }, 'Click to select or drag file')
                     )
                 ),
                 fileError && React.createElement(
-                    'div', { style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginTop: '0.75rem' } }, fileError
+                    'div', { style: { backgroundColor: fileErrorBg, color: fileErrorColor, border: '1px solid ' + fileErrorBorder, borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginTop: '0.75rem' } }, fileError
                 )
             ),
             React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
