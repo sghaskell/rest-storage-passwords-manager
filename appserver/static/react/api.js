@@ -104,76 +104,6 @@ function parseSplunkXml(xml) {
 }
 
 /**
- * Make authenticated API request to Splunk via splunkd/__raw proxy.
- * Uses cookie-based auth and form-urlencoded body for mutations.
- * Body is serialized unconditionally for mutations (POST/PUT/PATCH), matching legacy behavior.
- */
-async function apiRequest(endpoint, options = {}) {
-    const method = options.method || 'GET';
-    let url = `${API_ENDPOINT}${endpoint}`;
-
-    // Always append output_mode=json — Splunk web proxy converts to JSON reliably.
-    // GET: required because Splunk defaults to XML responses.
-    // POST/PUT/PATCH: included in body via formEncode, ensuring JSON responses for .json() parsing.
-    const separator = url.includes('?') ? '&' : '?';
-    url += `${separator}output_mode=json&count=0`;
-
-    // Replicate exact header set from password-crud.js splunkdFetch().
-    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
-    let body = undefined;
-    const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-
-    // CSRF token — cookie name may include port on some installs (splunkweb_csrf_token_8000)
-    const csrfToken = getCSRFToken();
-    if (csrfToken && isMutation) {
-        headers['X-Splunk-Form-Key'] = csrfToken;
-    }
-
-    // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
-    if (isMutation && options.body) {
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        // Inject output_mode=json into body so mutation responses are JSON (fixes .json() parsing)
-        const bodyData = { ...options.body, output_mode: 'json' };
-        body = formEncode(bodyData);
-    }
-
-    const timeout = options.timeout || DEFAULT_FETCH_TIMEOUT_MS;
-    const controller = new AbortController();
-    const timerId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-        const response = await fetch(url, {
-            method: method,
-            headers: headers,
-            body: body,
-            credentials: 'include',
-            signal: controller.signal,
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            const parsedMsg = parseError(errorText);
-            const error = new Error(parsedMsg || `API Error ${response.status}`);
-            error.status = response.status;
-            throw error;
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('json') && !contentType.includes('javascript')) {
-            const text = await response.text();
-            if (!text || text.trim().length === 0) {
-                return {};
-            }
-            console.warn(`apiRequest: non-JSON response (${contentType}), status ${response.status}`);
-            return { error: 'Invalid response — expected JSON' };
-        }
-        return response.json().catch(() => ({ error: 'Invalid response — failed to parse JSON' }));
-    } finally {
-        clearTimeout(timerId);
-    }
-}
-
-/**
  * Make request to a full SPLUNKD proxy path (not under storage/passwords)
  */
 async function splunkdRequest(path, options = {}) {
@@ -353,21 +283,6 @@ async function getAllCredentials() {
 }
 
 /**
- * Get a single credential by name and realm
- */
-async function getCredential(name, realm) {
-    try {
-        const encodedName = encodeURIComponent(name);
-        const encodedRealm = encodeURIComponent(realm);
-        const data = await apiRequest(`/${encodedRealm}:${encodedName}`);
-        return (data.entry || [null])[0] ? flattenCredential((data.entry || [null])[0]) : null;
-    } catch (error) {
-        console.error(`Error fetching credential ${realm}:${name}:`, error);
-        throw error;
-    }
-}
-
-/**
  * Create a new credential, then set its ACL permissions.
  * Splunk requires two separate calls: POST to create, PUT /acl for permissions.
  */
@@ -520,21 +435,6 @@ async function deleteCredential(name, realm, app, owner, readRoles, writeRoles, 
 }
 
 /**
- * Get ACL information for a credential
- */
-async function getCredentialACL(name, realm) {
-    try {
-        const encodedName = encodeURIComponent(name);
-        const encodedRealm = encodeURIComponent(realm);
-        const data = await apiRequest(`/${encodedRealm}:${encodedName}/acl`);
-        return data.entry || null;
-    } catch (error) {
-        console.error(`Error fetching ACL for ${realm}:${name}:`, error);
-        throw error;
-    }
-}
-
-/**
  * Get the clear-text password for a credential.
  * For user-scoped credentials, temporarily bumps sharing to 'app' so the fetch succeeds,
  * then restores original sharing — mirrors legacy L425-433 exactly.
@@ -580,28 +480,6 @@ async function getCredentialPassword(name, realm, app, owner, sharing) {
             }).catch(() => console.warn('Failed to restore user-scoped sharing after password reveal'));
         }
     }
-}
-
-/**
- * Move a credential to a different app.
- * POSTs to the /move endpoint on the conf-passwords resource.
- */
-async function moveCredential(name, realm, newApp) {
-    const encodedName = encodeURIComponent(name);
-    const encodedRealm = encodeURIComponent(realm);
-    const stanzaKey = `${encodedRealm}:${encodedName}:`;
-    const credId = encodeURIComponent(`credential:${stanzaKey}`);
-
-    await splunkdRequest(
-        `/servicesNS/nobody/${encodeURIComponent(newApp)}/configs/conf-passwords/${credId}/move`,
-        {
-            method: 'POST',
-            body: {
-                app: newApp,
-                user: 'nobody',
-            },
-        }
-    );
 }
 
 /**
@@ -1171,13 +1049,10 @@ module.exports = {
     generateCSVTemplate,
     generateExportCSV,
     getAllCredentials,
-    getCredential,
     createCredential,
     updateCredential,
     deleteCredential,
-    getCredentialACL,
     getCredentialPassword,
-    moveCredential,
     getApps,
     getUsers,
     getRoles,
