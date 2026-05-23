@@ -101,8 +101,6 @@ function saveRowsPerPage(count) {
  * @param {Function} props.onCopy - Callback when copy button clicked
  * @param {string} props.filterText - Search text (controlled from parent)
  * @param {Function} props.onFilterChange - Callback when filter text changes
- * @param {string} props.filterType - Filter field type (controlled from parent)
- * @param {Function} props.onFilterTypeChange - Callback when filter type changes
  * @param {Object} props.sortConfig - Sort config {key, direction} (controlled from parent)
  * @param {Function} props.onSortChange - Callback when sort changes
  */
@@ -182,8 +180,8 @@ function CredentialTable({
                 }
                 if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                 if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
-                if (f.field === 'readRoles' && aclRead !== val) return false;
-                if (f.field === 'writeRoles' && aclWrite !== val) return false;
+                if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
+                if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'modified' && mtime !== val) return false;
             }
 
@@ -728,7 +726,9 @@ function CredentialTable({
             'div',
             { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' } },
             React.createElement('span', { style: { fontSize: '12px', color: 'var(--ct-text-muted)' } },
-                'Showing ' + ((currentPage - 1) * rowsPerPage + 1) + '-' + Math.min(currentPage * rowsPerPage, sortedCredentials.length) + ' of ' + sortedCredentials.length + ' credential' + (sortedCredentials.length !== 1 ? 's' : '')
+                sortedCredentials.length === 0
+                    ? 'No credentials'
+                    : 'Showing ' + ((currentPage - 1) * rowsPerPage + 1) + '-' + Math.min(currentPage * rowsPerPage, sortedCredentials.length) + ' of ' + sortedCredentials.length + ' credential' + (sortedCredentials.length !== 1 ? 's' : '')
             ),
             totalPages > 1 ? React.createElement(Paginator, {
                 current: currentPage,

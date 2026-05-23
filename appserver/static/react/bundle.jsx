@@ -178,7 +178,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             if (undoCredentials.length === 0) return;
             var timer = setInterval(function() {
                 setUndoSecondsLeft(function(prev) {
-                    if (prev <= 1) {
+                    if (prev <= 0) {
                         setUndoCredentials([]);
                         return 0;
                     }
@@ -320,8 +320,8 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                     }
                     if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                     if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
-                    if (f.field === 'readRoles' && aclRead !== val) return false;
-                    if (f.field === 'writeRoles' && aclWrite !== val) return false;
+                    if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
+                    if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                     if (f.field === 'modified' && mtime !== val) return false;
                 }
 
