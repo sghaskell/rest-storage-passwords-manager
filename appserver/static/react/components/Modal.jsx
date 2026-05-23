@@ -208,9 +208,12 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
     async function handleImport() {
         if (parsedRows.length === 0) return;
         setLoading(true);
-        await onImport(parsedRows, parseErrors);
-        setLoading(false);
-        onClose();
+        try {
+            await onImport(parsedRows, parseErrors);
+        } finally {
+            setLoading(false);
+            onClose();
+        }
     }
 
     function resetState() {
@@ -218,6 +221,7 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
         setParsedRows([]);
         setParseErrors([]);
         setFileError('');
+        setLoading(false);
         setPhase('select');
     }
 
@@ -606,8 +610,10 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
         else setWriteRoles(newVals);
     }
 
-    // Check all checked fields have values — prevents submitting empty roles
-    var canApply = (applyRead ? readRoles.length > 0 : true) &&
+    // At least one checkbox must be checked, and checked fields must have values
+    var hasApply = applyRead || applyWrite || applyOwner || applySharing;
+    var canApply = hasApply &&
+                   (applyRead ? readRoles.length > 0 : true) &&
                    (applyWrite ? writeRoles.length > 0 : true) &&
                    (applyOwner ? owner !== '' : true) &&
                    (applySharing ? sharing !== '' : true);

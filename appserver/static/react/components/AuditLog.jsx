@@ -268,6 +268,7 @@ function AuditLog({ mvc }) {
     var handleTimeRangeChange = function(e, data) {
         var val = data && data.value != null ? data.value : timeRange;
         setTimeRange(val);
+        setCurrentPage(1);
     };
 
     var handleRefresh = function() {
@@ -277,6 +278,7 @@ function AuditLog({ mvc }) {
     var handleUserFilterChange = function(e, data) {
         var vals = data && Array.isArray(data.values) ? data.values : [];
         setSelectedUsers(vals);
+        setCurrentPage(1);
     };
 
     var headerCells = AUDIT_COLUMNS.map(function(col) {
