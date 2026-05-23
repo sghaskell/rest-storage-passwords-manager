@@ -76,11 +76,17 @@ var GlobalStyles = _sc.createGlobalStyle`
     html.theme-dark .credential-form-generator-panel,
     html[data-theme="dark"] .credential-form-generator-panel {
         border-color: #444 !important;
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
     }
-    html.dark-theme .credential-form-generator-header,
-    html.theme-dark .credential-form-generator-header,
-    html[data-theme="dark"] .credential-form-generator-header {
-        background-color: #363636 !important;
+    html.dark-theme .credential-form-generator-panel input[type="range"],
+    html.theme-dark .credential-form-generator-panel input[type="range"],
+    html[data-theme="dark"] .credential-form-generator-panel input[type="range"] {
+        background-color: #444 !important;
+    }
+    html.dark-theme .credential-form-generator-panel label,
+    html.theme-dark .credential-form-generator-panel label,
+    html[data-theme="dark"] .credential-form-generator-panel label {
         color: #e0e0e0 !important;
     }
     /* Password strength bar track — hardcoded #e0e0e0 in CredentialForm */

@@ -44,6 +44,21 @@ function getPasswordStrength(pw) {
     return { label: 'Strong', color: '#2e7d32', width: '100%' };
 }
 
+// Password generator
+function generatePassword(length, options) {
+    var chars = '';
+    if (options.lowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
+    if (options.uppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (options.numbers) chars += '0123456789';
+    if (options.symbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    if (!chars) chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    var result = [];
+    for (var i = 0; i < length; i++) {
+        result.push(chars.charAt(Math.floor(Math.random() * chars.length)));
+    }
+    return result.join('');
+}
+
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
     var allItem = { label: '* (all)', value: '* (all)' };
@@ -81,6 +96,15 @@ function CredentialForm({
     const [sharing, setSharing] = React.useState('app');
     const [isChangingPassword, setIsChangingPassword] = React.useState(false);
     const [errors, setErrors] = React.useState({});
+    const [showGenerator, setShowGenerator] = React.useState(false);
+    const [copiedPassword, setCopiedPassword] = React.useState(false);
+    const [genLength, setGenLength] = React.useState(16);
+    const [genOptions, setGenOptions] = React.useState({
+        uppercase: true,
+        lowercase: true,
+        numbers: true,
+        symbols: true,
+    });
     const prevReadRolesRef = React.useRef(readRolesArray);
     const prevWriteRolesRef = React.useRef(writeRolesArray);
 
@@ -200,6 +224,30 @@ function CredentialForm({
             delete next[key];
             return Object.keys(next).length ? next : {};
         });
+    }
+
+    // Generator handlers
+    function handleGenerate() {
+        var pw = generatePassword(genLength, genOptions);
+        setPassword(pw);
+        setConfirmPassword(pw);
+        setErrors({});
+    }
+
+    function handleCopyPassword() {
+        if (!password) return;
+        navigator.clipboard.writeText(password).then(function() {
+            setCopiedPassword(true);
+            setTimeout(function() { setCopiedPassword(false); }, 1500);
+        }).catch(function() {});
+    }
+
+    function toggleGenerator() {
+        setShowGenerator(function(p) { return !p; });
+    }
+
+    function handleOptionChange(key) {
+        setGenOptions(function(prev) { return Object.assign({}, prev, { [key]: !prev[key] }); });
     }
 
     // Resolve role list for API: map '* (all)' → '*' (wildcard), or pass through normal roles
@@ -396,6 +444,92 @@ function CredentialForm({
             )
         ),
 
+        // Generator toggle button
+        showPasswordFields && React.createElement('div', { style: { textAlign: 'center', width: '100%' } },
+            React.createElement(Button, {
+                type: 'button',
+                appearance: 'subtle',
+                onClick: toggleGenerator,
+            }, showGenerator ? 'Hide Password Generator' : 'Generate Password')
+        ),
+
+        // Generator panel (expandable)
+        showPasswordFields && showGenerator && React.createElement('div', {
+            className: 'credential-form-generator-panel',
+            style: {
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                padding: '1rem',
+                backgroundColor: '#f9f9f9',
+            }
+        },
+            React.createElement('div', {
+                className: 'credential-form-generator-header',
+                style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }
+            },
+                // Left column: length slider + generate/copy buttons
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
+                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500' } }, 'Length: ' + genLength),
+                    React.createElement('input', {
+                        type: 'range',
+                        min: 8,
+                        max: 64,
+                        value: genLength,
+                        onChange: function(e) { setGenLength(parseInt(e.target.value)); },
+                        style: { width: '100%' }
+                    }),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
+                        React.createElement(Button, {
+                            type: 'button',
+                            appearance: 'primary',
+                            onClick: handleGenerate,
+                        }, 'Generate'),
+                        React.createElement(Button, {
+                            type: 'button',
+                            appearance: 'subtle',
+                            onClick: handleCopyPassword,
+                        }, copiedPassword ? 'Copied!' : 'Copy')
+                    )
+                ),
+                // Right column: character set checkboxes
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500', marginBottom: '0.25rem' } }, 'Character Set'),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.uppercase,
+                            onChange: function() { handleOptionChange('uppercase'); },
+                        }),
+                        ' Uppercase (A-Z)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.lowercase,
+                            onChange: function() { handleOptionChange('lowercase'); },
+                        }),
+                        ' Lowercase (a-z)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.numbers,
+                            onChange: function() { handleOptionChange('numbers'); },
+                        }),
+                        ' Numbers (0-9)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.symbols,
+                            onChange: function() { handleOptionChange('symbols'); },
+                        }),
+                        ' Symbols (!@#$%^&*...)'
+                    )
+                )
+            )
+        ),
+
         // Password strength indicator
         showPasswordFields && password.length > 0 && React.createElement('div', { style: { width: '100%' } },
             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '4px' } },
@@ -403,7 +537,7 @@ function CredentialForm({
                     getPasswordStrength(password).label
                 )
             ),
-            React.createElement('div', { style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
+            React.createElement('div', { className: 'credential-form-password-strength-track', style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
                 React.createElement('div', { style: { height: '100%', width: getPasswordStrength(password).width, backgroundColor: getPasswordStrength(password).color, borderRadius: '2px', transition: 'width 0.2s, background-color 0.2s' } })
             )
         ),
