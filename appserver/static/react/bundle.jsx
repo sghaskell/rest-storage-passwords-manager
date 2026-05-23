@@ -1003,6 +1003,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
             // Help modal
             modals.help && React.createElement(HelpModal, {
+                isOpen: modals.help,
                 onClose: () => setModals(prev => ({ ...prev, help: false })),
             })
         );
