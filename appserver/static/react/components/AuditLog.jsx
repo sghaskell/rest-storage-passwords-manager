@@ -58,8 +58,8 @@ function chipStyle(bg, color, border) {
     };
 }
 
-// Status chip colors
-var STATUS_COLORS = {
+// Status chip colors — light theme defaults
+var STATUS_COLORS_LIGHT = {
     'Success': { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
     'Duplicate': { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
     'Conflict': { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
@@ -70,18 +70,38 @@ var STATUS_COLORS = {
     'Unknown': { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
 };
 
-function getStatusChipStyle(status) {
-    var c = STATUS_COLORS[status] || STATUS_COLORS['Unknown'];
+var STATUS_COLORS_DARK = {
+    'Success': { bg: '#1b5e20', color: '#a5d6a7', border: '#66bb6a' },
+    'Duplicate': { bg: '#4e342e', color: '#ffcc80', border: '#ffa726' },
+    'Conflict': { bg: '#4e342e', color: '#ffcc80', border: '#ffa726' },
+    'Not Found': { bg: '#0d47a1', color: '#90caf9', border: '#42a5f5' },
+    'Forbidden': { bg: '#b71c1c', color: '#f48fb1', border: '#e57373' },
+    'Client Error': { bg: '#b71c1c', color: '#f48fb1', border: '#e57373' },
+    'Server Error': { bg: '#4a148c', color: '#ce93d8', border: '#ab47bc' },
+    'Unknown': { bg: '#363636', color: '#999', border: '#555' },
+};
+
+function getStatusChipStyle(status, isDark) {
+    var colors = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+    var c = colors[status] || colors['Unknown'];
     return chipStyle(c.bg, c.color, c.border);
 }
 
-// Column chip colors for audit log
-var COLUMN_CHIP_COLORS = {
+// Column chip colors for audit log — light theme defaults
+var COLUMN_CHIP_COLORS_LIGHT = {
     timestamp: { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
     user: { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
     action: { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
     credential: { bg: '#e8eaf6', color: '#283593', border: '#9fa8da' },
     info: { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
+};
+
+var COLUMN_CHIP_COLORS_DARK = {
+    timestamp: { bg: '#363636', color: '#999', border: '#555' },
+    user: { bg: '#4e342e', color: '#ffcc80', border: '#ffa726' },
+    action: { bg: '#0d47a1', color: '#90caf9', border: '#42a5f5' },
+    credential: { bg: '#1a237e', color: '#9fa8da', border: '#5c6bc0' },
+    info: { bg: '#363636', color: '#999', border: '#555' },
 };
 
 // Time range options — maps label to milliseconds
@@ -134,6 +154,22 @@ function AuditLog({ mvc }) {
     var [filterType, setFilterType] = React.useState('all');
     var [currentPage, setCurrentPage] = React.useState(1);
     var [rowsPerPage, setRowsPerPage] = React.useState(10);
+    var [isDark, setIsDark] = React.useState(false);
+
+    // Detect dark theme — same approach as CredentialTable
+    React.useEffect(function() {
+        var check = function() {
+            return document.documentElement.classList.contains('dark-theme') ||
+                document.documentElement.classList.contains('theme-dark') ||
+                document.documentElement.getAttribute('data-theme') === 'dark' ||
+                document.body.classList.contains('dark-theme');
+        };
+        setIsDark(check());
+        var observer = new MutationObserver(function() { setIsDark(check()); });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        return function() { observer.disconnect(); };
+    }, []);
 
     var fetchData = React.useCallback(function() {
         setLoading(true);
@@ -295,12 +331,12 @@ function AuditLog({ mvc }) {
                     } else if (col.key === 'status') {
                         return React.createElement(TableCell, { key: col.key },
                             React.createElement('span', {
-                                style: getStatusChipStyle(value || 'Unknown'),
+                                style: getStatusChipStyle(value || 'Unknown', isDark),
                             }, value || 'Unknown')
                         );
                     }
 
-                    var cc = COLUMN_CHIP_COLORS[col.key];
+                    var cc = (isDark ? COLUMN_CHIP_COLORS_DARK : COLUMN_CHIP_COLORS_LIGHT)[col.key];
                     if (cc) {
                         return React.createElement(TableCell, { key: col.key },
                             React.createElement('span', {
