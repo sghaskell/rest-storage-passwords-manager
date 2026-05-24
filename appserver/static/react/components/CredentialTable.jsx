@@ -630,9 +630,16 @@ function CredentialTable({
         '  --ct-filter-pill-bg: ' + (isDark ? '#0a2a66' : '#e3f2fd') + '; --ct-filter-pill-color: ' + (isDark ? '#90caf9' : '#1565c0') + '; --ct-filter-pill-border: ' + (isDark ? '#1e88e5' : '#90caf9') + ';',
         '  --ct-clear-text: ' + (isDark ? '#999' : '#888') + ';',
         '  --ct-empty-text: ' + (isDark ? '#aaa' : '#666') + ';',
+        '  --ct-body-bg: ' + (isDark ? '#15191e' : '#fff') + ';',
         '}',
         // Force header row dark styling — targets Splunk's generated HeadCell class names
-        '.credential-table-container table thead th, .credential-table-container table thead th [class*="sc-"], .credential-table-container table thead th [class*="HeadCell"] {',
+        '.credential-table-container table thead th, .credential-table-container table thead th [class*="HeadCell"] {',
+        '  background-color: var(--ct-header-bg) !important;',
+        '  color: var(--ct-header-color) !important;',
+        '}',
+        // Also set bg on nested sc- classes, but NOT inside the toggle-all cell
+        // (its checkbox uses the same sc- class pattern and needs its checked-state accent color)
+        '.credential-table-container table thead th:not([data-test="toggle-all"]) [class*="sc-"] {',
         '  background-color: var(--ct-header-bg) !important;',
         '  color: var(--ct-header-color) !important;',
         '}'
