@@ -158,6 +158,7 @@ function RotationSettings({ onPreview, onExecute }) {
 function RotationPreview({ selectedRows, generatorOptions, mode, onBack, onExecute }) {
     const [passwords, setPasswords] = React.useState({});
     const [revealed, setRevealed] = React.useState({});
+    const [copied, setCopied] = React.useState(false);
 
     // Generate passwords on mount
     React.useEffect(function() {
@@ -203,6 +204,8 @@ function RotationPreview({ selectedRows, generatorOptions, mode, onBack, onExecu
         });
         var text = 'Username\tNew Password\n' + lines.join('\n');
         navigator.clipboard.writeText(text).catch(function() {});
+        setCopied(true);
+        setTimeout(function() { setCopied(false); }, 2000);
     }
 
     // Header cells
@@ -215,7 +218,7 @@ function RotationPreview({ selectedRows, generatorOptions, mode, onBack, onExecu
 
     // Data rows
     var dataRows = selectedRows.map(function(cred) {
-        var key = cred.stanzaKey + ':' + cred.app + ':' + cred.sharing;
+        var key = cred.stanzaKey + ':' + cred.app + ':' + cred.owner + ':' + cred.sharing;
         var pw = passwords[key] || '';
         var isRevealed = !!revealed[key];
         var realmLabel = !cred.realm || cred.realm === 'nobody' ? 'global' : (cred.realm || '');
@@ -254,8 +257,8 @@ function RotationPreview({ selectedRows, generatorOptions, mode, onBack, onExecu
             }),
             React.createElement(Button, {
                 onClick: copyAllPasswords,
-                appearance: 'subtle',
-                children: 'Copy All'
+                appearance: copied ? 'primary' : 'subtle',
+                children: copied ? 'Copied!' : 'Copy All'
             }),
             React.createElement(Button, {
                 onClick: onBack,
