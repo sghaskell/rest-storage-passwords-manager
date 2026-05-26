@@ -125,6 +125,7 @@ function CredentialTable({
     sortConfig: sortConfigProp,
     onSortChange,
     duplicateInfo,
+    onOpenPresetModal,
 }) {
     // Filter/sort: accept from parent or fall back to local state for backwards compat
     const useParentState = filterTextProp !== undefined;
@@ -751,6 +752,12 @@ function CredentialTable({
             ),
 
             React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
+                // Column Presets button — opens preset management modal
+                onOpenPresetModal && React.createElement(Button, {
+                    onClick: function() { onOpenPresetModal(); },
+                    appearance: 'subtle',
+                    children: 'Column Presets'
+                }),
                 React.createElement(Dropdown, {
                     open: dropdownOpen,
                     onRequestOpen: function() { setDropdownOpen(true); },

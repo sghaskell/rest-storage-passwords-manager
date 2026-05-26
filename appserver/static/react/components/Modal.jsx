@@ -751,5 +751,166 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
         )
     );
 }
+// ─── Column preset management modal ───
 
-module.exports = { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal };
+/**
+ * ColumnPresetModal — manages column layout presets (save, apply, rename, delete)
+ */
+function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPreset, onSavePreset, onDeletePreset, onRenamePreset }) {
+    const [newPresetName, setNewPresetName] = React.useState('');
+    const [error, setError] = React.useState('');
+    const [renameTarget, setRenameTarget] = React.useState(null);
+    const [renameNewName, setRenameNewName] = React.useState('');
+
+    function handleSaveCurrent() {
+        if (!newPresetName || !newPresetName.trim()) {
+            setError('Preset name is required.');
+            return;
+        }
+        var exists = presets.some(function(p) { return p.name === newPresetName.trim(); });
+        if (exists) {
+            setError('A preset with this name already exists.');
+            return;
+        }
+        onSavePreset(newPresetName.trim(), visibleColumns);
+        setNewPresetName('');
+        setError('');
+    }
+
+    function handleRename() {
+        if (renameTarget) {
+            if (!renameNewName || !renameNewName.trim()) {
+                setError('Rename target name is required.');
+                return;
+            }
+            onRenamePreset(renameTarget, renameNewName.trim());
+            setRenameTarget(null);
+            setRenameNewName('');
+        }
+    }
+
+    function handleCancelRename() {
+        setRenameTarget(null);
+        setRenameNewName('');
+    }
+
+    if (!isOpen) return null;
+
+    return React.createElement(SplunkModal, {
+        open: true,
+        onRequestClose: onClose,
+        divider: 'both',
+        style: { width: '600px', maxWidth: '95%' }
+    },
+        React.createElement('div', null,
+            React.createElement(SplunkModal.Header, null,
+                React.createElement('h3', { style: { margin: 0, fontSize: '16px', fontWeight: '500' } }, 'Column Layout Presets')
+            ),
+            React.createElement(SplunkModal.Body, { style: { maxHeight: '70vh', overflowY: 'auto' } },
+
+                // Save current layout section
+                React.createElement('div', { style: { marginBottom: '1.5rem' } },
+                    React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px' } }, 'Save Current Layout'),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
+                        React.createElement('input', {
+                            type: 'text',
+                            placeholder: 'Preset name...',
+                            value: newPresetName,
+                            onChange: function(e) { setNewPresetName(e.target.value); setError(''); },
+                            style: {
+                                flex: 1,
+                                padding: '6px 8px',
+                                fontSize: '13px',
+                                border: '1px solid #ccc',
+                                borderRadius: '4px',
+                                boxSizing: 'border-box'
+                            }
+                        }),
+                        React.createElement(Button, {
+                            onClick: handleSaveCurrent,
+                            appearance: 'primary',
+                            children: 'Save'
+                        })
+                    )
+                ),
+
+                // Error message
+                error && React.createElement('div', {
+                    style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem' }
+                }, error),
+
+                // Preset list
+                React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px' } }, 'Saved Presets'),
+
+                presets.length === 0
+                    ? React.createElement('p', { style: { color: '#888', fontStyle: 'italic', fontSize: '13px' } }, 'No presets saved yet.')
+                    : presets.map(function(preset) {
+                        var isRenaming = renameTarget === preset.name;
+                        return React.createElement('div', {
+                            key: preset.name,
+                            style: { display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', marginBottom: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', backgroundColor: '#f9f9f9' }
+                        },
+                            // Preset name and column count
+                            React.createElement('div', { style: { flex: 1 } },
+                                React.createElement('strong', { style: { fontSize: '13px' } }, preset.name),
+                                React.createElement('span', { style: { fontSize: '11px', color: '#666', marginLeft: '0.5rem' } },
+                                    '(' + preset.columns.length + ' columns)'
+                                ),
+                                isRenaming && React.createElement('div', { style: { display: 'flex', gap: '0.25rem', marginTop: '0.25rem' } },
+                                    React.createElement('input', {
+                                        type: 'text',
+                                        value: renameNewName,
+                                        onChange: function(e) { setRenameNewName(e.target.value); },
+                                        style: {
+                                            flex: 1,
+                                            padding: '4px 6px',
+                                            fontSize: '11px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            boxSizing: 'border-box'
+                                        },
+                                        'aria-label': 'New preset name'
+                                    }),
+                                    React.createElement(Button, {
+                                        onClick: handleRename,
+                                        appearance: 'subtle',
+                                        children: 'OK',
+                                        style: { fontSize: '11px', padding: '2px 6px' }
+                                    }),
+                                    React.createElement(Button, {
+                                        onClick: handleCancelRename,
+                                        appearance: 'subtle',
+                                        children: 'Cancel',
+                                        style: { fontSize: '11px', padding: '2px 6px' }
+                                    })
+                                )
+                            ),
+                            // Action buttons
+                            React.createElement('div', { style: { display: 'flex', gap: '0.25rem' } },
+                                !isRenaming && React.createElement(Button, {
+                                    onClick: function() { onApplyPreset(preset.name); },
+                                    appearance: 'primary',
+                                    children: 'Apply'
+                                }),
+                                !isRenaming && React.createElement(Button, {
+                                    onClick: function() { setRenameTarget(preset.name); setRenameNewName(preset.name); },
+                                    appearance: 'subtle',
+                                    children: 'Rename'
+                                }),
+                                !isRenaming && React.createElement(Button, {
+                                    onClick: function() { onDeletePreset(preset.name); },
+                                    appearance: 'destructive',
+                                    children: 'Delete'
+                                })
+                            )
+                        );
+                    })
+            ),
+            React.createElement(SplunkModal.Footer, { itemAlign: 'end' },
+                React.createElement(Button, { onClick: onClose, children: 'Close' })
+            )
+        )
+    );
+}
+
+module.exports = { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal };

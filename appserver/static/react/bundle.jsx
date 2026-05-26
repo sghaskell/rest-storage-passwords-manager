@@ -115,7 +115,7 @@ const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
 const AuditLog = require('./components/AuditLog');
 const API = require('./api');
-const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal } = require('./components/Modal');
+const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal } = require('./components/Modal');
 const CredentialHistoryModal = require('./components/CredentialHistoryModal');
 const PasswordRotationModal = require('./components/PasswordRotationModal');
 
@@ -176,6 +176,54 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         // Undo delete state — array of credentials for single + bulk undo
         const [undoCredentials, setUndoCredentials] = React.useState([]);
         const [undoSecondsLeft, setUndoSecondsLeft] = React.useState(0);
+
+        // Column layout presets state
+        const [presetsOpen, setPresetsOpen] = React.useState(false);
+        const [presets, setPresets] = React.useState([]);
+
+        // Load presets on mount
+        React.useEffect(function() {
+            setPresets(API.loadPresets());
+        }, []);
+
+        // Get current visible columns from localStorage (same key CredentialTable uses)
+        function loadCurrentVisibleColumns() {
+            try {
+                var stored = localStorage.getItem('credential-table-visible-columns');
+                if (stored) {
+                    var parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return parsed;
+                    }
+                }
+            } catch (e) {}
+            return ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'];
+        }
+
+        function handleApplyPreset(name) {
+            // Write to same localStorage key CredentialTable reads — triggers re-render
+            var cols = API.applyPreset(name);
+            if (cols) {
+                try { localStorage.setItem('credential-table-visible-columns', JSON.stringify(cols)); } catch(e) {}
+                setPresetsOpen(false);
+                loadCredentials(); // reloads credentials, re-renders table with new column visibility
+            }
+        }
+
+        function handleSavePreset(name, columns) {
+            API.savePreset(name, columns);
+            setPresets(API.loadPresets());
+        }
+
+        function handleDeletePreset(name) {
+            API.deletePreset(name);
+            setPresets(API.loadPresets());
+        }
+
+        function handleRenamePreset(oldName, newName) {
+            API.renamePreset(oldName, newName);
+            setPresets(API.loadPresets());
+        }
 
         // Duplicate detection state
         const [duplicateInfo, setDuplicateInfo] = React.useState(null);
@@ -1100,6 +1148,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 sortConfig: sortConfig,
                 onSortChange: setSortConfig,
                 duplicateInfo: duplicateInfo,
+                onOpenPresetModal: function() { setPresetsOpen(true); },
             }),
 
             // Undo delete toast
@@ -1209,6 +1258,18 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             modals.help && React.createElement(HelpModal, {
                 isOpen: modals.help,
                 onClose: () => setModals(prev => ({ ...prev, help: false })),
+            }),
+
+            // Column preset modal
+            presetsOpen && React.createElement(ColumnPresetModal, {
+                isOpen: presetsOpen,
+                onClose: function() { setPresetsOpen(false); },
+                presets: presets,
+                visibleColumns: getCurrentColumns(),
+                onApplyPreset: handleApplyPreset,
+                onSavePreset: handleSavePreset,
+                onDeletePreset: handleDeletePreset,
+                onRenamePreset: handleRenamePreset,
             })
         );
     }

@@ -1570,6 +1570,122 @@ function isDuplicateCredential(cred, duplicateInfo) {
     return duplicateInfo.duplicateCredentialMap[key] || null;
 }
 
+// ─── Column layout presets ───
+
+/**
+ * Column layout preset storage — localStorage only, per-browser.
+ * Presets allow saving column visibility configurations as named layouts.
+ */
+var PRESETS_KEY = 'credential-manager-column-presets';
+
+// Built-in presets created when localStorage is empty
+var BUILTIN_PRESETS = [
+    { name: 'Default', columns: ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'] },
+    { name: 'Minimal', columns: ['name', 'actions'] },
+    { name: 'Security', columns: ['name', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'] }
+];
+
+/**
+ * Load all saved presets from localStorage.
+ * Returns array of { name, columns: [...] }.
+ * If no presets exist, returns built-in presets.
+ */
+function loadPresets() {
+    try {
+        var stored = localStorage.getItem(PRESETS_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return parsed.filter(function(p) {
+                    return p && p.name && Array.isArray(p.columns) && p.columns.length > 0;
+                });
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load column presets:', e);
+    }
+    // Return built-in presets
+    return BUILTIN_PRESETS.slice();
+}
+
+/**
+ * Save a preset to localStorage.
+ * Replaces existing preset with same name (rename in place).
+ * Enforces minimum of 1 visible column (always keeps "name").
+ */
+function savePreset(name, columns) {
+    try {
+        var presets = loadPresets();
+        var filtered = columns.filter(function(c) { return c; });
+        // Enforce minimum: always keep "name" if user tries to hide everything
+        if (!filtered.some(function(c) { return c === 'name'; })) {
+            filtered = ['name'].concat(filtered);
+        }
+        if (presets.some(function(p) { return p.name === name; })) {
+            presets = presets.map(function(p) {
+                return p.name === name ? { name: name, columns: filtered } : p;
+            });
+        } else {
+            presets.push({ name: name, columns: filtered });
+        }
+        localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+        return true;
+    } catch (e) {
+        console.warn('Failed to save column preset:', e);
+        return false;
+    }
+}
+
+/**
+ * Delete a preset from localStorage.
+ * Does not delete built-in presets unless user-created overrides exist.
+ */
+function deletePreset(name) {
+    try {
+        var presets = loadPresets();
+        var filtered = presets.filter(function(p) { return p.name !== name; });
+        localStorage.setItem(PRESETS_KEY, JSON.stringify(filtered));
+        return true;
+    } catch (e) {
+        console.warn('Failed to delete column preset:', e);
+        return false;
+    }
+}
+
+/**
+ * Get the columns array for a named preset.
+ * Returns null if preset does not exist.
+ */
+function applyPreset(name) {
+    try {
+        var presets = loadPresets();
+        var found = presets.find(function(p) { return p.name === name; });
+        return found ? found.columns.slice() : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Rename a preset.
+ */
+function renamePreset(oldName, newName) {
+    try {
+        var presets = loadPresets();
+        if (presets.some(function(p) { return p.name === newName; })) {
+            return false; // name conflict
+        }
+        var updated = presets.map(function(p) {
+            return p.name === oldName ? Object.assign({}, p, { name: newName }) : p;
+        });
+        localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
+        return true;
+    } catch (e) {
+        console.warn('Failed to rename column preset:', e);
+        return false;
+    }
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1595,6 +1711,11 @@ module.exports = {
     findDuplicatePasswords,
     clearDuplicateCache,
     isDuplicateCredential,
+    loadPresets,
+    savePreset,
+    deletePreset,
+    applyPreset,
+    renamePreset,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
 };
