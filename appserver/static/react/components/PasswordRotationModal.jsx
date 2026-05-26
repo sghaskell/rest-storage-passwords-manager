@@ -440,16 +440,14 @@ function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
 
             // Build undo entries from successful rotations
             var undoCreds = rotResults.filter(function(r) { return r.status === 'success'; }).map(function(r) {
-                var orig = selectedRows.find(function(c) {
-                    return c.name === r.name &&
-                           (c.realm || '') === (r.realm || '') &&
-                           (c.app || '') === (r.app || '');
-                });
+                var idx = rotResults.indexOf(r);
+                var orig = selectedRows[idx];
                 return {
                     name: r.name,
                     realm: r.realm || '',
                     app: r.app || '',
-                    owner: (orig && (orig.namespaceOwner || orig.owner)) || 'nobody',
+                    namespaceOwner: (orig && orig.namespaceOwner) || 'nobody',
+                    owner: (orig && orig.owner) || 'nobody',
                     sharing: (orig && orig.sharing) || 'app',
                     aclRead: (orig && orig.aclRead) || '',
                     aclWrite: (orig && orig.aclWrite) || '',
@@ -502,7 +500,7 @@ function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
                         cred.name, cred.realm, cred._password,
                         cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
                         cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
-                        cred.owner, cred.app, cred.sharing, cred.app
+                        cred.namespaceOwner || cred.owner, cred.app, cred.sharing, cred.app
                     );
                     undoResults.push({ name: cred.name, status: 'fulfilled' });
                 } catch (e) {
