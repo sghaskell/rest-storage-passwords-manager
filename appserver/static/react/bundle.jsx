@@ -200,6 +200,11 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             return ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'];
         }
 
+        // Alias for getCurrentColumns (used by ColumnPresetModal rendering)
+        function getCurrentColumns() {
+            return loadCurrentVisibleColumns();
+        }
+
         function handleApplyPreset(name) {
             // Write to same localStorage key CredentialTable reads — triggers re-render
             var cols = API.applyPreset(name);
@@ -431,7 +436,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             setData(prev => ({ ...prev, loading: true, error: null }));
             try {
                 const fetched = await API.getAllCredentials();
-                setData(prev => ({ ...prev, credentials: fetched }));
+                // Enrich credentials with rotation status
+                var enriched = fetched.map(function(cred) {
+                    var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                    var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                    return Object.assign({}, cred, {
+                        rotationStatus: rotationStatus,
+                        rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus)
+                    });
+                });
+                setData(prev => ({ ...prev, credentials: enriched }));
                 // Clear duplicate cache since credentials changed
                 API.clearDuplicateCache();
             } catch (err) {
@@ -440,6 +454,15 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             } finally {
                 setData(prev => ({ ...prev, loading: false }));
             }
+        }
+
+        // Helper: format rotation label for display
+        function getRotationLabel(expiryDate, status) {
+            if (status === 'none') return 'None';
+            if (!expiryDate) return 'None';
+            var d = new Date(expiryDate + 'T00:00:00');
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return 'Expires ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
         }
 
         // Scan for duplicate passwords in background
@@ -474,8 +497,13 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
         async function handleCreateCredential(data) {
             try {
+                // Construct realm with expiry if provided
+                var realmToSave = data.realm || '';
+                if (data.expiryDate && !realmToSave) {
+                    realmToSave = API.buildRealmWithExpiry(realmToSave, data.expiryDate);
+                }
                 await API.createCredential(
-                    data.username, data.password, data.realm,
+                    data.username, data.password, realmToSave,
                     data.app, data.owner, data.readRoles, data.writeRoles,
                     data.sharing || 'app'
                 );

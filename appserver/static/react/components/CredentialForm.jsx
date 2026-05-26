@@ -47,6 +47,8 @@ function getPasswordStrength(pw) {
 // Password generator — imported from api.js for reuse in bulk rotation
 var _API = require('../api');
 var generatePassword = _API.generatePassword;
+var parseExpiryFromRealm = _API.parseExpiryFromRealm;
+var buildRealmWithExpiry = _API.buildRealmWithExpiry;
 
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
@@ -84,6 +86,7 @@ function CredentialForm({
     const [writeRolesArray, setWriteRolesArray] = React.useState([]);
     const [sharing, setSharing] = React.useState('app');
     const [isChangingPassword, setIsChangingPassword] = React.useState(false);
+    const [expiryDate, setExpiryDate] = React.useState('');
     const [errors, setErrors] = React.useState({});
     const [showGenerator, setShowGenerator] = React.useState(false);
     const [copiedPassword, setCopiedPassword] = React.useState(false);
@@ -116,6 +119,8 @@ function CredentialForm({
             setApp(credential.app || 'search');
             setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
+            var expiryInfo = parseExpiryFromRealm(credential.realm || '');
+            setExpiryDate(expiryInfo.expiryDate || '');
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
             var aclRead = normalize((credential.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
@@ -133,6 +138,7 @@ function CredentialForm({
             setApp('search');
             setOwner(currentUserIdentity);
             setSharing('app');
+            setExpiryDate('');
 
             var defRead = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
             var defWrite = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
@@ -175,6 +181,7 @@ function CredentialForm({
                 username: username.trim(),
                 password: password || null,
                 realm: realm.trim(),
+                expiryDate: expiryDate,
                 app: app,
                 owner: owner,
                 readRoles: resolveRoles(readRolesArray),
@@ -263,6 +270,16 @@ function CredentialForm({
     var rolesData = toSelectData(rolesList);
 
     var showPasswordFields = !credential || isChangingPassword || isCopy;
+
+    // Expiry: determine if realm is empty (expiry usable) and extract base realm
+    var _baseRealmForExpiry = '';
+    if (credential) {
+        var _parsed = parseExpiryFromRealm(credential.realm || '');
+        _baseRealmForExpiry = _parsed.baseRealm;
+    } else {
+        _baseRealmForExpiry = realm.trim();
+    }
+    var expiryUsable = !_baseRealmForExpiry;
 
     // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
     function formField(label, inputEl, opts) {
@@ -528,6 +545,33 @@ function CredentialForm({
             ),
             React.createElement('div', { className: 'credential-form-password-strength-track', style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
                 React.createElement('div', { style: { height: '100%', width: getPasswordStrength(password).width, backgroundColor: getPasswordStrength(password).color, borderRadius: '2px', transition: 'width 0.2s, background-color 0.2s' } })
+            )
+        ),
+
+        // Password Expiry date picker — only usable when realm is empty
+        React.createElement('div', { style: { width: '100%' } },
+            formField('Password Expiry',
+                React.createElement('input', {
+                    type: 'date',
+                    value: expiryDate,
+                    onChange: function(e) { setExpiryDate(e.target.value); },
+                    disabled: !expiryUsable,
+                    placeholder: expiryUsable ? 'YYYY-MM-DD' : 'N/A',
+                    style: {
+                        width: '100%',
+                        padding: '6px 8px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        height: '36px',
+                        boxSizing: 'border-box',
+                    }
+                }),
+                {
+                    helpText: expiryUsable
+                        ? 'Optional — set a password rotation reminder date'
+                        : 'Expiry requires an empty realm field'
+                }
             )
         ),
 

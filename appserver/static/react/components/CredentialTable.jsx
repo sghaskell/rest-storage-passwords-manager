@@ -42,6 +42,7 @@ var COLUMNS = [
     { key: 'realm',    label: 'Realm',      sortable: true,  fixed: false },
     { key: 'app',      label: 'App',        sortable: true,  fixed: false },
     { key: 'owner',    label: 'Owner',      sortable: true,  fixed: false },
+    { key: 'rotation', label: 'Rotation',   sortable: true,  fixed: false },
     { key: 'mtime',    label: 'Modified',   sortable: true,  fixed: false },
     { key: 'aclRead',  label: 'Read Roles', sortable: true,  fixed: false },
     { key: 'aclWrite', label: 'Write Roles',sortable: true,  fixed: false },
@@ -49,7 +50,7 @@ var COLUMNS = [
 ];
 
 var VISIBLE_COLUMNS_KEY = 'credential-table-visible-columns';
-var DEFAULT_VISIBLE = ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'];
+var DEFAULT_VISIBLE = ['name', 'realm', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'];
 var ROWS_PER_PAGE_KEY = 'credential-table-rows-per-page';
 var DEFAULT_ROWS_PER_PAGE = 10;
 
@@ -186,6 +187,7 @@ function CredentialTable({
                 }
                 if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                 if (f.field === 'owner' && (credential.namespaceOwner || credential.owner || '').toLowerCase() !== val) return false;
+                if (f.field === 'rotation' && (credential.rotationStatus || 'none').toLowerCase() !== val) return false;
                 if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'modified' && mtime !== val) return false;
@@ -269,6 +271,7 @@ function CredentialTable({
         { key: 'realm', label: 'Realm' },
         { key: 'app', label: 'App' },
         { key: 'owner', label: 'Owner' },
+        { key: 'rotation', label: 'Rotation' },
         { key: 'readRoles', label: 'Read Roles' },
         { key: 'writeRoles', label: 'Write Roles' },
     ];
@@ -544,6 +547,34 @@ function CredentialTable({
                 React.createElement('div', {
                     style: { display: 'flex', alignItems: 'center', gap: '4px' }
                 }, nameCellChildren)
+            );
+        }
+        if (col.key === 'rotation') {
+            var status = cred.rotationStatus || 'none';
+            var rotationMap = {
+                ok:      { color: '#2e7d32', label: 'OK' },
+                'due-soon': { color: '#f59e0b', label: 'Due Soon' },
+                overdue: { color: '#d32f2f', label: 'Overdue' },
+                none:    { color: '#9e9e9e', label: 'None' }
+            };
+            var rotation = rotationMap[status] || rotationMap.none;
+            return React.createElement(TableCell, null,
+                React.createElement('span', {
+                    onClick: function() { handleAddFilter('rotation', status); },
+                    title: rotation.label,
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: isDark ? rotation.color + '33' : rotation.color + '22',
+                        color: rotation.color,
+                        border: '1px solid ' + (isDark ? rotation.color + '88' : rotation.color + '55'),
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                    }
+                }, rotation.label)
             );
         }
         return React.createElement(TableCell, null, cred[col.key] || '');

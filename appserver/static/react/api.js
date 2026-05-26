@@ -1686,6 +1686,52 @@ function renamePreset(oldName, newName) {
     }
 }
 
+// ─── Expiry / Rotation helpers ───────────────────────────────────────────────
+
+/**
+ * Parse expiry date from realm string.
+ * Returns { hasExpiry: bool, expiryDate: string|null, baseRealm: string }
+ */
+function parseExpiryFromRealm(realm) {
+    if (!realm || typeof realm !== 'string') {
+        return { hasExpiry: false, expiryDate: null, baseRealm: realm || '' };
+    }
+    if (realm.startsWith('expiry:')) {
+        var dateStr = realm.substring(7);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
+        }
+    }
+    return { hasExpiry: false, expiryDate: null, baseRealm: realm };
+}
+
+/**
+ * Build realm string with optional expiry date.
+ * If expiryDate is provided and baseRealm is empty, returns "expiry:YYYY-MM-DD".
+ * Otherwise returns baseRealm as-is.
+ */
+function buildRealmWithExpiry(baseRealm, expiryDate) {
+    if (expiryDate && !baseRealm) {
+        return 'expiry:' + expiryDate;
+    }
+    return baseRealm || '';
+}
+
+/**
+ * Get rotation status for a credential.
+ * Returns 'ok' | 'due-soon' | 'overdue' | 'none'
+ */
+function getRotationStatus(expiryDate) {
+    if (!expiryDate) return 'none';
+    var expiryTime = new Date(expiryDate + 'T00:00:00').getTime();
+    var now = Date.now();
+    var msUntilExpiry = expiryTime - now;
+    var daysUntilExpiry = msUntilExpiry / (1000 * 60 * 60 * 24);
+    if (msUntilExpiry < 0) return 'overdue';
+    if (daysUntilExpiry <= 7) return 'due-soon';
+    return 'ok';
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1718,4 +1764,7 @@ module.exports = {
     renamePreset,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
+    parseExpiryFromRealm,
+    buildRealmWithExpiry,
+    getRotationStatus,
 };
