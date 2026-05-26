@@ -185,11 +185,23 @@ function flattenCredential(entry) {
     const content = entry.content || {};
     const acl = entry.acl || {};
     const perms = acl.perms || {};
+
+    // Extract the real namespace owner from the entry's id URL.
+    var namespaceOwner = 'nobody';
+    var id = entry.id || '';
+    if (id) {
+        var idParts = id.split('/servicesNS/');
+        if (idParts[1]) {
+            namespaceOwner = idParts[1].split('/')[0];
+        }
+    }
+
     return {
         name: content.username || '',
         realm: content.realm || '',
         app: acl.app || 'search',
         owner: acl.owner || 'nobody',
+        namespaceOwner: namespaceOwner,
         aclRead: (perms.read || []).join(', '),
         aclWrite: (perms.write || []).join(', '),
         sharing: acl.sharing || 'app',
@@ -255,16 +267,31 @@ function flattenConfigEntry(entry) {
     var fullName = entry.name || '';
     var parsed = parseCredentialName(fullName);
 
+    // Extract the real namespace owner from the entry's id URL.
+    // e.g., "https://host/servicesNS/admin/search/configs/..." → "admin"
+    // This is reliable because the id reflects the actual config file location,
+    // whereas acl.owner / eai:acl.owner may reflect the merged ACL metadata.
+    var namespaceOwner = 'nobody';
+    var id = entry.id || '';
+    if (id) {
+        var idParts = id.split('/servicesNS/');
+        if (idParts[1]) {
+            namespaceOwner = idParts[1].split('/')[0];
+        }
+    }
+
     return {
         name: parsed.name,
         realm: parsed.realm,
         app: acl.app || 'search',
         owner: acl.owner || 'nobody',
+        namespaceOwner: namespaceOwner,
         aclRead: (perms.read || []).join(', '),
         aclWrite: (perms.write || []).join(', '),
         sharing: acl.sharing || 'app',
         stanzaKey: fullName,
         editLink: (entry.links && entry.links.edit) || null,
+        deletePath: (entry.links && entry.links.edit) ? entry.links.edit.replace(/\/edit$/, '') : null,
         mtime: entry.mtime || '',
     };
 }
@@ -283,54 +310,74 @@ async function getAllCredentials() {
 }
 
 /**
- * Create a new credential, then set its ACL permissions.
- * Splunk requires two separate calls: POST to create, PUT /acl for permissions.
+ * Two-step ACL write for configs/conf-passwords. If sharing='user', first bump
+ * to 'app' then set the actual value. Errors are logged but not thrown — ACL
+ * failures shouldn't block undo (the credential exists, just with default ACLs).
  */
-async function createCredential(username, password, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
+async function _setAcl(aclPath, sharing, readRoles, writeRoles, owner) {
+    var aclBody = {
+        'perms.read': readRoles ? readRoles.join(',') : '',
+        'perms.write': writeRoles ? writeRoles.join(',') : '',
+        sharing: sharing,
+        owner: owner || 'nobody',
+    };
     try {
-        // Step 1: Create credential — uses actual owner in URI (matches legacy createSingleCredential L472-476)
-        const resolvedOwner = encodeURIComponent(owner || 'nobody');
-        const resolvedApp = encodeURIComponent(app || 'search');
-        const createUri = `/servicesNS/${resolvedOwner}/${resolvedApp}/storage/passwords`;
-        const created = await splunkdRequest(createUri, {
-            method: 'POST',
-            body: {
-                name: username,
-                password: password,
-                realm: realm || '',
-            },
-        });
-
-        // Step 2: Set ACL — build explicit path using credential:${realm}:${username}:
-        // Matches legacy line 477: hardcoded credential%3A${realm}%3A${username}%3A/acl
-        const aclPath = `/servicesNS/${resolvedOwner}/${resolvedApp}/configs/conf-passwords/credential%3A${encodeURIComponent(realm || '')}%3A${encodeURIComponent(username)}%3A/acl`;
-
-        // Two-step ACL write required by splunkd when sharing='user' (legacy L479-481)
         if (sharing === 'user') {
             await splunkdRequest(aclPath, {
                 method: 'POST',
-                body: {
-                    'perms.read': readRoles ? readRoles.join(',') : '',
-                    'perms.write': writeRoles ? writeRoles.join(',') : '',
-                    sharing: 'app',
-                    owner: owner || 'nobody',
-                },
+                body: Object.assign({}, aclBody, { sharing: 'app' }),
             });
         }
+        await splunkdRequest(aclPath, { method: 'POST', body: aclBody });
+    } catch (aclErr) {
+        console.warn(`[createCredential] ACL set failed (non-fatal): status=${aclErr.status} path=${aclPath}`);
+    }
+}
 
-        // Final ACL with actual sharing value
-        await splunkdRequest(aclPath, {
-            method: 'POST',
-            body: {
-                'perms.read': readRoles ? readRoles.join(',') : '',
-                'perms.write': writeRoles ? writeRoles.join(',') : '',
-                sharing: sharing,
-                owner: owner || 'nobody',
-            },
-        });
+/**
+ * Create a new credential, then set its ACL permissions.
+ *
+ * Primary path: POST to storage/passwords (creates at caller's namespace).
+ * Fallback on 409: POST to configs/conf-passwords (creates at exact namespace level,
+ * but only when the stanza already exists at another level).
+ *
+ * For dual-namespace entries (e.g., nobody/app + admin/user), create the admin entry
+ * first so the nobody entry can use the configs fallback. See handleUndoDelete.
+ */
+async function createCredential(username, password, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
+    const resolvedOwner = encodeURIComponent(owner || 'nobody');
+    const resolvedApp = encodeURIComponent(app || 'search');
+    const aclPath = `/servicesNS/${resolvedOwner}/${resolvedApp}/configs/conf-passwords/credential%3A${encodeURIComponent(realm || '')}%3A${encodeURIComponent(username)}%3A/acl`;
 
+    try {
+        const created = await splunkdRequest(
+            `/servicesNS/${resolvedOwner}/${resolvedApp}/storage/passwords`,
+            {
+                method: 'POST',
+                body: { name: username, password: password, realm: realm || '' },
+            }
+        );
+        await _setAcl(aclPath, sharing, readRoles, writeRoles, owner);
         return created.entry || null;
     } catch (error) {
+        // 409 means stanza already exists — fall back to configs endpoint
+        // which creates at the exact namespace level.
+        if (error.status === 409) {
+            try {
+                const configStanza = encodeURIComponent(`credential:${(realm || '')}:${username}:`);
+                await splunkdRequest(
+                    `/servicesNS/${resolvedOwner}/${resolvedApp}/configs/conf-passwords/${configStanza}`,
+                    { method: 'POST', body: { password: password, output_mode: 'json' } }
+                );
+                await _setAcl(aclPath, sharing, readRoles, writeRoles, owner);
+                return null;
+            } catch (configErr) {
+                if (configErr.status === 409) {
+                    return null;
+                }
+                throw configErr;
+            }
+        }
         console.error('Error creating credential:', error);
         throw error;
     }
@@ -399,87 +446,206 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
 
 /**
  * Delete a credential.
- * Mirrors legacy executeDelete exactly (password-crud.js L569-582):
-1. ACL bump using row's actual owner/app/acl_read/acl_write
-2. DELETE via /servicesNS/{owner}/{app}/storage/passwords/{stanza}
+ *
+ * Routes through the owner's namespace. No pre-delete ACL bump — the
+ * calling user has permission to delete, and bumping can collide with
+ * a duplicate at the same namespace.
  */
 async function deleteCredential(name, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
+    const stanzaKey = `${(realm || '')}:${name}:`;
+    const resolvedOwner = owner || 'nobody';
+    const resolvedApp = app || getCurrentApp() || 'search';
+
     try {
-        const stanzaKey = `${(realm || '')}:${name}:`;
-        const resolvedOwner = owner || 'nobody';
-        const resolvedApp = app || getCurrentApp() || 'search';
-
-        // Pre-delete ACL bump using per-credential ownership (legacy L572-576)
-        const effectiveSharing = sharing === 'user' ? 'app' : sharing;
-        const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
-        await splunkdRequest(aclPath, {
-            method: 'POST',
-            body: {
-                'perms.read': readRoles ? (Array.isArray(readRoles) ? readRoles.join(',') : readRoles) : '*',
-                'perms.write': writeRoles ? (Array.isArray(writeRoles) ? writeRoles.join(',') : writeRoles) : (resolvedOwner),
-                sharing: effectiveSharing,
-                owner: resolvedOwner,
-            },
-        });
-
-        // DELETE via explicit splunkd path (legacy L578-580)
         const encodedStanza = encodeURIComponent(stanzaKey);
-        await splunkdRequest(
-            `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`,
-            { method: 'DELETE' }
-        );
+        const storageUrl = `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`;
+        await splunkdRequest(storageUrl, { method: 'DELETE' });
     } catch (error) {
-        console.error(`Error deleting credential ${realm}:${name}:`, error);
+        // storage/passwords may return 404 for entries whose config lives at a different
+        // namespace level (e.g., app-scoped entry when user-scoped was deleted first).
+        // Fall back to the caller's namespace — admin can see merged entries at all levels.
+        if (error.status === 404) {
+            // Try the admin namespace — can see merged entries at all levels
+            try {
+                const encodedStanza2 = encodeURIComponent(stanzaKey);
+                const adminUrl = `/servicesNS/admin/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza2}`;
+                console.warn(`[deleteCredential] 404 fallback DELETE (admin ns): ${adminUrl}`);
+                await splunkdRequest(adminUrl, { method: 'DELETE' });
+                console.warn(`[deleteCredential] 404 fallback succeeded (admin ns) for ${stanzaKey}`);
+                return;
+            } catch (adminErr) {
+                if (adminErr.status === 400 || adminErr.status === 404) {
+                    try {
+                        const configStanza = encodeURIComponent(`credential:${stanzaKey}`);
+                        const configUrl = `/servicesNS/admin/${encodeURIComponent(resolvedApp)}/configs/conf-passwords/${configStanza}`;
+                        console.warn(`[deleteCredential] 404 fallback DELETE (admin config): ${configUrl}`);
+                        await splunkdRequest(configUrl, { method: 'DELETE' });
+                        console.warn(`[deleteCredential] 404 fallback succeeded (admin config) for ${stanzaKey}`);
+                        return;
+                    } catch (configErr) {
+                        console.warn(`[deleteCredential] all fallbacks failed for ${stanzaKey}: admin=${adminErr.status}, config=${configErr.status}`);
+                        throw configErr;
+                    }
+                }
+                throw adminErr;
+            }
+        }
         throw error;
     }
 }
 
 /**
  * Get the clear-text password for a credential.
- * For user-scoped credentials, temporarily bumps sharing to 'app' so the fetch succeeds,
- * then restores original sharing — mirrors legacy L425-433 exactly.
+ *
+ * Queries through the owner's namespace. For duplicates sharing a stanza,
+ * Splunk returns the merged view — one password for both entries.
  */
 async function getCredentialPassword(name, realm, app, owner, sharing) {
     const resolvedOwner = owner || 'nobody';
     const resolvedApp = app || getCurrentApp() || 'search';
     const stanzaKey = `${(realm || '')}:${name}:`;
-    let didBumpSharing = false;
+    const encodedStanza = encodeURIComponent(stanzaKey);
 
-    // Temporary sharing bump for user-scoped credentials (legacy L427-429)
-    if (sharing === 'user') {
-        const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
-        await splunkdRequest(aclPath, {
-            method: 'POST',
-            body: {
-                sharing: 'app',
-                owner: resolvedOwner,
-            },
-        });
-        didBumpSharing = true;
-    }
-
+    // Try storage/passwords first — returns clear_password for app/global scoped creds
+    let pwd;
+    let storageSucceeded = false;
     try {
-        const encodedStanza = encodeURIComponent(stanzaKey);
         const data = await splunkdRequest(
             `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`
         );
-        const pwd = (data.entry && data.entry[0] && data.entry[0].content)
+        pwd = (data.entry && data.entry[0] && data.entry[0].content)
             ? data.entry[0].content.clear_password || null
             : null;
-        return pwd;
-    } finally {
-        // Restore user sharing (legacy L431-432)
-        if (didBumpSharing) {
-            const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
-            await splunkdRequest(aclPath, {
-                method: 'POST',
-                body: {
-                    sharing: 'user',
-                    owner: resolvedOwner,
-                },
-            }).catch(() => console.warn('Failed to restore user-scoped sharing after password reveal'));
+        storageSucceeded = true;
+        if (pwd && sharing !== 'user') return pwd;
+        // For user-scoped entries, this may be a merged (app-scoped) password.
+        // Continue to detect and resolve merge below.
+    } catch (e) {
+        // 404 is expected for user-scoped credentials — fall through
+    }
+
+    // Fall back to configs/conf-passwords /password append for clear-text password
+    if (!pwd) {
+        try {
+            const configStanza = encodeURIComponent(`credential:${stanzaKey}`);
+            const configData = await splunkdRequest(
+                `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(resolvedApp)}/configs/conf-passwords/${configStanza}/password`
+            );
+            pwd = (configData.entry && configData.entry[0] && configData.entry[0].content)
+                ? configData.entry[0].content.clear_password || null
+                : null;
+            if (pwd) return pwd;
+        } catch (e) {
+            // fall through
         }
     }
+
+    // User-scoped credentials need special handling.
+    if (sharing === 'user') {
+        const aclPath = buildAclPath(stanzaKey, resolvedOwner, resolvedApp);
+        const nobodyStorageUrl = `/servicesNS/nobody/${encodeURIComponent(resolvedApp)}/storage/passwords/${encodedStanza}`;
+
+        if (storageSucceeded && pwd) {
+            // Storage returned a password, but it's likely the merged (app-scoped) one.
+            // Detect merge: check if nobody namespace returns the same password.
+            let appScopedPwd;
+            try {
+                const appData = await splunkdRequest(nobodyStorageUrl);
+                appScopedPwd = (appData.entry && appData.entry[0] && appData.entry[0].content)
+                    ? appData.entry[0].content.clear_password || null
+                    : null;
+            } catch (e) {
+                // nobody returns 404 — no app-scoped entry exists, this IS the user pwd
+                return pwd;
+            }
+
+            if (appScopedPwd && appScopedPwd === pwd) {
+                // Merge detected — both entries return the same (app-scoped) password.
+                // Break the merge to fetch the actual user-scoped password:
+                // 1. Delete the nobody/app entry from storage
+                // 2. Bump admin entry to app scope (no conflict now that nobody is gone)
+                // 3. Fetch from nobody namespace (admin entry now visible there)
+                // 4. Restore: bump back to user, then restore nobody entry
+                try {
+                    // Step 1: Delete nobody entry
+                    await splunkdRequest(nobodyStorageUrl, { method: 'DELETE' });
+                    // Step 2: Bump admin to app scope
+                    await splunkdRequest(aclPath, {
+                        method: 'POST',
+                        body: { sharing: 'app', owner: resolvedOwner },
+                    });
+                    // Step 3: Fetch from nobody namespace
+                    const data = await splunkdRequest(nobodyStorageUrl);
+                    const userPwd = (data.entry && data.entry[0] && data.entry[0].content)
+                        ? data.entry[0].content.clear_password || null
+                        : null;
+                    // Step 4a: Restore admin to user scope
+                    await splunkdRequest(aclPath, {
+                        method: 'POST',
+                        body: { sharing: 'user', owner: resolvedOwner },
+                    });
+                    // Step 4b: Restore nobody entry
+                    try {
+                        await splunkdRequest(
+                            `/servicesNS/nobody/${encodeURIComponent(resolvedApp)}/storage/passwords`,
+                            { method: 'POST', body: { name: name, password: appScopedPwd, realm: realm || '' } }
+                        );
+                    } catch (restoreErr) {
+                        if (restoreErr.status !== 409) throw restoreErr;
+                    }
+                    if (userPwd) return userPwd;
+                    // If fetch returned 404, fall through to fallback below
+                } catch (e) {
+                    // Best-effort restore
+                    try { await splunkdRequest(aclPath, { method: 'POST', body: { sharing: 'user', owner: resolvedOwner } }); } catch (_) {}
+                    try {
+                        await splunkdRequest(
+                            `/servicesNS/nobody/${encodeURIComponent(resolvedApp)}/storage/passwords`,
+                            { method: 'POST', body: { name: name, password: appScopedPwd, realm: realm || '' } }
+                        );
+                    } catch (_) {}
+                }
+                // Fallback: return the merged password
+                return pwd;
+            }
+            // Passwords differ — storage already returned the user-scoped password
+            return pwd;
+        }
+
+        // No storage result — standalone user-scoped credential.
+        // Try ACL bump: temporarily promote to app scope so storage endpoint can see it.
+        var bumpRestored = false;
+        try {
+            await splunkdRequest(aclPath, {
+                method: 'POST',
+                body: { sharing: 'app', owner: resolvedOwner },
+            });
+            const data = await splunkdRequest(nobodyStorageUrl);
+            pwd = (data.entry && data.entry[0] && data.entry[0].content)
+                ? data.entry[0].content.clear_password || null
+                : null;
+            await splunkdRequest(aclPath, {
+                method: 'POST',
+                body: { sharing: 'user', owner: resolvedOwner },
+            });
+            bumpRestored = true;
+            if (pwd) return pwd;
+        } catch (e) {
+            if (!bumpRestored) {
+                try {
+                    await splunkdRequest(aclPath, {
+                        method: 'POST',
+                        body: { sharing: 'user', owner: resolvedOwner },
+                    });
+                } catch (restoreErr) {}
+            }
+            console.warn('getCredentialPassword ACL bump failed:', e.message);
+            // Persist error for debugging (console.warn stripped in production)
+            try { localStorage.setItem('cred_pwd_error', JSON.stringify({ path: aclPath, error: e.message, status: e.status, timestamp: Date.now() })); } catch(_) {}
+        }
+    }
+
+    return pwd || null;
 }
 
 /**

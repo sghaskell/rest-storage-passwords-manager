@@ -333,8 +333,12 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
         const sortedCredentials = React.useMemo(function() {
             if (!sortConfig.key) return filteredCredentials;
             return [...filteredCredentials].sort(function(a, b) {
-                var aValue = a[sortConfig.key] || '';
-                var bValue = b[sortConfig.key] || '';
+                var aValue = sortConfig.key === 'owner'
+                    ? (a.namespaceOwner || a.owner || '')
+                    : (a[sortConfig.key] || '');
+                var bValue = sortConfig.key === 'owner'
+                    ? (b.namespaceOwner || b.owner || '')
+                    : (b[sortConfig.key] || '');
                 if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -444,9 +448,9 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 credForUndo._password = password;
                 await API.deleteCredential(
                     selectedCredential.name, selectedCredential.realm,
-                    selectedCredential.app, selectedCredential.owner || 'nobody',
+                    selectedCredential.app, selectedCredential.namespaceOwner || selectedCredential.owner || 'nobody',
                     selectedCredential.aclRead?.split(',').filter(Boolean) || ['*'],
-                    selectedCredential.aclWrite?.split(',').filter(Boolean) || [selectedCredential.owner || 'nobody'],
+                    selectedCredential.aclWrite?.split(',').filter(Boolean) || [selectedCredential.namespaceOwner || selectedCredential.owner || 'nobody'],
                     selectedCredential.sharing || 'app'
                 );
                 await loadCredentials();
@@ -467,28 +471,49 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             setUndoCredentials([]);
             setUndoSecondsLeft(0);
             try {
-                const results = await Promise.allSettled(
-                    creds.map(function(cred) {
-                        if (!cred._password) {
-                            return Promise.reject(new Error('Password was not available for undo'));
-                        }
-                        return API.createCredential(
+                // Sort: nobody/app-scoped entries first, then admin/user-scoped.
+                // storage/passwords POST creates at the highest existing namespace level.
+                // Nobody entries must be created first (when no admin entry exists),
+                // then admin entries hit 409 and fall back to configs/conf-passwords
+                // at the admin namespace. This mirrors the test setup creation order.
+                var sortedCreds = creds.slice().sort(function(a, b) {
+                    var aOwner = a.namespaceOwner || a.owner || 'nobody';
+                    var bOwner = b.namespaceOwner || b.owner || 'nobody';
+                    if (aOwner === 'nobody') return -1;
+                    if (bOwner === 'nobody') return 1;
+                    return 0;
+                });
+                // Create sequentially so nobody entries are fully committed before
+                // admin entries attempt to create (admin storage POST gets 409 and
+                // falls back to configs when nobody entry already exists).
+                var results = [];
+                for (var k = 0; k < sortedCreds.length; k++) {
+                    var cred = sortedCreds[k];
+                    if (!cred._password) {
+                        results.push({ status: 'rejected', reason: new Error('Password was not available for undo') });
+                        continue;
+                    }
+                    try {
+                        await API.createCredential(
                             cred.name,
                             cred._password,
                             cred.realm || '',
                             cred.app || 'search',
-                            cred.owner || 'nobody',
+                            cred.namespaceOwner || cred.owner || 'nobody',
                             cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
                             cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
                             cred.sharing || 'app'
                         );
-                    })
-                );
+                        results.push({ status: 'fulfilled', value: undefined });
+                    } catch (e) {
+                        results.push({ status: 'rejected', reason: e });
+                    }
+                }
                 await loadCredentials();
                 var successMsgs = [];
                 var errorMsgs = [];
                 results.forEach(function(result, i) {
-                    var c = creds[i];
+                    var c = sortedCreds[i];
                     if (result.status === 'fulfilled') {
                         successMsgs.push('Restored ' + escapeHtml(c.name));
                     } else {
@@ -516,14 +541,31 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             const successMessages = [];
 
             try {
-                // Fetch passwords for undo before deleting
-                var credsForUndo = await Promise.all(
-                    selectedRows.map(async function(row) {
+                // Fetch passwords for undo before deleting.
+                // Group by stanza key and process user-scoped entries first.
+                // User-scoped entries may temporarily delete the app-scoped entry to
+                // resolve the merged password — processing them first avoids races.
+                var stanzaGroupsPwd = {};
+                selectedRows.forEach(function(row) {
+                    var key = (row.realm || '') + ':' + row.name + ':' + (row.app || 'search');
+                    if (!stanzaGroupsPwd[key]) stanzaGroupsPwd[key] = [];
+                    stanzaGroupsPwd[key].push(row);
+                });
+                var undoEntries = [];
+                for (var gKey in stanzaGroupsPwd) {
+                    var group = stanzaGroupsPwd[gKey];
+                    group.sort(function(a, b) {
+                        var sa = (a.sharing || 'app') === 'user' ? 0 : 1;
+                        var sb = (b.sharing || 'app') === 'user' ? 0 : 1;
+                        return sa - sb; // user-scoped first
+                    });
+                    for (var g = 0; g < group.length; g++) {
+                        var row = group[g];
                         var password;
                         try {
                             password = await API.getCredentialPassword(
                                 row.name, row.realm, row.app,
-                                row.owner || 'nobody',
+                                row.namespaceOwner || row.owner || 'nobody',
                                 row.sharing || 'app'
                             );
                         } catch (e) {
@@ -531,59 +573,118 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                         }
                         var cred = Object.assign({}, row);
                         cred._password = password;
-                        return cred;
-                    })
-                );
+                        undoEntries.push(cred);
+                    }
+                }
 
-                const results = await Promise.allSettled(
-                    selectedRows.map(row =>
-                        API.deleteCredential(
-                            row.name, row.realm, row.app,
-                            row.owner || 'nobody',
-                            row.aclRead?.split(',').filter(Boolean) || ['*'],
-                            row.aclWrite?.split(',').filter(Boolean) || [row.owner || 'nobody'],
-                            row.sharing || 'app'
-                        ).catch(err => { throw err; })
-                    )
-                );
+                // Deduplicate: configs/conf-passwords may return the same credential twice
+                // with different id URLs but identical owner/sharing — only delete once per
+                // unique (name, realm, owner, sharing) combination.
+                var seen = {};
+                var uniqueRows = selectedRows.filter(function(row) {
+                    var key = (row.name || '') + ':' + (row.realm || '') + ':' +
+                              (row.owner || 'nobody') + ':' + (row.sharing || 'app');
+                    if (seen[key]) return false;
+                    seen[key] = true;
+                    return true;
+                });
+
+                // Group remaining rows by stanza key for sequential deletes.
+                // Entries sharing a stanza (e.g., app-shared + user-shared) need sequential
+                // deletes: user-shared first to remove the top-level config entry, then app-shared
+                // to remove the lower-level entry that becomes visible.
+                var stanzaGroups = {};
+                uniqueRows.forEach(function(row) {
+                    var key = (row.realm || '') + ':' + row.name + ':' + (row.app || 'search');
+                    if (!stanzaGroups[key]) stanzaGroups[key] = [];
+                    stanzaGroups[key].push(row);
+                });
+
+                // Delete each group sequentially, user-shared before app-shared
+                var deleteResults = [];
+                for (var gKey in stanzaGroups) {
+                    var group = stanzaGroups[gKey];
+                    // Sort: app-shared first (lower config level), then user-shared (top level).
+                    // Delete lower-level first to avoid the config merge hiding entries.
+                    group.sort(function(a, b) {
+                        var sa = (a.sharing || 'app') === 'user' ? 0 : 1;
+                        var sb = (b.sharing || 'app') === 'user' ? 0 : 1;
+                        return sa - sb; // app first
+                    });
+
+                    for (var k = 0; k < group.length; k++) {
+                        var row = group[k];
+                        var result;
+                        try {
+                            await API.deleteCredential(
+                                row.name, row.realm, row.app,
+                                row.namespaceOwner || row.owner || 'nobody',
+                                row.aclRead?.split(',').filter(Boolean) || ['*'],
+                                row.aclWrite?.split(',').filter(Boolean) || [row.namespaceOwner || row.owner || 'nobody'],
+                                row.sharing || 'app'
+                            );
+                            result = { status: 'fulfilled', value: undefined };
+                        } catch (err) {
+                            // 404 / "Does not exist" is OK — the entry was removed by a prior
+                            // delete in this group (same stanza, different config level)
+                            var errStr = getErrorMessage(err);
+                            if (err.status === 404 || errStr.indexOf('Does not exist') >= 0 || errStr.indexOf('not found') >= 0 || errStr.indexOf('not_found') >= 0) {
+                                result = { status: 'fulfilled', value: undefined };
+                            } else {
+                                result = { status: 'rejected', reason: err };
+                            }
+                        }
+                        deleteResults.push({ result, row, groupKey: gKey });
+                    }
+                }
 
                 let errorMessages = [];
                 var deletedForUndo = [];
-                results.forEach((result, i) => {
-                    const row = selectedRows[i];
-                    if (result.status === 'fulfilled') {
+                deleteResults.forEach(function(dr) {
+                    const row = dr.row;
+                    if (dr.result.status === 'fulfilled') {
                         successMessages.push('Deleted ' + escapeHtml(row.name));
-                        deletedForUndo.push(credsForUndo[i]);
+                        // For undo, collect all duplicates that share this stanza
+                        if (!deletedForUndo.some(function(d) { return d.name === row.name && d.app === row.app && d.realm === row.realm; })) {
+                            deletedForUndo = deletedForUndo.concat(
+                                undoEntries.filter(function(u) {
+                                    return u.name === row.name && u.app === row.app && u.realm === row.realm;
+                                })
+                            );
+                        }
                     } else {
-                        errorMessages.push(escapeHtml(row.name) + ': ' + getErrorMessage(result.reason));
+                        errorMessages.push(escapeHtml(row.name) + ': ' + getErrorMessage(dr.result.reason));
                     }
                 });
 
                 await loadCredentials();
                 handleDeselectAll();
 
-                // Set undo state for successfully deleted credentials
-                if (deletedForUndo.length > 0) {
-                    setUndoCredentials(deletedForUndo);
+                // Set undo state — only include credentials where we actually have the password
+                var undoable = deletedForUndo.filter(function(c) { return c._password; });
+                var noPassword = deletedForUndo.filter(function(c) { return !c._password; });
+                if (undoable.length > 0) {
+                    setUndoCredentials(undoable);
                     setUndoSecondsLeft(10);
                 }
 
-                if (errorMessages.length === 0) {
-                    // Toast will show, skip redundant success modal
-                    if (deletedForUndo.length === selectedRows.length) {
-                        return;
-                    }
+                if (errorMessages.length === 0 && noPassword.length === 0 && undoable.length > 0) {
+                    return;
                 }
-                if (errorMessages.length === 0) {
+                if (errorMessages.length === 0 && noPassword.length === 0) {
                     showSuccess('Bulk Delete Complete', successMessages);
                 } else if (successMessages.length === 0) {
                     showError('Bulk Delete Failed', errorMessages.map(m => 'ERROR: ' + m));
                 } else {
-                    const allMsgs = successMessages.concat(
-                        ['---'],
+                    var partialMsgs = successMessages.slice();
+                    if (noPassword.length > 0) {
+                        partialMsgs.push('---');
+                        partialMsgs.push('Cannot undo ' + noPassword.length + ' credential(s) — password was not accessible (system credentials)');
+                    }
+                    partialMsgs = partialMsgs.concat(
                         errorMessages.map(m => 'ERROR: ' + m)
                     );
-                    setResult({ title: 'Bulk Delete -- Partial Success', messages: allMsgs });
+                    setResult({ title: 'Bulk Delete — Partial Success', messages: partialMsgs });
                     setModals(prev => ({ ...prev, result: true }));
                 }
             } catch (err) {

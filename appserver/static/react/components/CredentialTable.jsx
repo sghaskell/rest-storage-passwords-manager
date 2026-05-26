@@ -154,7 +154,7 @@ function CredentialTable({
             var name = (credential.name || '').toLowerCase();
             var realm = (credential.realm || '').toLowerCase();
             var app = (credential.app || '').toLowerCase();
-            var owner = (credential.owner || '').toLowerCase();
+            var owner = (credential.namespaceOwner || credential.owner || '').toLowerCase();
             var aclRead = (credential.aclRead || '').toLowerCase();
             var aclWrite = (credential.aclWrite || '').toLowerCase();
             var mtime = (credential.mtime || '').toString();
@@ -179,7 +179,7 @@ function CredentialTable({
                     if (val !== 'global' && realmStr !== val) return false;
                 }
                 if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
-                if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                if (f.field === 'owner' && (credential.namespaceOwner || credential.owner || '').toLowerCase() !== val) return false;
                 if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'modified' && mtime !== val) return false;
@@ -278,7 +278,7 @@ function CredentialTable({
 
     // Unique key for a credential — stanzaKey can repeat across apps/owners/sharing
     function credKey(cred) {
-        return cred.stanzaKey + ':' + cred.app + ':' + cred.owner + ':' + cred.sharing;
+        return cred.stanzaKey + ':' + cred.app + ':' + (cred.namespaceOwner || cred.owner || '') + ':' + cred.sharing;
     }
 
     // Check if a row is selected
@@ -427,7 +427,7 @@ function CredentialTable({
             );
         }
         if (col.key === 'owner') {
-            var ownerLabel = cred[col.key] || '';
+            var ownerLabel = cred.namespaceOwner || cred.owner || '';
             var ownerActive = isFilterActive('owner', ownerLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {

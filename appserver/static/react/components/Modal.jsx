@@ -57,11 +57,14 @@ function PasswordRevealModal({ credential, onClose }) {
                     const { getCredentialPassword } = require('../api');
                     const clearPassword = await getCredentialPassword(
                         credential.name, credential.realm,
-                        credential.app || 'search', credential.owner || 'nobody', credential.sharing || 'app'
+                        credential.app || 'search',
+                        credential.namespaceOwner || credential.owner || 'nobody',
+                        credential.sharing || 'app'
                     );
                     setPassword(clearPassword || '(unable to retrieve)');
                 } catch (error) {
                     console.error('Error fetching password:', error);
+                    try { localStorage.setItem('modal_pwd_error', JSON.stringify({ message: error.message, name: credential.name, app: credential.app, owner: credential.owner, namespaceOwner: credential.namespaceOwner, sharing: credential.sharing, timestamp: Date.now() })); } catch(_) {}
                     setPassword('(error retrieving password)');
                 } finally {
                     setLoading(false);

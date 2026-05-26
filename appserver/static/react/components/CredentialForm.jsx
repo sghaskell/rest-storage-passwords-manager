@@ -125,7 +125,7 @@ function CredentialForm({
             }
             setRealm(credential.realm || '');
             setApp(credential.app || 'search');
-            setOwner(credential.owner || 'nobody');
+            setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
