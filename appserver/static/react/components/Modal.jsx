@@ -3,6 +3,26 @@
  */
 
 const React = require('react');
+
+/**
+ * Detect dark theme synchronously at render time.
+ * Check CSS classes first, then fall back to computed body background brightness.
+ */
+var detectDark = function() {
+    var html = document.documentElement;
+    if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
+    if (html.getAttribute('data-theme') === 'dark') return true;
+    if (document.body.classList.contains('dark-theme')) return true;
+    var bg = getComputedStyle(document.body).backgroundColor;
+    var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+        var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        return brightness < 128;
+    }
+    return false;
+};
+
 const SplunkModalMod = require('@splunk/react-ui/Modal');
 var SplunkModal = SplunkModalMod.default;
 SplunkModalMod.Header && (SplunkModal.Header = SplunkModalMod.Header);
@@ -134,22 +154,6 @@ function ImportCSVModal({ isOpen, onClose, onImport }) {
     const MAX_CSV_SIZE = 512 * 1024;
 
     // Detect dark theme synchronously at render time — no state needed.
-    // Check classes first, then fall back to computed body background brightness
-    // (Splunk may not set dark-theme class on html/body in all versions).
-    var detectDark = function() {
-        var html = document.documentElement;
-        if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
-        if (html.getAttribute('data-theme') === 'dark') return true;
-        if (document.body.classList.contains('dark-theme')) return true;
-        var bg = getComputedStyle(document.body).backgroundColor;
-        var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (match) {
-            var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
-            var brightness = (r * 299 + g * 587 + b * 114) / 1000;
-            return brightness < 128;
-        }
-        return false;
-    };
     var isDark = detectDark();
 
     var prevRef = React.useRef(null);
@@ -796,6 +800,16 @@ function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPr
 
     if (!isOpen) return null;
 
+    var isDark = detectDark();
+    var inputBorder = isDark ? '#555' : '#ccc';
+    var errorBg = isDark ? '#3d0000' : '#fff5f5';
+    var errorBorder = isDark ? '#660000' : '#de350b';
+    var errorColor = isDark ? '#ef9a9a' : '#d32f2f';
+    var cardBg = isDark ? '#2a2a2a' : '#f9f9f9';
+    var cardBorder = isDark ? '#444' : '#ccc';
+    var subText = isDark ? '#999' : '#666';
+    var headingColor = isDark ? '#e0e0e0' : '#333';
+
     return React.createElement(SplunkModal, {
         open: true,
         onRequestClose: onClose,
@@ -810,7 +824,7 @@ function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPr
 
                 // Save current layout section
                 React.createElement('div', { style: { marginBottom: '1.5rem' } },
-                    React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px' } }, 'Save Current Layout'),
+                    React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px', color: headingColor } }, 'Save Current Layout'),
                     React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center' } },
                         React.createElement('input', {
                             type: 'text',
@@ -821,7 +835,7 @@ function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPr
                                 flex: 1,
                                 padding: '6px 8px',
                                 fontSize: '13px',
-                                border: '1px solid #ccc',
+                                border: '1px solid ' + inputBorder,
                                 borderRadius: '4px',
                                 boxSizing: 'border-box'
                             }
@@ -836,24 +850,24 @@ function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPr
 
                 // Error message
                 error && React.createElement('div', {
-                    style: { backgroundColor: '#fff5f5', color: '#d32f2f', border: '1px solid #de350b', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem' }
+                    style: { backgroundColor: errorBg, color: errorColor, border: '1px solid ' + errorBorder, borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '13px', marginBottom: '1rem' }
                 }, error),
 
                 // Preset list
-                React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px' } }, 'Saved Presets'),
+                React.createElement('h4', { style: { margin: '0 0 0.5rem', fontSize: '14px', color: headingColor } }, 'Saved Presets'),
 
                 presets.length === 0
-                    ? React.createElement('p', { style: { color: '#888', fontStyle: 'italic', fontSize: '13px' } }, 'No presets saved yet.')
+                    ? React.createElement('p', { style: { color: subText, fontStyle: 'italic', fontSize: '13px' } }, 'No presets saved yet.')
                     : presets.map(function(preset) {
                         var isRenaming = renameTarget === preset.name;
                         return React.createElement('div', {
                             key: preset.name,
-                            style: { display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', marginBottom: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', backgroundColor: '#f9f9f9' }
+                            style: { display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', marginBottom: '0.5rem', border: '1px solid ' + cardBorder, borderRadius: '4px', backgroundColor: cardBg }
                         },
                             // Preset name and column count
                             React.createElement('div', { style: { flex: 1 } },
                                 React.createElement('strong', { style: { fontSize: '13px' } }, preset.name),
-                                React.createElement('span', { style: { fontSize: '11px', color: '#666', marginLeft: '0.5rem' } },
+                                React.createElement('span', { style: { fontSize: '11px', color: subText, marginLeft: '0.5rem' } },
                                     '(' + preset.columns.length + ' columns)'
                                 ),
                                 isRenaming && React.createElement('div', { style: { display: 'flex', gap: '0.25rem', marginTop: '0.25rem' } },
@@ -865,7 +879,7 @@ function ColumnPresetModal({ isOpen, onClose, presets, visibleColumns, onApplyPr
                                             flex: 1,
                                             padding: '4px 6px',
                                             fontSize: '11px',
-                                            border: '1px solid #ccc',
+                                            border: '1px solid ' + inputBorder,
                                             borderRadius: '4px',
                                             boxSizing: 'border-box'
                                         },
