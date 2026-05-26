@@ -27,6 +27,7 @@ var Eye = require('@splunk/react-icons/Eye').default;
 var Pencil = require('@splunk/react-icons/Pencil').default;
 var PlusSquare = require('@splunk/react-icons/PlusSquare').default;
 var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
+var ExclamationTriangle = require('@splunk/react-icons/ExclamationTriangle').default;
 var Clock = require('@splunk/react-icons/Clock').default;
 
 // Splunk Dropdown, Checkbox for column picker
@@ -123,6 +124,7 @@ function CredentialTable({
     onActiveFiltersChange,
     sortConfig: sortConfigProp,
     onSortChange,
+    duplicateInfo,
 }) {
     // Filter/sort: accept from parent or fall back to local state for backwards compat
     const useParentState = filterTextProp !== undefined;
@@ -186,6 +188,12 @@ function CredentialTable({
                 if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'modified' && mtime !== val) return false;
+                // Duplicates only filter
+                if (f.field === 'isDuplicate') {
+                    var dupKey = (credential.name || '') + ':' + (credential.realm || '') + ':' + (credential.app || 'search') + ':' + (credential.namespaceOwner || credential.owner || 'nobody') + ':' + (credential.sharing || 'app');
+                    var isDup = duplicateInfo && duplicateInfo.duplicateCredentialMap && duplicateInfo.duplicateCredentialMap[dupKey] !== undefined;
+                    if (val === 'true' && !isDup) return false;
+                }
             }
 
             return true;
@@ -491,22 +499,50 @@ function CredentialTable({
         if (col.key === 'name') {
             var nameLabel = cred[col.key] || '';
             var nameActive = isFilterActive('username', nameLabel);
-            return React.createElement(TableCell, null,
-                React.createElement('span', {
-                    onClick: function() { handleAddFilter('username', nameLabel); },
+
+            // Check if this credential has a duplicate password
+            var dupInfo = null;
+            if (duplicateInfo && duplicateInfo.duplicateCredentialMap) {
+                var dupKey = (cred.name || '') + ':' + (cred.realm || '') + ':' + (cred.app || 'search') + ':' + (cred.namespaceOwner || cred.owner || 'nobody') + ':' + (cred.sharing || 'app');
+                dupInfo = duplicateInfo.duplicateCredentialMap[dupKey] || null;
+            }
+
+            var nameCellChildren = [React.createElement('span', {
+                key: 'label',
+                onClick: function() { handleAddFilter('username', nameLabel); },
+                style: {
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: nameActive ? 'var(--ct-pill-name-active-bg)' : 'var(--ct-pill-name-bg)',
+                    color: nameActive ? 'var(--ct-pill-name-active-color)' : 'var(--ct-pill-name-color)',
+                    border: '1px solid ' + (nameActive ? 'var(--ct-pill-name-active-border)' : 'var(--ct-pill-name-border)'),
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                }
+            }, nameLabel)];
+
+            if (dupInfo) {
+                nameCellChildren.push(React.createElement('span', {
+                    key: 'dup',
+                    title: 'Password shared with ' + dupInfo.count + ' other credential(s)',
                     style: {
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        backgroundColor: nameActive ? 'var(--ct-pill-name-active-bg)' : 'var(--ct-pill-name-bg)',
-                        color: nameActive ? 'var(--ct-pill-name-active-color)' : 'var(--ct-pill-name-color)',
-                        border: '1px solid ' + (nameActive ? 'var(--ct-pill-name-active-border)' : 'var(--ct-pill-name-border)'),
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        marginLeft: '4px',
+                        color: '#f59e0b',
+                        fontSize: '12px',
+                        verticalAlign: 'middle',
                     }
-                }, nameLabel)
+                }, React.createElement(ExclamationTriangle, { size: 14 })));
+            }
+
+            return React.createElement(TableCell, null,
+                React.createElement('div', {
+                    style: { display: 'flex', alignItems: 'center', gap: '4px' }
+                }, nameCellChildren)
             );
         }
         return React.createElement(TableCell, null, cred[col.key] || '');
@@ -676,6 +712,44 @@ function CredentialTable({
                     boxSizing: 'border-box',
                 },
             }),
+            // Duplicates only toggle — inline near search input
+            duplicateInfo && duplicateInfo.totalDuplicates > 0 && React.createElement(
+                'button',
+                {
+                    onClick: function() {
+                        var dupFilterExists = activeFilters.some(function(f) { return f.field === 'isDuplicate'; });
+                        if (dupFilterExists) {
+                            handleRemoveFilter(activeFilters.findIndex(function(f) { return f.field === 'isDuplicate'; }));
+                        } else {
+                            handleAddFilter('isDuplicate', 'true');
+                        }
+                    },
+                    style: {
+                        padding: '0.25rem 0.75rem',
+                        border: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                            ? '2px solid #f59e0b'
+                            : '1px solid var(--ct-border)',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        height: '28px',
+                        backgroundColor: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                            ? '#fef3c7'
+                            : 'transparent',
+                        color: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                            ? '#92400e'
+                            : 'var(--ct-text-muted)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: activeFilters.some(function(f) { return f.field === 'isDuplicate'; }) ? '600' : 'normal',
+                    },
+                    title: 'Filter to show only credentials with duplicate passwords'
+                },
+                React.createElement(ExclamationTriangle, { variant: 'filled', size: 12, style: { color: '#f59e0b' } }),
+                'Duplicates only'
+            ),
+
             React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },
                 React.createElement(Dropdown, {
                     open: dropdownOpen,

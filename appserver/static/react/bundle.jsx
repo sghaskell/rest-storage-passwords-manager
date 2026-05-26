@@ -177,6 +177,12 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [undoCredentials, setUndoCredentials] = React.useState([]);
         const [undoSecondsLeft, setUndoSecondsLeft] = React.useState(0);
 
+        // Duplicate detection state
+        const [duplicateInfo, setDuplicateInfo] = React.useState(null);
+        const [scanning, setScanning] = React.useState(false);
+        const [scanProgress, setScanProgress] = React.useState({ current: 0, total: 0 });
+        const [scanWarning, setScanWarning] = React.useState(null);
+
         // Countdown timer for undo toast — only recreates when credentials change
         React.useEffect(() => {
             if (undoCredentials.length === 0) return;
@@ -378,6 +384,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             try {
                 const fetched = await API.getAllCredentials();
                 setData(prev => ({ ...prev, credentials: fetched }));
+                // Clear duplicate cache since credentials changed
+                API.clearDuplicateCache();
             } catch (err) {
                 console.error('Error loading credentials:', err);
                 setData(prev => ({ ...prev, error: getErrorMessage(err) }));
@@ -385,6 +393,36 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 setData(prev => ({ ...prev, loading: false }));
             }
         }
+
+        // Scan for duplicate passwords in background
+        async function scanForDuplicates() {
+            var creds = data.credentials;
+            if (!creds || creds.length === 0) return;
+            setScanning(true);
+            setScanWarning(null);
+            try {
+                const result = await API.findDuplicatePasswords(creds, function(current, total) {
+                    setScanProgress({ current, total });
+                });
+                setDuplicateInfo(result);
+                if (result.warning) setScanWarning(result.warning);
+            } catch (err) {
+                console.error('Duplicate scan failed:', err);
+            } finally {
+                setScanning(false);
+                setScanProgress({ current: 0, total: 0 });
+            }
+        }
+
+        // Scan for duplicates after credentials loaded (debounced to avoid scanning on every load)
+        React.useEffect(() => {
+            if (credentials.length > 0 && !scanning) {
+                var timer = setTimeout(function() {
+                    scanForDuplicates();
+                }, 500);
+                return function() { clearTimeout(timer); };
+            }
+        }, [credentials]);
 
         async function handleCreateCredential(data) {
             try {
@@ -969,6 +1007,36 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         children: `Rotate Passwords (${selectedRows.length})`
                     }),
                     React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
+                    // Scan for Duplicates button + progress indicator
+                    React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' } },
+                        React.createElement(Button, {
+                            onClick: function() { scanForDuplicates(); },
+                            appearance: 'subtle',
+                            disabled: scanning,
+                            children: scanning
+                                ? `Scanning ${scanProgress.current}/${scanProgress.total}...`
+                                : 'Scan for Duplicates'
+                        }),
+                        duplicateInfo && !scanning && React.createElement(
+                            'span',
+                            {
+                                style: {
+                                    fontSize: '12px',
+                                    color: '#f59e0b',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                }
+                            },
+                            React.createElement(ExclamationTriangle, { variant: 'filled', size: 12 }),
+                            `${duplicateInfo.totalDuplicates} duplicate(s) found`
+                        ),
+                        scanWarning && React.createElement(
+                            'span',
+                            { style: { fontSize: '11px', color: '#92400e', fontStyle: 'italic' } },
+                            scanWarning
+                        )
+                    ),
                     React.createElement(Dropdown, {
                         open: moreDropdownOpen,
                         onRequestOpen: () => setMoreDropdownOpen(true),
@@ -1031,6 +1099,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onActiveFiltersChange: setActiveFilters,
                 sortConfig: sortConfig,
                 onSortChange: setSortConfig,
+                duplicateInfo: duplicateInfo,
             }),
 
             // Undo delete toast

@@ -1454,6 +1454,122 @@ async function rotatePasswords(selectedRows, options) {
     return results;
 }
 
+/**
+ * Scan credentials for duplicate (shared) passwords.
+ *
+ * Sequentially fetches each credential's clear-text password, groups by value,
+ * and returns groups with 2+ entries. Results cached so repeated calls return
+ * the cached scan without re-fetching.
+ *
+ * @param {Array} credentials - Array of credential objects from getAllCredentials()
+ * @param {Function} [onProgress] - Optional callback(progress, total) for UI feedback
+ * @returns {Object} { duplicateGroups, totalScanned, totalDuplicates, scanTime, warning }
+ */
+var _duplicateCache = null;
+
+async function findDuplicatePasswords(credentials, onProgress) {
+    // Use cached results if available — avoid re-scanning on every filter/sort
+    if (_duplicateCache) {
+        return _duplicateCache;
+    }
+
+    var MAX_SCAN = 200;
+    var toScan = credentials.length > MAX_SCAN ? credentials.slice(0, MAX_SCAN) : credentials;
+    var warning = credentials.length > MAX_SCAN
+        ? 'Scanned ' + MAX_SCAN + ' of ' + credentials.length + ' credentials — increase limit or filter first'
+        : null;
+
+    var passwordMap = {};
+    var total = toScan.length;
+
+    for (var i = 0; i < total; i++) {
+        var cred = toScan[i];
+        try {
+            var pwd = await getCredentialPassword(
+                cred.name, cred.realm, cred.app,
+                cred.namespaceOwner || cred.owner || 'nobody',
+                cred.sharing || 'app'
+            );
+            // Skip empty/unretrievable passwords
+            if (pwd && pwd !== '(unable to retrieve)' && pwd.trim() !== '') {
+                var normalized = pwd.trim().toLowerCase();
+                if (!passwordMap[normalized]) {
+                    passwordMap[normalized] = [];
+                }
+                passwordMap[normalized].push({
+                    name: cred.name,
+                    realm: cred.realm || '',
+                    app: cred.app || 'search',
+                    owner: cred.namespaceOwner || cred.owner || 'nobody',
+                    sharing: cred.sharing || 'app',
+                    obfuscated: pwd.substring(0, 4) + '****'
+                });
+            }
+        } catch (e) {
+            // Skip credentials where password fetch fails
+        }
+        if (onProgress) onProgress(i + 1, total);
+    }
+
+    var duplicateGroups = [];
+    var totalDuplicates = 0;
+    Object.keys(passwordMap).forEach(function(normalized) {
+        var group = passwordMap[normalized];
+        if (group.length >= 2) {
+            duplicateGroups.push({
+                obfuscated: group[0].obfuscated,
+                credentials: group,
+                count: group.length
+            });
+            totalDuplicates += group.length;
+        }
+    });
+
+    _duplicateCache = {
+        duplicateGroups: duplicateGroups,
+        totalScanned: total,
+        totalDuplicates: totalDuplicates,
+        scanTime: Date.now(),
+        warning: warning,
+        // Map of credential identifiers to their duplicate group info
+        duplicateCredentialSet: new Set(duplicateGroups.flatMap(function(g) {
+            return g.credentials.map(function(c) {
+                return c.name + ':' + (c.realm || '') + ':' + (c.app || 'search') + ':' + (c.owner || 'nobody') + ':' + (c.sharing || 'app');
+            });
+        })),
+        duplicateCredentialMap: Object.fromEntries(
+            duplicateGroups.flatMap(function(g) {
+                return g.credentials.map(function(c) {
+                    var key = c.name + ':' + (c.realm || '') + ':' + (c.app || 'search') + ':' + (c.owner || 'nobody') + ':' + (c.sharing || 'app');
+                    return [key, { obfuscated: g.obfuscated, count: g.count - 1 }];
+                });
+            })
+        )
+    };
+
+    return _duplicateCache;
+}
+
+/**
+ * Clear the duplicate cache — call after credentials change (create/delete/update/rotate).
+ */
+function clearDuplicateCache() {
+    _duplicateCache = null;
+}
+
+/**
+ * Check if a specific credential has a duplicate password.
+ *
+ * @param {Object} cred - Credential object
+ * @param {Object} duplicateInfo - Result from findDuplicatePasswords()
+ * @returns {Object|null} { obfuscated, sharedWith, label } or null
+ */
+function isDuplicateCredential(cred, duplicateInfo) {
+    if (!duplicateInfo || !duplicateInfo.duplicateCredentialMap) return null;
+    var key = (cred.name || '') + ':' + (cred.realm || '') + ':' + (cred.app || 'search') + ':' + (cred.namespaceOwner || cred.owner || 'nobody') + ':' + (cred.sharing || 'app');
+    return duplicateInfo.duplicateCredentialMap[key] || null;
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1476,6 +1592,9 @@ module.exports = {
     fetchCredentialHistory,
     generatePassword,
     rotatePasswords,
+    findDuplicatePasswords,
+    clearDuplicateCache,
+    isDuplicateCredential,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
 };
