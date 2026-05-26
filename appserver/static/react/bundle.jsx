@@ -1120,10 +1120,12 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             modals.rotation && React.createElement(PasswordRotationModal, {
                 selectedRows: selectedRows,
                 isOpen: modals.rotation,
-                onClose: () => { setModals(prev => ({ ...prev, rotation: false })); handleDeselectAll(); },
-                onApply: async function(rotationResults, undoResults) {
-                    await loadCredentials();
+                onClose: () => { setModals(prev => ({ ...prev, rotation: false })); handleDeselectAll(); loadCredentials(); },
+                onApply: function(rotationResults, undoResults) {
                     handleDeselectAll();
+                    // Don't call loadCredentials here — it sets loading:true which
+                    // unmounts the entire app (including this modal).
+                    // Reload happens when the modal closes via handleClose.
                 },
             }),
 

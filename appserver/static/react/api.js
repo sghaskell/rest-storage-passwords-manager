@@ -397,47 +397,84 @@ async function updateCredential(name, realm, password, readRoles, writeRoles, ow
         const encodedStanza = encodeURIComponent(stanzaKey);
         const actualSourceApp = sourceApp || (owner === 'nobody' ? getCurrentApp() : 'search');
         const targetApp = newApp || actualSourceApp;
+        const resolvedOwner = owner || 'nobody';
+        const isUserScoped = sharing === 'user' && resolvedOwner !== 'nobody';
 
-        // Step 1: ACL bump to app scope first (legacy L522-523)
-        const sourceAclPath = buildAclPath(stanzaKey, owner || 'nobody', actualSourceApp);
-        await splunkdRequest(sourceAclPath, {
-            method: 'POST',
-            body: {
-                'perms.read': readRoles ? readRoles.join(',') : '',
-                'perms.write': writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
-                sharing: 'app',
-                owner: owner || 'nobody',
-            },
-        });
+        if (isUserScoped) {
+            // User-scoped credentials: update directly at the owner's namespace.
+            // The ACL bump to app scope collides with any same-name app-scoped
+            // credential ("Cannot overwrite existing app object").
+            // configs/conf-passwords updates at the exact namespace level without
+            // requiring a bump.
+            const configStanza = encodeURIComponent(`credential:${stanzaKey}`);
+            const ownerUrl = `/servicesNS/${encodeURIComponent(resolvedOwner)}/${encodeURIComponent(actualSourceApp)}/configs/conf-passwords/${configStanza}`;
 
-        // Step 2: Update password only — nobody/{sourceApp} path per legacy L526-529
-        if (password) {
-            await splunkdRequest(
-                `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/storage/passwords/${encodedStanza}`,
-                { method: 'POST', body: { password } }
-            );
+            if (password) {
+                await splunkdRequest(ownerUrl, {
+                    method: 'POST',
+                    body: { password, output_mode: 'json' },
+                });
+            }
+
+            // Set final ACL at the owner's namespace
+            const finalAclPath = buildAclPath(stanzaKey, resolvedOwner, targetApp);
+            await splunkdRequest(finalAclPath, {
+                method: 'POST',
+                body: {
+                    'perms.read': readRoles ? readRoles.join(',') : '',
+                    'perms.write': writeRoles ? writeRoles.join(',') : resolvedOwner,
+                    sharing: sharing,
+                    owner: resolvedOwner,
+                },
+            });
+        } else {
+            // App-scoped or global: use the bump-to-app flow (legacy L522-554)
+
+            // Step 1: ACL bump to app scope first
+            const sourceAclPath = buildAclPath(stanzaKey, resolvedOwner, actualSourceApp);
+            await splunkdRequest(sourceAclPath, {
+                method: 'POST',
+                body: {
+                    'perms.read': readRoles ? readRoles.join(',') : '',
+                    'perms.write': writeRoles ? writeRoles.join(',') : resolvedOwner,
+                    sharing: 'app',
+                    owner: resolvedOwner,
+                },
+            });
+
+            // Step 2: Update password only
+            // After the ACL bump (Step 1), the entry is visible at nobody regardless of
+            // actual namespace. POSTing to the owner's namespace fails with "Cannot overwrite
+            // existing app object" because the entry is now app-scoped and Splunk resolves
+            // it at nobody. Always update at nobody — the ACL bump ensures visibility.
+            if (password) {
+                await splunkdRequest(
+                    `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/storage/passwords/${encodedStanza}`,
+                    { method: 'POST', body: { password } }
+                );
+            }
+
+            // Step 3: Move if app changed — legacy L532-538
+            if (actualSourceApp !== targetApp) {
+                const moveCredId = encodeURIComponent(`credential:${stanzaKey}`);
+                await splunkdRequest(
+                    `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/configs/conf-passwords/${moveCredId}/move`,
+                    { method: 'POST', body: { app: targetApp, user: 'nobody' } }
+                );
+            }
+
+            // Step 4: Final ACL with actual sharing value against target app (legacy L541-546)
+            const finalAclPath = buildAclPath(stanzaKey, resolvedOwner, targetApp);
+            await splunkdRequest(finalAclPath, {
+                method: 'POST',
+                body: {
+                    'perms.read': readRoles ? readRoles.join(',') : '',
+                    'perms.write': writeRoles ? writeRoles.join(',') : resolvedOwner,
+                    sharing: sharing,
+                    owner: resolvedOwner,
+                },
+            });
         }
-
-        // Step 3: Move if app changed — legacy L532-538
-        if (actualSourceApp !== targetApp) {
-            const moveCredId = encodeURIComponent(`credential:${stanzaKey}`);
-            await splunkdRequest(
-                `/servicesNS/nobody/${encodeURIComponent(actualSourceApp)}/configs/conf-passwords/${moveCredId}/move`,
-                { method: 'POST', body: { app: targetApp, user: 'nobody' } }
-            );
-        }
-
-        // Step 4: Final ACL with actual sharing value against target app (legacy L541-546)
-        const finalAclPath = buildAclPath(stanzaKey, owner || 'nobody', targetApp);
-        await splunkdRequest(finalAclPath, {
-            method: 'POST',
-            body: {
-                'perms.read': readRoles ? readRoles.join(',') : '',
-                'perms.write': writeRoles ? writeRoles.join(',') : (owner || 'nobody'),
-                sharing: sharing,
-                owner: owner || 'nobody',
-            },
-        });
     } catch (error) {
         console.error(`Error updating credential ${realm}:${name}:`, error);
         throw error;
