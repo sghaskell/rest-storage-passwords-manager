@@ -1204,6 +1204,84 @@ function getStatusCodeLabel(code, action) {
     return 'Unknown';
 }
 
+/**
+ * Fetch the per-credential audit history from Splunk.
+ * Queries _audit for password actions and _internal for ACL-only edits,
+ * filtered by a specific credential name.
+ *
+ * password_id format varies by action:
+ *   CREATE_PASSWORD → password_id="username" (bare name)
+ *   EDIT_PASSWORD   → password_id=":username:" (stanza key)
+ *   REMOVE_PASSWORD → password_id=":username:" (stanza key)
+ *
+ * @param {string} name - Credential username
+ * @param {string} realm - Credential realm (empty string = global)
+ * @param {number} timeRangeMs - Milliseconds to look back (default: 1 week)
+ * @returns {Array} Sorted newest-first array of audit entry objects
+ */
+async function fetchCredentialHistory(name, realm, timeRangeMs) {
+    timeRangeMs = timeRangeMs || 604800000; // default 7 days
+    var seconds = Math.round(timeRangeMs / 1000);
+    var earliestTime;
+    if (seconds < 3600) {
+        earliestTime = '-' + Math.round(seconds / 60) + 'm';
+    } else if (seconds < 86400) {
+        earliestTime = '-' + Math.round(seconds / 3600) + 'h';
+    } else {
+        earliestTime = '-' + Math.round(seconds / 86400) + 'd';
+    }
+
+    // Build password_id filter: match bare name (CREATE), stanza key (EDIT/REMOVE), and realm:name: format
+    var escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    var bareName = escapedName;
+    var stanzaKey = ':' + escapedName + ':';
+    var realmStanzaKey = realm ? realm.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + ':' + escapedName + ':' : stanzaKey;
+
+    // Audit query: match all three password_id formats
+    var auditQuery = 'search index=_audit (action=CREATE_PASSWORD OR action=EDIT_PASSWORD OR action=REMOVE_PASSWORD) (password_id="' + bareName + '" OR password_id="' + stanzaKey + '" OR password_id="' + realmStanzaKey + '") | sort -_time | table _time, user, action, info';
+
+    // ACL-only query: POST to /acl on conf-passwords, filtered by credential name
+    var aclQuery = 'search index=_internal sourcetype=splunkd_ui_access "conf-passwords" POST "/acl" | rex \\"POST (?<url>[^\\"]+)\\" | rex field=url "credential%3A(?<cred>[^/]+)" | eval cred=replace(cred, "%3A", ":") | where like(cred, "%' + escapedName + '%") | sort -_time | table _time, user, credential';
+
+    try {
+        var auditResp, aclResp;
+
+        try {
+            auditResp = await runSearchJob(auditQuery, earliestTime, timeRangeMs);
+        } catch (e) {
+            console.warn('Credential history audit search failed:', e.message);
+            throw e;
+        }
+
+        try {
+            aclResp = await runSearchJob(aclQuery, earliestTime, timeRangeMs);
+        } catch (e) {
+            console.warn('Credential history ACL search failed, ACL-only edits will not appear:', e.message);
+            aclResp = { results: [] };
+        }
+
+        var auditEntries = parseAuditResults(auditResp);
+        var aclEntries = parseACLEntries(aclResp);
+
+        // For per-credential history, we don't need the full access log correlation
+        // (it's heavy and not specific to one credential). Add a simple status.
+        auditEntries.forEach(function(entry) {
+            if (!entry.status) {
+                entry.status = getStatusCodeLabel(entry.status_code, entry.action);
+            }
+        });
+
+        return mergeACLEntries(auditEntries, aclEntries);
+    } catch (error) {
+        if (error.status === 403 || /permission|capability|access denied/i.test(error.message || '')) {
+            var permError = new Error('Insufficient permissions to query credential history. Required capability: search_filter:audit (or equivalent _audit index access).');
+            permError.isPermissionError = true;
+            throw permError;
+        }
+        throw error;
+    }
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1223,6 +1301,7 @@ module.exports = {
     getUsers,
     getRoles,
     fetchAuditLog,
+    fetchCredentialHistory,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
 };

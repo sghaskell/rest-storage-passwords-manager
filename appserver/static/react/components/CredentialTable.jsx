@@ -27,6 +27,7 @@ var Eye = require('@splunk/react-icons/Eye').default;
 var Pencil = require('@splunk/react-icons/Pencil').default;
 var PlusSquare = require('@splunk/react-icons/PlusSquare').default;
 var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
+var Clock = require('@splunk/react-icons/Clock').default;
 
 // Splunk Dropdown, Checkbox for column picker
 var DropdownMod = require('@splunk/react-ui/Dropdown');
@@ -99,6 +100,7 @@ function saveRowsPerPage(count) {
      * @param {Function} props.onDeselectPage - Callback when select-all unchecked for current page
  * @param {Function} props.onEdit - Callback when edit button clicked
  * @param {Function} props.onCopy - Callback when copy button clicked
+ * @param {Function} props.onHistory - Callback when history button clicked
  * @param {string} props.filterText - Search text (controlled from parent)
  * @param {Function} props.onFilterChange - Callback when filter text changes
  * @param {Object} props.sortConfig - Sort config {key, direction} (controlled from parent)
@@ -114,6 +116,7 @@ function CredentialTable({
     onDeselectPage,
     onEdit,
     onCopy,
+    onHistory,
     filterText: filterTextProp,
     onFilterChange,
     activeFilters: activeFiltersProp,
@@ -374,6 +377,7 @@ function CredentialTable({
                     React.createElement(Button, { onClick: function() { onCopy && onCopy(cred); }, appearance: 'subtle', title: 'Copy credential', icon: React.createElement(PlusSquare, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onEdit && onEdit(cred); }, appearance: 'subtle', title: 'Edit credential', icon: React.createElement(Pencil, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onReveal && onReveal(cred); }, appearance: 'subtle', title: 'Reveal password', icon: React.createElement(Eye, { variant: 'filled' }) }),
+                    React.createElement(Button, { onClick: function() { onHistory && onHistory(cred); }, appearance: 'subtle', title: 'View history', icon: React.createElement(Clock, { variant: 'filled' }) }),
                     React.createElement(Button, { onClick: function() { onDelete && onDelete(cred); }, appearance: 'subtle', title: 'Delete credential', icon: React.createElement(TrashCanCross, { variant: 'filled' }) })
                 )
             );

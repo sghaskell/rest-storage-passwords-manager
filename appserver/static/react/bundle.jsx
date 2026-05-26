@@ -116,6 +116,7 @@ const CredentialForm = require('./components/CredentialForm');
 const AuditLog = require('./components/AuditLog');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal } = require('./components/Modal');
+const CredentialHistoryModal = require('./components/CredentialHistoryModal');
 
 (function() {
     'use strict';
@@ -145,6 +146,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             bulkEdit: false,
             result: false,
             help: false,
+            history: false,
         });
 
         // Modal data
@@ -243,6 +245,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                         bulkDelete: false,
                         result: false,
                         help: false,
+                        history: false,
                     }));
                     return;
                 }
@@ -1013,6 +1016,7 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
                 onDeselectPage: handleDeselectPage,
                 onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
                 onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
+                onHistory: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, history: true })); },
                 filterText: filterText,
                 onFilterChange: setFilterText,
                 activeFilters: activeFilters,
@@ -1062,6 +1066,13 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
             modals.password && React.createElement(PasswordRevealModal, {
                 credential: selectedCredential,
                 onClose: () => { setModals(prev => ({ ...prev, password: false })); setSelectedCredential(null); },
+            }),
+
+            // Credential history modal
+            modals.history && React.createElement(CredentialHistoryModal, {
+                credential: selectedCredential,
+                isOpen: modals.history,
+                onClose: () => { setModals(prev => ({ ...prev, history: false })); setSelectedCredential(null); },
             }),
 
             // Delete confirmation modal — single credential only
