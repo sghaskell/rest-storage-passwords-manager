@@ -579,11 +579,13 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, Bulk
 
                 // Deduplicate: configs/conf-passwords may return the same credential twice
                 // with different id URLs but identical owner/sharing — only delete once per
-                // unique (name, realm, owner, sharing) combination.
+                // unique (name, realm, app, namespaceOwner, sharing) combination.
                 var seen = {};
                 var uniqueRows = selectedRows.filter(function(row) {
                     var key = (row.name || '') + ':' + (row.realm || '') + ':' +
-                              (row.owner || 'nobody') + ':' + (row.sharing || 'app');
+                              (row.app || 'search') + ':' +
+                              (row.namespaceOwner || row.owner || 'nobody') + ':' +
+                              (row.sharing || 'app');
                     if (seen[key]) return false;
                     seen[key] = true;
                     return true;
