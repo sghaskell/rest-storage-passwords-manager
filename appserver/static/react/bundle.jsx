@@ -180,6 +180,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         // Column layout presets state
         const [presetsOpen, setPresetsOpen] = React.useState(false);
         const [presets, setPresets] = React.useState([]);
+        const [columnsRefreshKey, setColumnsRefreshKey] = React.useState(0);
 
         // Load presets on mount
         React.useEffect(function() {
@@ -210,6 +211,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             var cols = API.applyPreset(name);
             if (cols) {
                 try { localStorage.setItem('credential-table-visible-columns', JSON.stringify(cols)); } catch(e) {}
+                setColumnsRefreshKey(Date.now());
                 setPresetsOpen(false);
                 loadCredentials(); // reloads credentials, re-renders table with new column visibility
             }
@@ -1177,6 +1179,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onSortChange: setSortConfig,
                 duplicateInfo: duplicateInfo,
                 onOpenPresetModal: function() { setPresetsOpen(true); },
+                columnsRefreshKey: columnsRefreshKey,
             }),
 
             // Undo delete toast

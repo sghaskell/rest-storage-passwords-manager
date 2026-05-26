@@ -127,6 +127,7 @@ function CredentialTable({
     onSortChange,
     duplicateInfo,
     onOpenPresetModal,
+    columnsRefreshKey,
 }) {
     // Filter/sort: accept from parent or fall back to local state for backwards compat
     const useParentState = filterTextProp !== undefined;
@@ -150,6 +151,11 @@ function CredentialTable({
     React.useEffect(function() {
         saveVisibleColumns(visibleColumns);
     }, [visibleColumns]);
+
+    // Re-read columns from localStorage when a preset is applied (parent signals via columnsRefreshKey)
+    React.useEffect(function() {
+        setVisibleColumns(loadVisibleColumns());
+    }, [columnsRefreshKey || 0]);
 
     React.useEffect(function() {
         saveRowsPerPage(rowsPerPage);
