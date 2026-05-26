@@ -44,20 +44,9 @@ function getPasswordStrength(pw) {
     return { label: 'Strong', color: '#2e7d32', width: '100%' };
 }
 
-// Password generator
-function generatePassword(length, options) {
-    var chars = '';
-    if (options.lowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
-    if (options.uppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    if (options.numbers) chars += '0123456789';
-    if (options.symbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-    if (!chars) chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    var result = [];
-    for (var i = 0; i < length; i++) {
-        result.push(chars.charAt(Math.floor(Math.random() * chars.length)));
-    }
-    return result.join('');
-}
+// Password generator — imported from api.js for reuse in bulk rotation
+var _API = require('../api');
+var generatePassword = _API.generatePassword;
 
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
@@ -228,7 +217,7 @@ function CredentialForm({
 
     // Generator handlers
     function handleGenerate() {
-        var pw = generatePassword(genLength, genOptions);
+        var pw = generatePassword(Object.assign({}, genOptions, { length: genLength }));
         setPassword(pw);
         setConfirmPassword(pw);
         setErrors({});

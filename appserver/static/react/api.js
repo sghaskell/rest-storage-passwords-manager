@@ -1282,6 +1282,141 @@ async function fetchCredentialHistory(name, realm, timeRangeMs) {
     }
 }
 
+// ─── Password generator (extracted from CredentialForm) ───
+
+/**
+ * Generate a random password based on options.
+ * @param {Object} options - { length, uppercase, lowercase, numbers, symbols }
+ * @returns {string} generated password
+ */
+function generatePassword(options) {
+    options = options || {};
+    var length = options.length || 16;
+    var chars = '';
+    if (options.lowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
+    if (options.uppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (options.numbers) chars += '0123456789';
+    if (options.symbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    if (!chars) chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    var result = [];
+    for (var i = 0; i < length; i++) {
+        result.push(chars.charAt(Math.floor(Math.random() * chars.length)));
+    }
+    return result.join('');
+}
+
+// ─── Bulk password rotation ───
+
+/**
+ * Rotate passwords for a batch of credentials.
+ * Sequential execution to avoid race conditions with ACL bump.
+ *
+ * @param {Array} selectedRows - Array of credential objects
+ * @param {Object} options - { mode: 'individual' | 'shared', generatorOptions: {...} }
+ * @returns {Array} Per-credential results with status, oldPassword, newPassword, error
+ */
+async function rotatePasswords(selectedRows, options) {
+    options = options || {};
+    var mode = options.mode || 'individual';
+    var genOpts = options.generatorOptions || {};
+    var results = [];
+
+    // Generate shared password upfront if in shared mode
+    var sharedPassword = null;
+    if (mode === 'shared') {
+        sharedPassword = generatePassword(genOpts);
+    }
+
+    for (var i = 0; i < selectedRows.length; i++) {
+        var cred = selectedRows[i];
+        var nsOwner = cred.namespaceOwner || cred.owner || 'nobody';
+        var credApp = cred.app || getCurrentApp() || 'search';
+        var credSharing = cred.sharing || 'app';
+        var credRealm = cred.realm || '';
+        var credName = cred.name;
+
+        // Step 1: Fetch old password
+        var oldPassword = null;
+        try {
+            oldPassword = await getCredentialPassword(
+                credName, credRealm, credApp, nsOwner, credSharing
+            );
+        } catch (e) {
+            results.push({
+                name: credName,
+                realm: credRealm,
+                app: credApp,
+                oldPassword: null,
+                newPassword: null,
+                status: 'failed',
+                error: 'Could not retrieve current password: ' + (e.message || 'unknown error')
+            });
+            continue;
+        }
+
+        if (!oldPassword) {
+            results.push({
+                name: credName,
+                realm: credRealm,
+                app: credApp,
+                oldPassword: null,
+                newPassword: null,
+                status: 'failed',
+                error: 'Could not retrieve current password'
+            });
+            continue;
+        }
+
+        // Step 2: Generate new password
+        var newPassword;
+        if (mode === 'shared') {
+            newPassword = sharedPassword;
+        } else {
+            newPassword = generatePassword(genOpts);
+        }
+
+        // Validate non-empty (defensive)
+        if (!newPassword || newPassword.length === 0) {
+            // Retry once
+            newPassword = generatePassword(genOpts);
+        }
+
+        // Step 3: Update password
+        var aclReadArr = cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        var aclWriteArr = cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+        try {
+            await updateCredential(
+                credName, credRealm, newPassword,
+                aclReadArr, aclWriteArr,
+                nsOwner, credApp, credSharing, credApp
+            );
+            results.push({
+                name: credName,
+                realm: credRealm,
+                app: credApp,
+                oldPassword: oldPassword,
+                newPassword: newPassword,
+                status: 'success',
+                error: null
+            });
+        } catch (e) {
+            var errMsg = e.message || 'unknown error';
+            results.push({
+                name: credName,
+                realm: credRealm,
+                app: credApp,
+                oldPassword: oldPassword,
+                newPassword: newPassword,
+                status: 'failed',
+                error: 'Update failed: ' + errMsg
+            });
+        }
+    }
+
+    return results;
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1302,6 +1437,8 @@ module.exports = {
     getRoles,
     fetchAuditLog,
     fetchCredentialHistory,
+    generatePassword,
+    rotatePasswords,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
 };

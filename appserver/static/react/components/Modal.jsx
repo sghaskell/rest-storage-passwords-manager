@@ -496,6 +496,20 @@ function HelpModal({ isOpen, onClose }) {
             )
         },
         {
+            id: 'rotation',
+            title: 'Bulk Password Rotation',
+            content: React.createElement(React.Fragment, null,
+                React.createElement('p', null, 'Select 2+ credentials with checkboxes, then click ', React.createElement('strong', null, 'Rotate Passwords (N)'), ' in the toolbar.'),
+                React.createElement('p', null, 'Choose password settings (length, character set) and mode: '),
+                React.createElement('ul', { style: { margin: '0.25rem 0 0.5rem 1.25rem', padding: 0 } },
+                    React.createElement('li', null, React.createElement('strong', null, 'Individual'), ' — each credential gets a unique password'),
+                    React.createElement('li', null, React.createElement('strong', null, 'Shared'), ' — all credentials share the same password')
+                ),
+                React.createElement('p', null, 'Click ', React.createElement('strong', null, 'Preview'), ' to see the generated passwords before applying, or ', React.createElement('strong', null, 'Execute Rotation'), ' to apply immediately.'),
+                React.createElement('p', null, 'After execution, you can undo within 10 seconds, or download old passwords as CSV before the undo window expires.')
+            )
+        },
+        {
             id: 'audit',
             title: 'Audit Log',
             content: React.createElement(React.Fragment, null,

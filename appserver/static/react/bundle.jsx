@@ -117,6 +117,7 @@ const AuditLog = require('./components/AuditLog');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal } = require('./components/Modal');
 const CredentialHistoryModal = require('./components/CredentialHistoryModal');
+const PasswordRotationModal = require('./components/PasswordRotationModal');
 
 (function() {
     'use strict';
@@ -147,6 +148,7 @@ const CredentialHistoryModal = require('./components/CredentialHistoryModal');
             result: false,
             help: false,
             history: false,
+            rotation: false,
         });
 
         // Modal data
@@ -246,6 +248,7 @@ const CredentialHistoryModal = require('./components/CredentialHistoryModal');
                         result: false,
                         help: false,
                         history: false,
+                        rotation: false,
                     }));
                     return;
                 }
@@ -960,6 +963,11 @@ const CredentialHistoryModal = require('./components/CredentialHistoryModal');
                         appearance: 'destructive',
                         children: `Delete Selected (${selectedRows.length})`
                     }),
+                    selectedRows.length >= 2 && React.createElement(Button, {
+                        onClick: () => setModals(prev => ({ ...prev, rotation: true })),
+                        appearance: 'subtle',
+                        children: `Rotate Passwords (${selectedRows.length})`
+                    }),
                     React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
                     React.createElement(Dropdown, {
                         open: moreDropdownOpen,
@@ -1106,6 +1114,17 @@ const CredentialHistoryModal = require('./components/CredentialHistoryModal');
                 selectedRows: selectedRows,
                 onClose: () => setModals(prev => ({ ...prev, bulkDelete: false })),
                 onConfirm: handleBulkDeleteConfirm,
+            }),
+
+            // Password rotation modal
+            modals.rotation && React.createElement(PasswordRotationModal, {
+                selectedRows: selectedRows,
+                isOpen: modals.rotation,
+                onClose: () => { setModals(prev => ({ ...prev, rotation: false })); handleDeselectAll(); },
+                onApply: async function(rotationResults, undoResults) {
+                    await loadCredentials();
+                    handleDeselectAll();
+                },
             }),
 
             // Result modal
