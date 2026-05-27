@@ -44,6 +44,7 @@ var COLUMNS = [
     { key: 'app',      label: 'App',        sortable: true,  fixed: false },
     { key: 'owner',    label: 'Owner',      sortable: true,  fixed: false },
     { key: 'rotation', label: 'Rotation',   sortable: true,  fixed: false },
+    { key: 'tags',     label: 'Tags',       sortable: false, fixed: false },
     { key: 'mtime',    label: 'Modified',   sortable: true,  fixed: false },
     { key: 'aclRead',  label: 'Read Roles', sortable: true,  fixed: false },
     { key: 'aclWrite', label: 'Write Roles',sortable: true,  fixed: false },
@@ -51,7 +52,7 @@ var COLUMNS = [
 ];
 
 var VISIBLE_COLUMNS_KEY = 'credential-table-visible-columns';
-var DEFAULT_VISIBLE = ['name', 'realm', 'expiry', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'];
+var DEFAULT_VISIBLE = ['name', 'realm', 'expiry', 'app', 'owner', 'rotation', 'tags', 'aclRead', 'aclWrite', 'actions'];
 var ROWS_PER_PAGE_KEY = 'credential-table-rows-per-page';
 var DEFAULT_ROWS_PER_PAGE = 10;
 
@@ -229,6 +230,11 @@ function CredentialTable({
                 if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'modified' && mtime !== val) return false;
+                // Tag filter — check if credential has the specific tag
+                if (f.field === 'tag') {
+                    var credTags = (cred.tags || []).map(function(t) { return t.name || t; });
+                    if (credTags.indexOf(val) === -1) return false;
+                }
                 // Duplicates only filter
                 if (f.field === 'isDuplicate') {
                     var dupKey = (credential.name || '') + ':' + (credential.realm || '') + ':' + (credential.app || 'search') + ':' + (credential.namespaceOwner || credential.owner || 'nobody') + ':' + (credential.sharing || 'app');
@@ -315,6 +321,7 @@ function CredentialTable({
         { key: 'app', label: 'App' },
         { key: 'owner', label: 'Owner' },
         { key: 'rotation', label: 'Rotation' },
+        { key: 'tag', label: 'Tag' },
         { key: 'readRoles', label: 'Read Roles' },
         { key: 'writeRoles', label: 'Write Roles' },
         { key: 'isDuplicate', label: 'Duplicate' },
@@ -328,6 +335,7 @@ function CredentialTable({
         expiry: 'expiry',
         app: 'app',
         owner: 'owner',
+        tags: 'tag',
         aclRead: 'readRoles',
         aclWrite: 'writeRoles',
     };
@@ -719,6 +727,40 @@ function CredentialTable({
                         cursor: 'pointer',
                     }
                 }, labelText)
+            );
+        }
+        if (col.key === 'tags') {
+            var tags = cred.tags || [];
+            if (tags.length === 0) {
+                return React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: { fontSize: '11px', color: '#999', fontStyle: 'italic' },
+                    }, 'No tags')
+                );
+            }
+            return React.createElement(TableCell, null,
+                React.createElement('div', {
+                    style: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }
+                },
+                    tags.map(function(tag, i) {
+                        return React.createElement('span', {
+                            key: i,
+                            onClick: function() { handleAddFilter('tag', tag.name); },
+                            style: {
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                backgroundColor: tag.color + '22',
+                                color: tag.color,
+                                border: '1px solid ' + tag.color + '40',
+                                whiteSpace: 'nowrap',
+                                cursor: 'pointer',
+                            }
+                        }, tag.name);
+                    })
+                )
             );
         }
         return React.createElement(TableCell, null, cred[col.key] || '');

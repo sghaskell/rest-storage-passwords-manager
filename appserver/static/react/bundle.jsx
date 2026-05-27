@@ -471,14 +471,30 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             setData(prev => ({ ...prev, loading: true, error: null }));
             try {
                 const fetched = await API.getAllCredentials();
-                // Enrich credentials with rotation status
+
+                // Fetch all tag data in batch — one API call for all credentials
+                var allTags = await API.getAllTagsData();
+                var tagDefs = await API.getAllTagDefinitions();
+                var tagColorMap = {};
+                tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
+
+                // Enrich credentials with rotation status and tags
                 var enriched = fetched.map(function(cred) {
                     var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
                     var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                    var credKey = cred.stanzaKey + ':' + cred.app + ':' +
+                                  (cred.namespaceOwner || cred.owner || '') + ':' + cred.sharing;
+                    var tags = allTags[credKey] || [];
+
+                    var enrichedTags = tags.map(function(t) {
+                        return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
+                    });
+
                     return Object.assign({}, cred, {
                         expiryDate: expiryInfo.expiryDate || '',
                         rotationStatus: rotationStatus,
-                        rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus)
+                        rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus),
+                        tags: enrichedTags,
                     });
                 });
                 setData(prev => ({ ...prev, credentials: enriched }));
@@ -542,6 +558,23 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                     data.app, data.owner, data.readRoles, data.writeRoles,
                     data.sharing || 'app'
                 );
+
+                // Save tags if provided
+                if (data.tags && data.tags.length > 0) {
+                    try {
+                        await API.setTagsForCredential({
+                            name: data.username,
+                            realm: realmToSave,
+                            app: data.app,
+                            namespaceOwner: data.owner,
+                            sharing: data.sharing || 'app',
+                            stanzaKey: realmToSave + ':' + data.username + ':',
+                        }, data.tags);
+                    } catch (tagErr) {
+                        console.warn('[handleCreateCredential] failed to save tags (non-fatal):', tagErr.message);
+                    }
+                }
+
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
@@ -614,6 +647,24 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                         data.owner, data.app, data.sharing || 'app', credential.app
                     );
                 }
+
+                // Save tags if provided
+                if (data.tags && data.tags.length > 0) {
+                    var realmToUse = newRealm !== credential.realm ? newRealm : credential.realm;
+                    try {
+                        await API.setTagsForCredential({
+                            name: credential.name,
+                            realm: realmToUse,
+                            app: data.app,
+                            namespaceOwner: data.owner,
+                            sharing: data.sharing || 'app',
+                            stanzaKey: realmToUse + ':' + credential.name + ':',
+                        }, data.tags);
+                    } catch (tagErr) {
+                        console.warn('[handleUpdateCredential] failed to save tags (non-fatal):', tagErr.message);
+                    }
+                }
+
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
@@ -633,6 +684,9 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
         async function handleDeleteCredential() {
             if (!selectedCredential) return;
             try {
+                // Clean up tags before deleting
+                await API.deleteTagsForCredential(selectedCredential);
+
                 // Fetch password for undo before deleting
                 var password;
                 try {
@@ -791,6 +845,15 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                     return true;
                 });
 
+                // Clean up tags for all unique rows before deleting
+                for (var tc = 0; tc < uniqueRows.length; tc++) {
+                    try {
+                        await API.deleteTagsForCredential(uniqueRows[tc]);
+                    } catch (e) {
+                        console.warn('[handleBulkDeleteConfirm] tag cleanup warning:', e.message);
+                    }
+                }
+
                 // Group remaining rows by stanza key for sequential deletes.
                 // Entries sharing a stanza (e.g., app-shared + user-shared) need sequential
                 // deletes: user-shared first to remove the top-level config entry, then app-shared
@@ -937,6 +1000,18 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                 });
 
                 await loadCredentials();
+
+                // Save tags for credentials that have _bulkTags
+                var tagPromises = [];
+                updates.forEach(function(c) {
+                    if (c._bulkTags && c._bulkTags.length > 0) {
+                        tagPromises.push(API.setTagsForCredential(c, c._bulkTags).catch(function(err) {
+                            errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong> tag update failed: ' + getErrorMessage(err));
+                        }));
+                    }
+                });
+                await Promise.allSettled(tagPromises);
+
                 handleDeselectAll();
                 setModals(prev => ({ ...prev, bulkEdit: false }));
 

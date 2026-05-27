@@ -51,6 +51,8 @@ var parseExpiryFromRealm = _API.parseExpiryFromRealm;
 var buildRealmWithExpiry = _API.buildRealmWithExpiry;
 var loadPolicy = _API.loadPolicy;
 var validatePasswordAgainstPolicy = _API.validatePasswordAgainstPolicy;
+var getTagsForCredential = _API.getTagsForCredential;
+var getAllTagDefinitions = _API.getAllTagDefinitions;
 
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
@@ -102,9 +104,46 @@ function CredentialForm({
     const prevReadRolesRef = React.useRef(readRolesArray);
     const prevWriteRolesRef = React.useRef(writeRolesArray);
 
+    // Tag state
+    const [currentTags, setCurrentTags] = React.useState([]);
+    const [tagInput, setTagInput] = React.useState('');
+    const [allTagDefinitions, setAllTagDefinitions] = React.useState([]);
+
     // Keep refs in sync with state
     React.useEffect(function() { prevReadRolesRef.current = readRolesArray; }, [readRolesArray]);
     React.useEffect(function() { prevWriteRolesRef.current = writeRolesArray; }, [writeRolesArray]);
+
+    // Load existing tags when credential changes
+    React.useEffect(function() {
+        if (credential) {
+            async function loadTags() {
+                try {
+                    var tags = await getTagsForCredential(credential);
+                    setCurrentTags(tags);
+                } catch (e) {
+                    console.warn('Failed to load tags:', e);
+                    setCurrentTags([]);
+                }
+            }
+            loadTags();
+        } else {
+            setCurrentTags([]);
+        }
+    }, [credential, isCopy]);
+
+    // Load all tag definitions for autocomplete
+    React.useEffect(function() {
+        async function loadDefs() {
+            try {
+                var defs = await getAllTagDefinitions();
+                setAllTagDefinitions(defs);
+            } catch (e) {
+                console.warn('Failed to load tag definitions:', e);
+                setAllTagDefinitions([]);
+            }
+        }
+        loadDefs();
+    }, []);
 
     // Initialize form when credential changes
     React.useEffect(function() {
@@ -197,8 +236,30 @@ function CredentialForm({
                 readRoles: resolveRoles(readRolesArray),
                 writeRoles: resolveRoles(writeRolesArray),
                 sharing: sharing,
+                tags: currentTags,
             });
         }
+    }
+
+    // Tag handler functions
+    function handleTagKeyDown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var tag = tagInput.trim().toLowerCase();
+            if (tag && /^[a-z0-9_-]{1,50}$/.test(tag) && currentTags.length < 5) {
+                if (!currentTags.includes(tag)) {
+                    setCurrentTags(prev => [...prev, tag]);
+                }
+                setTagInput('');
+            }
+        }
+        if (e.key === 'Backspace' && !tagInput) {
+            setCurrentTags(prev => prev.slice(0, -1));
+        }
+    }
+
+    function removeTag(tag) {
+        setCurrentTags(prev => prev.filter(t => t !== tag));
     }
 
     function handleTogglePasswordChange(e) {
@@ -563,6 +624,78 @@ function CredentialForm({
             ),
             React.createElement('div', { className: 'credential-form-password-strength-track', style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
                 React.createElement('div', { style: { height: '100%', width: getPasswordStrength(password).width, backgroundColor: getPasswordStrength(password).color, borderRadius: '2px', transition: 'width 0.2s, background-color 0.2s' } })
+            )
+        ),
+
+        // Tag input section — autocomplete with pill display
+        React.createElement('div', { style: { width: '100%' } },
+            formField('Tags',
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                    // Current tags as removable pills
+                    React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', minHeight: '28px', alignItems: 'center' } },
+                        currentTags.map(function(tag, i) {
+                            var tagDef = allTagDefinitions.find(function(d) { return d.tag_name === tag; });
+                            var color = tagDef ? tagDef.color : '#3b82f6';
+                            return React.createElement('span', {
+                                key: tag,
+                                style: {
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    backgroundColor: color + '22',
+                                    color: color,
+                                    border: '1px solid ' + color + '40',
+                                }
+                            },
+                                tag,
+                                React.createElement('span', {
+                                    onClick: function() { removeTag(tag); },
+                                    style: { cursor: 'pointer', fontWeight: 'bold', marginLeft: '2px' },
+                                }, '\u00d7')
+                            );
+                        }),
+                        currentTags.length === 0 && React.createElement('span', { style: { fontSize: '11px', color: '#999' } },
+                            'No tags — type and press Enter to add'
+                        )
+                    ),
+                    // Input + autocomplete
+                    React.createElement('input', {
+                        type: 'text',
+                        value: tagInput,
+                        onChange: function(e) {
+                            var val = e.target.value;
+                            // Only allow valid tag characters
+                            if (val && /^[a-z0-9_-]*$/.test(val)) {
+                                setTagInput(val);
+                            }
+                        },
+                        onKeyDown: handleTagKeyDown,
+                        placeholder: currentTags.length >= 5 ? 'Max 5 tags reached' : 'Type tag name, press Enter',
+                        disabled: currentTags.length >= 5,
+                        style: {
+                            width: '100%',
+                            padding: '6px 8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            height: '36px',
+                            boxSizing: 'border-box',
+                        }
+                    }),
+                    // Autocomplete suggestions
+                    tagInput && React.createElement('div', { style: { fontSize: '11px', color: '#666' } },
+                        'Suggestions: ' + allTagDefinitions
+                            .filter(function(d) { return d.tag_name.indexOf(tagInput) !== -1 && !currentTags.includes(d.tag_name); })
+                            .slice(0, 5)
+                            .map(function(d) { return d.tag_name; })
+                            .join(', ')
+                    )
+                ),
+                { helpText: 'Up to 5 tags per credential. Letters, numbers, hyphens, underscores only.' }
             )
         ),
 

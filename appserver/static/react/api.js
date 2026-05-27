@@ -1978,6 +1978,204 @@ async function getSplunkValidator() {
     }
 }
 
+// ─── Credential Tagging (kvstore) ────────────────────────────────────────
+
+const TAGS_COLLECTION = 'credential_tags';
+const TAG_DEFS_COLLECTION = 'tag_definitions';
+
+/**
+ * Helper — hash tag name to consistent color from a fixed palette
+ */
+function hashToColor(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    var palette = [
+        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
+        '#e11d48', '#84cc16', '#a855f7', '#0ea5e9', '#d946ef',
+    ];
+    return palette[Math.abs(hash) % palette.length];
+}
+
+/**
+ * Ensure a kvstore collection exists; create if missing.
+ */
+async function ensureCollection(name, fields) {
+    try {
+        await splunkdRequest('/servicesNS/admin/search/data/collections/' + name, { method: 'GET' });
+        return true;
+    } catch (e) {
+        if (e.status === 404) {
+            var fieldStr = fields.map(function(f) { return f.name + ':' + f.type; }).join(',');
+            try {
+                await splunkdRequest('/servicesNS/admin/search/data/collections', {
+                    method: 'POST',
+                    body: { name: name, fields: fieldStr },
+                });
+                return true;
+            } catch (createErr) {
+                if (createErr.status === 409) return true;
+                throw createErr;
+            }
+        }
+        throw e;
+    }
+}
+
+async function ensureTagCollections() {
+    await ensureCollection(TAGS_COLLECTION, [
+        { name: 'cred_key', type: 'string' },
+        { name: 'tags', type: 'string' },
+    ]);
+    await ensureCollection(TAG_DEFS_COLLECTION, [
+        { name: 'tag_name', type: 'string' },
+        { name: 'color', type: 'string' },
+    ]);
+}
+
+/**
+ * Build a kvstore-safe key from a credential object.
+ */
+function tagCredKey(cred) {
+    return (cred.realm || '') + ':' + (cred.name || '') + ':' +
+           (cred.app || 'search') + ':' +
+           (cred.namespaceOwner || cred.owner || 'nobody') + ':' +
+           (cred.sharing || 'app');
+}
+
+/**
+ * Set tags for a credential (replaces all existing tags).
+ */
+async function setTagsForCredential(credential, tags) {
+    await ensureTagCollections();
+    var key = tagCredKey(credential);
+    var cleanTags = tags
+        .map(function(t) { return t.trim().toLowerCase(); })
+        .filter(Boolean)
+        .slice(0, 5);
+
+    // Validate tag names
+    for (var i = 0; i < cleanTags.length; i++) {
+        var tag = cleanTags[i];
+        if (!/^[a-z0-9_-]{1,50}$/.test(tag)) {
+            throw new Error('Invalid tag name: ' + tag + ' — use only letters, numbers, hyphens, underscores (max 50 chars)');
+        }
+    }
+
+    // Upsert tag definitions for new tags
+    var existingDefs = await getAllTagDefinitions();
+    for (var j = 0; j < cleanTags.length; j++) {
+        var tag = cleanTags[j];
+        if (!existingDefs.some(function(d) { return d.tag_name === tag; })) {
+            await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION, {
+                method: 'POST',
+                body: { tag_name: tag, color: hashToColor(tag), _key: tag },
+            });
+        }
+    }
+
+    // Upsert credential tags document
+    await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
+        method: 'POST',
+        body: { cred_key: key, tags: JSON.stringify(cleanTags), _key: key },
+    });
+
+    return cleanTags;
+}
+
+/**
+ * Get tags for a credential.
+ */
+async function getTagsForCredential(credential) {
+    var key = tagCredKey(credential);
+    try {
+        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
+            method: 'GET',
+        });
+        var entry = data.entry ? data.entry[0] : null;
+        if (entry && entry.content && entry.content.tags) {
+            return JSON.parse(entry.content.tags);
+        }
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
+    return [];
+}
+
+/**
+ * Remove a specific tag from a credential.
+ */
+async function removeTagFromCredential(credential, tagToRemove) {
+    var existing = await getTagsForCredential(credential);
+    var updated = existing.filter(function(t) { return t !== tagToRemove.toLowerCase(); });
+    if (updated.length === existing.length) return existing;
+    return setTagsForCredential(credential, updated);
+}
+
+/**
+ * Get all tag definitions (tag→color mapping).
+ */
+async function getAllTagDefinitions() {
+    try {
+        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION + '?count=0', {
+            method: 'GET',
+        });
+        return (data.entry || []).map(function(e) {
+            return { tag_name: e.content.tag_name, color: e.content.color };
+        });
+    } catch (e) {
+        if (e.status === 404) return [];
+        throw e;
+    }
+}
+
+/**
+ * Get all tag-to-credential mappings (batch fetch for enrichment).
+ */
+async function getAllTagsData() {
+    try {
+        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '?count=0', {
+            method: 'GET',
+        });
+        var result = {};
+        (data.entry || []).forEach(function(e) {
+            var content = e.content;
+            if (content.tags) {
+                result[content.cred_key] = JSON.parse(content.tags);
+            }
+        });
+        return result;
+    } catch (e) {
+        if (e.status === 404) return {};
+        throw e;
+    }
+}
+
+/**
+ * Delete tags for a credential (called on credential delete).
+ */
+async function deleteTagsForCredential(credential) {
+    var key = tagCredKey(credential);
+    try {
+        await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
+            method: 'DELETE',
+        });
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
+}
+
+/**
+ * Delete a tag definition.
+ */
+async function deleteTagDefinition(tagName) {
+    await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION + '/' + encodeURIComponent(tagName), {
+        method: 'DELETE',
+    });
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -2023,4 +2221,18 @@ module.exports = {
     validatePasswordAgainstPolicy,
     updateSplunkValidator,
     getSplunkValidator,
+    // Credential Tagging
+    TAGS_COLLECTION,
+    TAG_DEFS_COLLECTION,
+    ensureCollection,
+    ensureTagCollections,
+    tagCredKey,
+    setTagsForCredential,
+    getTagsForCredential,
+    removeTagFromCredential,
+    getAllTagDefinitions,
+    getAllTagsData,
+    deleteTagsForCredential,
+    deleteTagDefinition,
+    hashToColor,
 };

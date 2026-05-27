@@ -597,6 +597,12 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
     const [applySharing, setApplySharing] = React.useState(false);
     const [saving, setSaving] = React.useState(false);
 
+    // Bulk tag state
+    const [applyTags, setApplyTags] = React.useState(false);
+    const [tagInput, setTagInput] = React.useState('');
+    const [bulkTags, setBulkTags] = React.useState([]);
+    const [allTagDefinitions, setAllTagDefinitions] = React.useState([]);
+
     // Reset state when modal opens
     React.useEffect(function() {
         if (isOpen) {
@@ -609,6 +615,21 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
             setApplyOwner(false);
             setApplySharing(false);
             setSaving(false);
+            setApplyTags(false);
+            setTagInput('');
+            setBulkTags([]);
+
+            // Load tag definitions for autocomplete
+            var _API = require('../api');
+            var loadDefs = async function() {
+                try {
+                    var defs = await _API.getAllTagDefinitions();
+                    setAllTagDefinitions(defs);
+                } catch (e) {
+                    setAllTagDefinitions([]);
+                }
+            };
+            loadDefs();
         }
     }, [isOpen]);
 
@@ -621,6 +642,26 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
         return { label: name, value: name };
     });
 
+    function handleBulkTagKeyDown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var tag = tagInput.trim().toLowerCase();
+            if (tag && /^[a-z0-9_-]{1,50}$/.test(tag) && bulkTags.length < 5) {
+                if (!bulkTags.includes(tag)) {
+                    setBulkTags(prev => [...prev, tag]);
+                }
+                setTagInput('');
+            }
+        }
+        if (e.key === 'Backspace' && !tagInput) {
+            setBulkTags(prev => prev.slice(0, -1));
+        }
+    }
+
+    function removeBulkTag(tag) {
+        setBulkTags(prev => prev.filter(t => t !== tag));
+    }
+
     function handleRoleChange(e, data, isRead) {
         var newVals = data.values ? data.values.slice() : [];
         var prevVals = isRead ? readRoles : writeRoles;
@@ -632,12 +673,13 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
     }
 
     // At least one checkbox must be checked, and checked fields must have values
-    var hasApply = applyRead || applyWrite || applyOwner || applySharing;
+    var hasApply = applyRead || applyWrite || applyOwner || applySharing || applyTags;
     var canApply = hasApply &&
                    (applyRead ? readRoles.length > 0 : true) &&
                    (applyWrite ? writeRoles.length > 0 : true) &&
                    (applyOwner ? owner !== '' : true) &&
-                   (applySharing ? sharing !== '' : true);
+                   (applySharing ? sharing !== '' : true) &&
+                   (applyTags ? bulkTags.length > 0 : true);
 
     function handleApply() {
         if (!canApply) return;
@@ -649,6 +691,7 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
             if (applyWrite) updated.aclWrite = writeRoles.join(', ');
             if (applyOwner) updated.owner = owner;
             if (applySharing) updated.sharing = sharing;
+            if (applyTags) updated._bulkTags = bulkTags.slice();
             updates.push(updated);
         });
         onApply(updates, function() {
@@ -740,6 +783,81 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
                         React.createElement('option', { value: 'app' }, 'App'),
                         React.createElement('option', { value: 'user' }, 'User'),
                         React.createElement('option', { value: 'global' }, 'Global')
+                    )
+                ),
+
+                // Tags — bulk add tags to selected credentials
+                React.createElement('div', { style: { marginBottom: '1rem' } },
+                    React.createElement('label', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '14px', fontWeight: '500' } },
+                        React.createElement('input', { type: 'checkbox', checked: applyTags, onChange: function(e) { setApplyTags(e.target.checked); } }),
+                        'Tags'
+                    ),
+                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                        // Current tags as removable pills
+                        React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', minHeight: '28px', alignItems: 'center' } },
+                            bulkTags.map(function(tag, i) {
+                                var tagDef = allTagDefinitions.find(function(d) { return d.tag_name === tag; });
+                                var color = tagDef ? tagDef.color : '#3b82f6';
+                                return React.createElement('span', {
+                                    key: tag,
+                                    style: {
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '11px',
+                                        fontWeight: '600',
+                                        backgroundColor: color + '22',
+                                        color: color,
+                                        border: '1px solid ' + color + '40',
+                                    }
+                                },
+                                    tag,
+                                    React.createElement('span', {
+                                        onClick: function() { removeBulkTag(tag); },
+                                        style: { cursor: 'pointer', fontWeight: 'bold', marginLeft: '2px' },
+                                    }, '\u00d7')
+                                );
+                            }),
+                            bulkTags.length === 0 && React.createElement('span', { style: { fontSize: '11px', color: '#999' } },
+                                'No tags — type and press Enter to add'
+                            )
+                        ),
+                        // Tag input
+                        React.createElement('input', {
+                            type: 'text',
+                            value: tagInput,
+                            onChange: function(e) {
+                                var val = e.target.value;
+                                if (val && /^[a-z0-9_-]*$/.test(val)) {
+                                    setTagInput(val);
+                                }
+                            },
+                            onKeyDown: handleBulkTagKeyDown,
+                            placeholder: bulkTags.length >= 5 ? 'Max 5 tags reached' : 'Type tag name, press Enter',
+                            disabled: bulkTags.length >= 5 || !applyTags,
+                            style: {
+                                width: '100%',
+                                padding: '6px 8px',
+                                border: '1px solid #ccc',
+                                borderRadius: '4px',
+                                fontSize: '13px',
+                                height: '36px',
+                                boxSizing: 'border-box',
+                            }
+                        }),
+                        // Suggestions
+                        tagInput && React.createElement('div', { style: { fontSize: '11px', color: '#666' } },
+                            'Suggestions: ' + allTagDefinitions
+                                .filter(function(d) { return d.tag_name.indexOf(tagInput) !== -1 && !bulkTags.includes(d.tag_name); })
+                                .slice(0, 5)
+                                .map(function(d) { return d.tag_name; })
+                                .join(', ')
+                        ),
+                        React.createElement('span', { style: { fontSize: '11px', color: '#666' } },
+                            'Tags are ADDED to existing tags. Max 5 tags per credential.'
+                        )
                     )
                 )
             ),
