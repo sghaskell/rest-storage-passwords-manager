@@ -11,6 +11,8 @@ const ReactDOM = require('react-dom/client');
 // Import UI components from Splunk design system
 const ButtonMod = require('@splunk/react-ui/Button');
 const { default: Button } = ButtonMod;
+const DropdownMod = require('@splunk/react-ui/Dropdown');
+const { default: Dropdown } = DropdownMod;
 const ModalMod = require('@splunk/react-ui/Modal');
 var Modal = ModalMod.default;
 ModalMod.Header && (Modal.Header = ModalMod.Header);
@@ -51,6 +53,49 @@ var GlobalStyles = _sc.createGlobalStyle`
         background-color: #e3f2fd !important;
     }
 
+    /* Dark theme row hover — SplunkThemeProvider handles table cell colors, but we override
+       the hover to a darker blue-gray for contrast against the dark background */
+    html.dark-theme .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover,
+    html.theme-dark .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover,
+    html[data-theme="dark"] .credential-table-container table tbody tr:not(.cred-expanded-row):not(.cred-expansion-row):hover {
+        background-color: rgba(69, 90, 100, 0.8) !important;
+    }
+
+    /* Dark theme table header — Splunk's HeadCell styled-component doesn't fully respect
+        the theme provider in the Splunk app shell; override to match dark background */
+    html.dark-theme .credential-table-container table thead th,
+    html.theme-dark .credential-table-container table thead th,
+    html[data-theme="dark"] .credential-table-container table thead th {
+        background-color: #15191e !important;
+        color: #e0e0e0 !important;
+        border-color: #333 !important;
+    }
+
+    /* Password generator panel — custom element, not a Splunk component, needs explicit dark override */
+    html.dark-theme .credential-form-generator-panel,
+    html.theme-dark .credential-form-generator-panel,
+    html[data-theme="dark"] .credential-form-generator-panel {
+        border-color: #444 !important;
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+    }
+    html.dark-theme .credential-form-generator-panel input[type="range"],
+    html.theme-dark .credential-form-generator-panel input[type="range"],
+    html[data-theme="dark"] .credential-form-generator-panel input[type="range"] {
+        background-color: #444 !important;
+    }
+    html.dark-theme .credential-form-generator-panel label,
+    html.theme-dark .credential-form-generator-panel label,
+    html[data-theme="dark"] .credential-form-generator-panel label {
+        color: #e0e0e0 !important;
+    }
+    /* Password strength bar track — hardcoded #e0e0e0 in CredentialForm */
+    html.dark-theme .credential-form-password-strength-track,
+    html.theme-dark .credential-form-password-strength-track,
+    html[data-theme="dark"] .credential-form-password-strength-track {
+        background-color: #444 !important;
+    }
+
     /* Kill blue focus ring on all interactive elements (modals, forms, table) */
     button:focus,
     button:focus-visible,
@@ -68,8 +113,11 @@ var GlobalStyles = _sc.createGlobalStyle`
 // Import self-contained application components
 const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
+const AuditLog = require('./components/AuditLog');
 const API = require('./api');
-const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./components/Modal');
+const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal } = require('./components/Modal');
+const CredentialHistoryModal = require('./components/CredentialHistoryModal');
+const PasswordRotationModal = require('./components/PasswordRotationModal');
 
 (function() {
     'use strict';
@@ -95,13 +143,18 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             password: false,
             delete: false,
             import: false,
-            result: false,
             bulkDelete: false,
+            bulkEdit: false,
+            result: false,
+            help: false,
+            history: false,
+            rotation: false,
         });
 
         // Modal data
         const [selectedCredential, setSelectedCredential] = React.useState(null);
         const [editingCredential, setEditingCredential] = React.useState(null);
+        const [copyCredential, setCopyCredential] = React.useState(null);
 
         // Result modal content — consolidated title + messages
         const [result, setResult] = React.useState({
@@ -111,6 +164,94 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
 
         // Bulk selection
         const [selectedRows, setSelectedRows] = React.useState([]);
+
+        // More actions dropdown
+        const [moreDropdownOpen, setMoreDropdownOpen] = React.useState(false);
+
+        // Filter/sort state — lifted from CredentialTable so parent can access filtered data for export
+        const [filterText, setFilterText] = React.useState('');
+        const [activeFilters, setActiveFilters] = React.useState([]);
+        const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
+
+        // Undo delete state — array of credentials for single + bulk undo
+        const [undoCredentials, setUndoCredentials] = React.useState([]);
+        const [undoSecondsLeft, setUndoSecondsLeft] = React.useState(0);
+
+        // Column layout presets state
+        const [presetsOpen, setPresetsOpen] = React.useState(false);
+        const [presets, setPresets] = React.useState([]);
+        const [columnsRefreshKey, setColumnsRefreshKey] = React.useState(0);
+
+        // Load presets on mount
+        React.useEffect(function() {
+            setPresets(API.loadPresets());
+        }, []);
+
+        // Get current visible columns from localStorage (same key CredentialTable uses)
+        function loadCurrentVisibleColumns() {
+            try {
+                var stored = localStorage.getItem('credential-table-visible-columns');
+                if (stored) {
+                    var parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return parsed;
+                    }
+                }
+            } catch (e) {}
+            return ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'];
+        }
+
+        // Alias for getCurrentColumns (used by ColumnPresetModal rendering)
+        function getCurrentColumns() {
+            return loadCurrentVisibleColumns();
+        }
+
+        function handleApplyPreset(name) {
+            // Write to same localStorage key CredentialTable reads — triggers re-render
+            var cols = API.applyPreset(name);
+            if (cols) {
+                try { localStorage.setItem('credential-table-visible-columns', JSON.stringify(cols)); } catch(e) {}
+                setColumnsRefreshKey(Date.now());
+                setPresetsOpen(false);
+                loadCredentials(); // reloads credentials, re-renders table with new column visibility
+            }
+        }
+
+        function handleSavePreset(name, columns) {
+            API.savePreset(name, columns);
+            setPresets(API.loadPresets());
+        }
+
+        function handleDeletePreset(name) {
+            API.deletePreset(name);
+            setPresets(API.loadPresets());
+        }
+
+        function handleRenamePreset(oldName, newName) {
+            API.renamePreset(oldName, newName);
+            setPresets(API.loadPresets());
+        }
+
+        // Duplicate detection state
+        const [duplicateInfo, setDuplicateInfo] = React.useState(null);
+        const [scanning, setScanning] = React.useState(false);
+        const [scanProgress, setScanProgress] = React.useState({ current: 0, total: 0 });
+        const [scanWarning, setScanWarning] = React.useState(null);
+
+        // Countdown timer for undo toast — only recreates when credentials change
+        React.useEffect(() => {
+            if (undoCredentials.length === 0) return;
+            var timer = setInterval(function() {
+                setUndoSecondsLeft(function(prev) {
+                    if (prev <= 0) {
+                        setUndoCredentials([]);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+            return function() { clearInterval(timer); };
+        }, [undoCredentials]);
 
         // Reference data — apps, users, roles for form dropdowns
         const [refData, setRefData] = React.useState({
@@ -131,6 +272,51 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         // Default role constants from API -- prevents empty ACL stripping access (GAP-V03/V04)
         const DEFAULT_READ = API.DEFAULT_READ_ROLES ? API.DEFAULT_READ_ROLES.join(', ') : 'admin, power';
         const DEFAULT_WRITE = API.DEFAULT_WRITE_ROLES ? API.DEFAULT_WRITE_ROLES.join(', ') : 'admin, power';
+
+        // Keyboard shortcuts
+        React.useEffect(() => {
+            function isInputField(el) {
+                var tag = (el.tagName || '').toLowerCase();
+                return tag === 'input' || tag === 'textarea' || tag === 'select' || el.getAttribute('contenteditable') === 'true';
+            }
+
+            function handleKeyDown(e) {
+                var inInput = isInputField(document.activeElement);
+
+                // ? toggles help modal
+                if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+                    e.preventDefault();
+                    setModals(prev => ({ ...prev, help: !prev.help }));
+                    return;
+                }
+
+                // Ctrl+Shift+N — open create credential (Ctrl+N is browser new window)
+                if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n') && !inInput) {
+                    e.preventDefault();
+                    setEditingCredential(null);
+                    setModals(prev => ({ ...prev, form: true }));
+                    return;
+                }
+
+                // Escape — close any open modal
+                if (e.key === 'Escape' && !inInput) {
+                    setModals(prev => ({
+                        form: false,
+                        password: false,
+                        delete: false,
+                        import: false,
+                        bulkDelete: false,
+                        result: false,
+                        help: false,
+                        history: false,
+                        rotation: false,
+                    }));
+                    return;
+                }
+            }
+            document.addEventListener('keydown', handleKeyDown);
+            return function() { document.removeEventListener('keydown', handleKeyDown); };
+        }, []);
 
         // Load credentials on mount
         React.useEffect(() => {
@@ -170,6 +356,87 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             fetchReferenceData();
         }, []);
 
+        // Compute filtered credentials (same logic as CredentialTable)
+        const filteredCredentials = React.useMemo(function() {
+            return credentials.filter(function(credential) {
+                var name = (credential.name || '').toLowerCase();
+                var realm = (credential.realm || '').toLowerCase();
+                var app = (credential.app || '').toLowerCase();
+                var owner = (credential.owner || '').toLowerCase();
+                var aclRead = (credential.aclRead || '').toLowerCase();
+                var aclWrite = (credential.aclWrite || '').toLowerCase();
+                var mtime = (credential.mtime || '').toString();
+
+                // Text search across all fields
+                if (filterText) {
+                    var search = filterText.toLowerCase();
+                    if (!(name.includes(search) || realm.includes(search) || app.includes(search) || owner.includes(search) || aclRead.includes(search) || aclWrite.includes(search) || mtime.includes(search))) {
+                        return false;
+                    }
+                }
+
+                // Active filters — AND logic, exact match per field
+                for (var i = 0; i < activeFilters.length; i++) {
+                    var f = activeFilters[i];
+                    var val = f.value.toLowerCase();
+                    if (f.field === 'username' && name !== val) return false;
+                    if (f.field === 'realm') {
+                        // Parse realm to match on base realm (handles combined "prod;expiry_..." format)
+                        var _rInfo = API.parseExpiryFromRealm(credential.realm || '');
+                        var _baseRealm = _rInfo.baseRealm || '';
+                        var _isGlobal = !_baseRealm || _baseRealm === 'nobody';
+                        if (val === 'global' && !_isGlobal) return false;
+                        if (val !== 'global' && _baseRealm.toLowerCase() !== val) return false;
+                    }
+                    if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
+                    if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                    if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
+                    if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
+                    if (f.field === 'modified' && mtime !== val) return false;
+                    if (f.field === 'isDuplicate') {
+                        var dupKey = (credential.name || '') + ':' + (credential.realm || '') + ':' + (credential.app || 'search') + ':' + (credential.namespaceOwner || credential.owner || 'nobody') + ':' + (credential.sharing || 'app');
+                        var isDup = duplicateInfo && duplicateInfo.duplicateCredentialMap && duplicateInfo.duplicateCredentialMap[dupKey] !== undefined;
+                        if (val === 'true' && !isDup) return false;
+                    }
+                    if (f.field === 'isExpired') {
+                        var isExpired = (credential.rotationStatus === 'overdue' || credential.rotationStatus === 'due-soon');
+                        if (val === 'true' && !isExpired) return false;
+                    }
+                }
+
+                return true;
+            });
+        }, [credentials, filterText, activeFilters, duplicateInfo]);
+
+        // Compute sorted credentials (same logic as CredentialTable)
+        const sortedCredentials = React.useMemo(function() {
+            if (!sortConfig.key) return filteredCredentials;
+            return [...filteredCredentials].sort(function(a, b) {
+                var aValue = sortConfig.key === 'owner'
+                    ? (a.namespaceOwner || a.owner || '')
+                    : sortConfig.key === 'expiry'
+                        ? (a.expiryDate || '')
+                        : (a[sortConfig.key] || '');
+                var bValue = sortConfig.key === 'owner'
+                    ? (b.namespaceOwner || b.owner || '')
+                    : sortConfig.key === 'expiry'
+                        ? (b.expiryDate || '')
+                        : (b[sortConfig.key] || '');
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }, [filteredCredentials, sortConfig.key, sortConfig.direction]);
+
+        // Refs for export — dropdown renders via portal, so onClick handlers capture stale closures.
+        // Reading from refs at click time ensures we get the latest filtered/selected data.
+        const sortedCredentialsRef = React.useRef(sortedCredentials);
+        const filteredCredentialsRef = React.useRef(filteredCredentials);
+        const selectedRowsRef = React.useRef(selectedRows);
+        sortedCredentialsRef.current = sortedCredentials;
+        filteredCredentialsRef.current = filteredCredentials;
+        selectedRowsRef.current = selectedRows;
+
         // ─── Result modal helpers ──────────────────────────────────────
         function showSuccess(title, messages) {
             setResult({ title, messages: typeof messages === 'string' ? [messages] : messages });
@@ -187,7 +454,19 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             setData(prev => ({ ...prev, loading: true, error: null }));
             try {
                 const fetched = await API.getAllCredentials();
-                setData(prev => ({ ...prev, credentials: fetched }));
+                // Enrich credentials with rotation status
+                var enriched = fetched.map(function(cred) {
+                    var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                    var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                    return Object.assign({}, cred, {
+                        expiryDate: expiryInfo.expiryDate || '',
+                        rotationStatus: rotationStatus,
+                        rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus)
+                    });
+                });
+                setData(prev => ({ ...prev, credentials: enriched }));
+                // Clear duplicate cache since credentials changed
+                API.clearDuplicateCache();
             } catch (err) {
                 console.error('Error loading credentials:', err);
                 setData(prev => ({ ...prev, error: getErrorMessage(err) }));
@@ -196,16 +475,60 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             }
         }
 
+        // Helper: format rotation label for display
+        function getRotationLabel(expiryDate, status) {
+            if (status === 'none') return 'None';
+            if (!expiryDate) return 'None';
+            var d = new Date(expiryDate + 'T00:00:00');
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            if (status === 'overdue') return 'Expired on ' + dateStr;
+            return 'Expires ' + dateStr;
+        }
+
+        // Scan for duplicate passwords in background
+        async function scanForDuplicates() {
+            var creds = data.credentials;
+            if (!creds || creds.length === 0) return;
+            setScanning(true);
+            setScanWarning(null);
+            try {
+                const result = await API.findDuplicatePasswords(creds, function(current, total) {
+                    setScanProgress({ current, total });
+                });
+                setDuplicateInfo(result);
+                if (result.warning) setScanWarning(result.warning);
+            } catch (err) {
+                console.error('Duplicate scan failed:', err);
+            } finally {
+                setScanning(false);
+                setScanProgress({ current: 0, total: 0 });
+            }
+        }
+
+        // Scan for duplicates after credentials loaded (debounced to avoid scanning on every load)
+        React.useEffect(() => {
+            if (credentials.length > 0 && !scanning) {
+                var timer = setTimeout(function() {
+                    scanForDuplicates();
+                }, 500);
+                return function() { clearTimeout(timer); };
+            }
+        }, [credentials]);
+
         async function handleCreateCredential(data) {
             try {
+                // Construct realm combining base realm + expiry
+                var realmToSave = API.buildRealmWithExpiry(data.realm || '', data.expiryDate);
                 await API.createCredential(
-                    data.username, data.password, data.realm,
+                    data.username, data.password, realmToSave,
                     data.app, data.owner, data.readRoles, data.writeRoles,
                     data.sharing || 'app'
                 );
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
+                setCopyCredential(null);
                 showSuccess('Credential Created', [
                     `Created <strong>${escapeHtml(data.username)}</strong>`,
                     'ACLs applied successfully'
@@ -224,11 +547,56 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         async function handleUpdateCredential(credential, data) {
             const messages = [];
             try {
-                await API.updateCredential(
-                    credential.name, credential.realm,
-                    data.password, data.readRoles, data.writeRoles,
-                    data.owner, data.app, data.sharing || 'app', credential.app
-                );
+                // Determine new realm based on expiry change
+                // With combined format, expiry can change independently of base realm
+                var expiryInfo = API.parseExpiryFromRealm(credential.realm || '');
+                var baseRealm = expiryInfo.baseRealm;
+                var oldExpiry = expiryInfo.expiryDate;
+                var newExpiry = data.expiryDate;
+
+                // Build new realm — preserve base realm, update expiry if changed
+                var newRealm = API.buildRealmWithExpiry(baseRealm, newExpiry || '');
+
+                if (newRealm !== credential.realm) {
+                    // Realm changed — need to rename: create new credential + delete old
+                    var oldOwner = credential.namespaceOwner || credential.owner || 'nobody';
+                    var password = await API.getCredentialPassword(
+                        credential.name, credential.realm, credential.app,
+                        oldOwner, credential.sharing || 'app'
+                    );
+
+                    try {
+                        await API.createCredential(
+                            credential.name, password, newRealm,
+                            data.app, data.owner, data.readRoles, data.writeRoles,
+                            data.sharing || 'app'
+                        );
+                    } catch (createErr) {
+                        throw createErr;
+                    }
+
+                    // Best-effort delete old; if it fails, warn but don't abort
+                    try {
+                        await API.deleteCredential(
+                            credential.name, credential.realm, credential.app,
+                            oldOwner, data.readRoles, data.writeRoles,
+                            data.sharing || 'app'
+                        );
+                    } catch (deleteErr) {
+                        console.warn(
+                            '[handleUpdateCredential] failed to delete old credential',
+                            credential.name, credential.realm,
+                            deleteErr.message || deleteErr
+                        );
+                        // Continue — new credential was created successfully
+                    }
+                } else {
+                    await API.updateCredential(
+                        credential.name, credential.realm,
+                        data.password, data.readRoles, data.writeRoles,
+                        data.owner, data.app, data.sharing || 'app', credential.app
+                    );
+                }
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
@@ -248,20 +616,105 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         async function handleDeleteCredential() {
             if (!selectedCredential) return;
             try {
+                // Fetch password for undo before deleting
+                var password;
+                try {
+                    password = await API.getCredentialPassword(
+                        selectedCredential.name, selectedCredential.realm,
+                        selectedCredential.app, selectedCredential.owner || 'nobody',
+                        selectedCredential.sharing || 'app'
+                    );
+                } catch (e) {
+                    console.warn('Could not fetch password for undo:', e);
+                }
+                var credForUndo = Object.assign({}, selectedCredential);
+                credForUndo._password = password;
                 await API.deleteCredential(
                     selectedCredential.name, selectedCredential.realm,
-                    selectedCredential.app, selectedCredential.owner || 'nobody',
+                    selectedCredential.app, selectedCredential.namespaceOwner || selectedCredential.owner || 'nobody',
                     selectedCredential.aclRead?.split(',').filter(Boolean) || ['*'],
-                    selectedCredential.aclWrite?.split(',').filter(Boolean) || [selectedCredential.owner || 'nobody'],
+                    selectedCredential.aclWrite?.split(',').filter(Boolean) || [selectedCredential.namespaceOwner || selectedCredential.owner || 'nobody'],
                     selectedCredential.sharing || 'app'
                 );
                 await loadCredentials();
                 setModals(prev => ({ ...prev, delete: false }));
+                setUndoCredentials([credForUndo]);
+                setUndoSecondsLeft(10);
                 setSelectedCredential(null);
-                showSuccess('Credential Deleted', [`Deleted <strong>${escapeHtml(selectedCredential.name)}</strong>`]);
             } catch (err) {
                 console.error('Error deleting credential:', err);
-                showError('Failed to Delete Credential', [`Error: ${getErrorMessage(err)}`]);
+                showError('Failed to Delete Credential', ['Error: ' + getErrorMessage(err)]);
+            }
+        }
+
+        // Undo delete — recreate credential(s)
+        async function handleUndoDelete() {
+            if (!undoCredentials.length) return;
+            var creds = undoCredentials;
+            setUndoCredentials([]);
+            setUndoSecondsLeft(0);
+            try {
+                // Sort: nobody/app-scoped entries first, then admin/user-scoped.
+                // storage/passwords POST creates at the highest existing namespace level.
+                // Nobody entries must be created first (when no admin entry exists),
+                // then admin entries hit 409 and fall back to configs/conf-passwords
+                // at the admin namespace. This mirrors the test setup creation order.
+                var sortedCreds = creds.slice().sort(function(a, b) {
+                    var aOwner = a.namespaceOwner || a.owner || 'nobody';
+                    var bOwner = b.namespaceOwner || b.owner || 'nobody';
+                    if (aOwner === 'nobody') return -1;
+                    if (bOwner === 'nobody') return 1;
+                    return 0;
+                });
+                // Create sequentially so nobody entries are fully committed before
+                // admin entries attempt to create (admin storage POST gets 409 and
+                // falls back to configs when nobody entry already exists).
+                var results = [];
+                for (var k = 0; k < sortedCreds.length; k++) {
+                    var cred = sortedCreds[k];
+                    if (!cred._password) {
+                        results.push({ status: 'rejected', reason: new Error('Password was not available for undo') });
+                        continue;
+                    }
+                    try {
+                        await API.createCredential(
+                            cred.name,
+                            cred._password,
+                            cred.realm || '',
+                            cred.app || 'search',
+                            cred.namespaceOwner || cred.owner || 'nobody',
+                            cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+                            cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+                            cred.sharing || 'app'
+                        );
+                        results.push({ status: 'fulfilled', value: undefined });
+                    } catch (e) {
+                        results.push({ status: 'rejected', reason: e });
+                    }
+                }
+                await loadCredentials();
+                var successMsgs = [];
+                var errorMsgs = [];
+                results.forEach(function(result, i) {
+                    var c = sortedCreds[i];
+                    if (result.status === 'fulfilled') {
+                        successMsgs.push('Restored ' + escapeHtml(c.name));
+                    } else {
+                        errorMsgs.push(escapeHtml(c.name) + ': ' + getErrorMessage(result.reason));
+                    }
+                });
+                if (errorMsgs.length === 0) {
+                    showSuccess('Undo Delete', successMsgs);
+                } else if (successMsgs.length === 0) {
+                    showError('Undo Failed', errorMsgs);
+                } else {
+                    var allMsgs = successMsgs.concat(['---'], errorMsgs);
+                    setResult({ title: 'Undo Delete — Partial', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
+                }
+            } catch (err) {
+                console.error('Error undoing delete:', err);
+                showError('Undo Failed', ['Error: ' + getErrorMessage(err)]);
             }
         }
 
@@ -271,47 +724,220 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             const successMessages = [];
 
             try {
-                const results = await Promise.allSettled(
-                    selectedRows.map(row =>
-                        API.deleteCredential(
-                            row.name, row.realm, row.app,
-                            row.owner || 'nobody',
-                            row.aclRead?.split(',').filter(Boolean) || ['*'],
-                            row.aclWrite?.split(',').filter(Boolean) || [row.owner || 'nobody'],
-                            row.sharing || 'app'
-                        ).catch(err => { throw err; })
-                    )
-                );
+                // Fetch passwords for undo before deleting.
+                // Group by stanza key and process user-scoped entries first.
+                // User-scoped entries may temporarily delete the app-scoped entry to
+                // resolve the merged password — processing them first avoids races.
+                var stanzaGroupsPwd = {};
+                selectedRows.forEach(function(row) {
+                    var key = (row.realm || '') + ':' + row.name + ':' + (row.app || 'search');
+                    if (!stanzaGroupsPwd[key]) stanzaGroupsPwd[key] = [];
+                    stanzaGroupsPwd[key].push(row);
+                });
+                var undoEntries = [];
+                for (var gKey in stanzaGroupsPwd) {
+                    var group = stanzaGroupsPwd[gKey];
+                    group.sort(function(a, b) {
+                        var sa = (a.sharing || 'app') === 'user' ? 0 : 1;
+                        var sb = (b.sharing || 'app') === 'user' ? 0 : 1;
+                        return sa - sb; // user-scoped first
+                    });
+                    for (var g = 0; g < group.length; g++) {
+                        var row = group[g];
+                        var password;
+                        try {
+                            password = await API.getCredentialPassword(
+                                row.name, row.realm, row.app,
+                                row.namespaceOwner || row.owner || 'nobody',
+                                row.sharing || 'app'
+                            );
+                        } catch (e) {
+                            console.warn('Could not fetch password for undo (' + row.name + '):', e);
+                        }
+                        var cred = Object.assign({}, row);
+                        cred._password = password;
+                        undoEntries.push(cred);
+                    }
+                }
+
+                // Deduplicate: configs/conf-passwords may return the same credential twice
+                // with different id URLs but identical owner/sharing — only delete once per
+                // unique (name, realm, app, namespaceOwner, sharing) combination.
+                var seen = {};
+                var uniqueRows = selectedRows.filter(function(row) {
+                    var key = (row.name || '') + ':' + (row.realm || '') + ':' +
+                              (row.app || 'search') + ':' +
+                              (row.namespaceOwner || row.owner || 'nobody') + ':' +
+                              (row.sharing || 'app');
+                    if (seen[key]) return false;
+                    seen[key] = true;
+                    return true;
+                });
+
+                // Group remaining rows by stanza key for sequential deletes.
+                // Entries sharing a stanza (e.g., app-shared + user-shared) need sequential
+                // deletes: user-shared first to remove the top-level config entry, then app-shared
+                // to remove the lower-level entry that becomes visible.
+                var stanzaGroups = {};
+                uniqueRows.forEach(function(row) {
+                    var key = (row.realm || '') + ':' + row.name + ':' + (row.app || 'search');
+                    if (!stanzaGroups[key]) stanzaGroups[key] = [];
+                    stanzaGroups[key].push(row);
+                });
+
+                // Delete each group sequentially, user-shared before app-shared
+                var deleteResults = [];
+                for (var gKey in stanzaGroups) {
+                    var group = stanzaGroups[gKey];
+                    // Sort: app-shared first (lower config level), then user-shared (top level).
+                    // Delete lower-level first to avoid the config merge hiding entries.
+                    group.sort(function(a, b) {
+                        var sa = (a.sharing || 'app') === 'user' ? 0 : 1;
+                        var sb = (b.sharing || 'app') === 'user' ? 0 : 1;
+                        return sa - sb; // app first
+                    });
+
+                    for (var k = 0; k < group.length; k++) {
+                        var row = group[k];
+                        var result;
+                        try {
+                            await API.deleteCredential(
+                                row.name, row.realm, row.app,
+                                row.namespaceOwner || row.owner || 'nobody',
+                                row.aclRead?.split(',').filter(Boolean) || ['*'],
+                                row.aclWrite?.split(',').filter(Boolean) || [row.namespaceOwner || row.owner || 'nobody'],
+                                row.sharing || 'app'
+                            );
+                            result = { status: 'fulfilled', value: undefined };
+                        } catch (err) {
+                            // 404 / "Does not exist" is OK — the entry was removed by a prior
+                            // delete in this group (same stanza, different config level)
+                            var errStr = getErrorMessage(err);
+                            if (err.status === 404 || errStr.indexOf('Does not exist') >= 0 || errStr.indexOf('not found') >= 0 || errStr.indexOf('not_found') >= 0) {
+                                result = { status: 'fulfilled', value: undefined };
+                            } else {
+                                result = { status: 'rejected', reason: err };
+                            }
+                        }
+                        deleteResults.push({ result, row, groupKey: gKey });
+                    }
+                }
 
                 let errorMessages = [];
-                results.forEach((result, i) => {
-                    const row = selectedRows[i];
-                    if (result.status === 'fulfilled') {
-                        successMessages.push(`Deleted <strong>${escapeHtml(row.name)}</strong>`);
+                var deletedForUndo = [];
+                deleteResults.forEach(function(dr) {
+                    const row = dr.row;
+                    if (dr.result.status === 'fulfilled') {
+                        successMessages.push('Deleted ' + escapeHtml(row.name));
+                        // For undo, collect all duplicates that share this stanza
+                        if (!deletedForUndo.some(function(d) { return d.name === row.name && d.app === row.app && d.realm === row.realm; })) {
+                            deletedForUndo = deletedForUndo.concat(
+                                undoEntries.filter(function(u) {
+                                    return u.name === row.name && u.app === row.app && u.realm === row.realm;
+                                })
+                            );
+                        }
                     } else {
-                        errorMessages.push(`<strong>${escapeHtml(row.name)}</strong>: ${getErrorMessage(result.reason)}`);
+                        errorMessages.push(escapeHtml(row.name) + ': ' + getErrorMessage(dr.result.reason));
                     }
                 });
 
                 await loadCredentials();
                 handleDeselectAll();
 
-                if (errorMessages.length === 0) {
+                // Set undo state — only include credentials where we actually have the password
+                var undoable = deletedForUndo.filter(function(c) { return c._password; });
+                var noPassword = deletedForUndo.filter(function(c) { return !c._password; });
+                if (undoable.length > 0) {
+                    setUndoCredentials(undoable);
+                    setUndoSecondsLeft(10);
+                }
+
+                if (errorMessages.length === 0 && noPassword.length === 0 && undoable.length > 0) {
+                    return;
+                }
+                if (errorMessages.length === 0 && noPassword.length === 0) {
                     showSuccess('Bulk Delete Complete', successMessages);
                 } else if (successMessages.length === 0) {
-                    showError('Bulk Delete Failed', errorMessages.map(m => `ERROR: ${m}`));
+                    showError('Bulk Delete Failed', errorMessages.map(m => 'ERROR: ' + m));
                 } else {
-                    // Partial success
-                    const allMsgs = successMessages.concat(
-                        ['---'],
-                        errorMessages.map(m => `ERROR: ${m}`)
+                    var partialMsgs = successMessages.slice();
+                    if (noPassword.length > 0) {
+                        partialMsgs.push('---');
+                        partialMsgs.push('Cannot undo ' + noPassword.length + ' credential(s) — password was not accessible (system credentials)');
+                    }
+                    partialMsgs = partialMsgs.concat(
+                        errorMessages.map(m => 'ERROR: ' + m)
                     );
-                    setResult({ title: 'Bulk Delete -- Partial Success', messages: allMsgs });
+                    setResult({ title: 'Bulk Delete — Partial Success', messages: partialMsgs });
                     setModals(prev => ({ ...prev, result: true }));
                 }
             } catch (err) {
                 console.error('Error in bulk delete:', err);
-                showError('Bulk Delete Failed', [`Error: ${getErrorMessage(err)}`]);
+                showError('Bulk Delete Failed', ['Error: ' + getErrorMessage(err)]);
+            }
+        }
+
+        // ─── Bulk edit handler ───────────────────────────────────────
+        async function handleBulkEdit(updates, callback) {
+            var successMessages = [];
+            var errorMessages = [];
+
+            // Normalize roles: map '* (all)' → '*' for the API
+            function normalizeRoles(rolesStr) {
+                if (!rolesStr) return undefined;
+                var roles = rolesStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+                if (roles.includes('* (all)')) return ['*'];
+                return roles;
+            }
+
+            try {
+                var results = await Promise.allSettled(
+                    updates.map(function(c) {
+                        // updateCredential(name, realm, password, readRoles, writeRoles, owner, newApp, sharing, sourceApp)
+                        // No password change — only ACL/owner updates
+                        return API.updateCredential(
+                            c.name,
+                            c.realm || '',
+                            null,
+                            normalizeRoles(c.aclRead),
+                            normalizeRoles(c.aclWrite),
+                            c.owner || undefined,
+                            undefined,
+                            c.sharing || 'app',
+                            c.app || 'search'
+                        ).catch(function(err) { throw err; });
+                    })
+                );
+
+                results.forEach(function(result, i) {
+                    var c = updates[i];
+                    if (result.status === 'fulfilled') {
+                        successMessages.push('Updated <strong>' + escapeHtml(c.name) + '</strong>');
+                    } else {
+                        errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong>: ' + getErrorMessage(result.reason));
+                    }
+                });
+
+                await loadCredentials();
+                handleDeselectAll();
+                setModals(prev => ({ ...prev, bulkEdit: false }));
+
+                if (errorMessages.length === 0) {
+                    showSuccess('Bulk Edit Complete', successMessages);
+                } else if (successMessages.length === 0) {
+                    showError('Bulk Edit Failed', errorMessages.map(function(m) { return 'ERROR: ' + m; }));
+                } else {
+                    var allMsgs = successMessages.concat(['---'], errorMessages.map(function(m) { return 'ERROR: ' + m; }));
+                    setResult({ title: 'Bulk Edit -- Partial Success', messages: allMsgs });
+                    setModals(prev => ({ ...prev, result: true }));
+                }
+            } catch (err) {
+                console.error('Error in bulk edit:', err);
+                setModals(prev => ({ ...prev, bulkEdit: false }));
+                showError('Bulk Edit Failed', ['Error: ' + getErrorMessage(err)]);
+            } finally {
+                if (callback) callback();
             }
         }
 
@@ -396,11 +1022,42 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             URL.revokeObjectURL(url);
         }
 
+        // ─── CSV export handler ───────────────────────────────────────
+        function handleExportCSV(mode) {
+            var credsToExport;
+            var filename;
+            if (mode === 'selected') {
+                credsToExport = selectedRowsRef.current.length > 0 ? selectedRowsRef.current : credentials;
+                filename = 'credentials-selected-export.csv';
+            } else if (mode === 'filtered') {
+                credsToExport = filteredCredentialsRef.current;
+                filename = 'credentials-filtered-export.csv';
+            } else {
+                credsToExport = credentials;
+                filename = 'credentials-export.csv';
+            }
+            const content = API.generateExportCSV(credsToExport);
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         // ─── Selection handlers ────────────────────────────────────────
-        
+
+        // Unique key for a credential — stanzaKey can repeat across apps/owners/sharing
+        function credKey(cred) {
+            return cred.stanzaKey + ':' + cred.app + ':' + cred.owner + ':' + cred.sharing;
+        }
+
         function handleSelectRow(cred) {
             setSelectedRows(prev => {
-                const exists = prev.findIndex(r => r.stanzaKey === cred.stanzaKey);
+                const exists = prev.findIndex(r => credKey(r) === credKey(cred));
                 if (exists >= 0) {
                     return prev.filter((_, i) => i !== exists);
                 }
@@ -409,14 +1066,21 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         }
 
         function handleSelectAll(filtered) {
-            setSelectedRows(filtered || credentials);
+            setSelectedRows(prev => {
+                var pageKeys = new Set(filtered.map(function(r) { return credKey(r); }));
+                var existing = prev.filter(function(r) { return !pageKeys.has(credKey(r)); });
+                return existing.concat(filtered);
+            });
+        }
+
+        function handleDeselectPage(pageCredentials) {
+            var pageKeys = new Set(pageCredentials.map(function(r) { return credKey(r); }));
+            setSelectedRows(prev => prev.filter(function(r) { return !pageKeys.has(credKey(r)); }));
         }
 
         function handleDeselectAll() {
             setSelectedRows([]);
         }
-
-        const isAllSelected = credentials.length > 0 && selectedRows.length === credentials.length;
 
         /** HTML escape helper -- sanitizes dynamic content for innerHTML rendering */
         function escapeHtml(str) {
@@ -442,42 +1106,172 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
         return React.createElement('div', { className: 'credential-manager-app' },
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
-                React.createElement('h1', { style: { margin: 0 } }, 'Credential Manager'),
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
-                    selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px' } }, `${selectedRows.length} selected`),
+                    selectedRows.length > 0 && React.createElement('span', { style: { color: '#666', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '0.35rem' } },
+                        `${selectedRows.length} selected`,
+                        React.createElement('span', {
+                            onClick: handleDeselectAll,
+                            style: { cursor: 'pointer', color: '#999', fontSize: '16px', fontWeight: 'bold', marginLeft: '0.25rem' },
+                            title: 'Clear selection'
+                        }, '\u00d7')
+                    ),
+                    selectedRows.length > 0 && React.createElement(Button, {
+                        onClick: () => {
+                            if (selectedRows.length === 1) {
+                                setEditingCredential({
+                                    name: selectedRows[0].name,
+                                    realm: selectedRows[0].realm,
+                                    app: selectedRows[0].app,
+                                    owner: selectedRows[0].owner,
+                                    sharing: selectedRows[0].sharing,
+                                    aclRead: selectedRows[0].aclRead || '',
+                                    aclWrite: selectedRows[0].aclWrite || '',
+                                });
+                                setModals(prev => ({ ...prev, form: true }));
+                            } else {
+                                setModals(prev => ({ ...prev, bulkEdit: true }));
+                            }
+                        },
+                        appearance: 'subtle',
+                        children: `Edit Selected (${selectedRows.length})`
+                    }),
                     selectedRows.length > 0 && React.createElement(Button, {
                         onClick: () => setModals(prev => ({ ...prev, bulkDelete: true })),
                         appearance: 'destructive',
                         children: `Delete Selected (${selectedRows.length})`
                     }),
-                    React.createElement(Button, { onClick: handleDownloadTemplate, children: 'Download Template' }),
-                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, import: true })), children: 'Import CSV' }),
-                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' })
+                    selectedRows.length >= 2 && React.createElement(Button, {
+                        onClick: () => setModals(prev => ({ ...prev, rotation: true })),
+                        appearance: 'subtle',
+                        children: `Rotate Passwords (${selectedRows.length})`
+                    }),
+                    React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
+                    // Scan for Duplicates button + progress indicator
+                    React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' } },
+                        React.createElement(Button, {
+                            onClick: function() { scanForDuplicates(); },
+                            appearance: 'subtle',
+                            disabled: scanning,
+                            children: scanning
+                                ? `Scanning ${scanProgress.current}/${scanProgress.total}...`
+                                : 'Scan for Duplicates'
+                        }),
+                        duplicateInfo && !scanning && React.createElement(
+                            'span',
+                            {
+                                style: {
+                                    fontSize: '12px',
+                                    color: '#f59e0b',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                }
+                            },
+                            React.createElement(ExclamationTriangle, { variant: 'filled', size: 12 }),
+                            `${duplicateInfo.totalDuplicates} duplicate(s) found`
+                        ),
+                        scanWarning && React.createElement(
+                            'span',
+                            { style: { fontSize: '11px', color: '#92400e', fontStyle: 'italic' } },
+                            scanWarning
+                        )
+                    ),
+                    React.createElement(Dropdown, {
+                        open: moreDropdownOpen,
+                        onRequestOpen: () => setMoreDropdownOpen(true),
+                        onRequestClose: () => setMoreDropdownOpen(false),
+                        closeReasons: ['clickAway', 'escapeKey', 'toggleClick'],
+                        toggle: React.createElement(Button, { label: '⋮', appearance: 'subtle', title: 'Import/Export' })
+                    },
+                        React.createElement('div', { style: { padding: '0.25rem 0' } },
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleDownloadTemplate(); },
+                                appearance: 'subtle',
+                                children: 'Download Template',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); setModals(prev => ({ ...prev, import: true })); },
+                                appearance: 'subtle',
+                                children: 'Import CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('all'); },
+                                appearance: 'subtle',
+                                children: 'Export All CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('filtered'); },
+                                appearance: 'subtle',
+                                children: 'Export Filtered CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleExportCSV('selected'); },
+                                appearance: 'subtle',
+                                children: 'Export Selected CSV',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            })
+                        )
+                    ),
+                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, help: true })), appearance: 'subtle', title: 'Help', children: '?' })
                 )
             ),
 
             // Credentials table
             React.createElement(CredentialTable, {
-                credentials,
+                credentials: sortedCredentials,
                 selectedRows,
-                isAllSelected,
                 onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
                 onReveal: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, password: true })); },
                 onSelectRow: handleSelectRow,
                 onSelectAll: handleSelectAll,
-                onDeselectAll: handleDeselectAll,
+                onDeselectPage: handleDeselectPage,
                 onEdit: function(credential) { setEditingCredential(credential); setModals(prev => ({ ...prev, form: true })); },
+                onCopy: function(credential) { setCopyCredential(credential); setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); },
+                onHistory: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, history: true })); },
+                filterText: filterText,
+                onFilterChange: setFilterText,
+                activeFilters: activeFilters,
+                onActiveFiltersChange: setActiveFilters,
+                sortConfig: sortConfig,
+                onSortChange: setSortConfig,
+                duplicateInfo: duplicateInfo,
+                onOpenPresetModal: function() { setPresetsOpen(true); },
+                columnsRefreshKey: columnsRefreshKey,
             }),
+
+            // Undo delete toast
+            undoCredentials.length > 0 && React.createElement(
+                'div',
+                { style: { position: 'fixed', bottom: '1rem', left: '50%', transform: 'translateX(-50%)', background: '#333', color: '#fff', padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 9999 } },
+                React.createElement('span', null,
+                    undoCredentials.length + ' credential(s) deleted',
+                    undoCredentials.length === 1 ? React.createElement('strong', null, ' ' + escapeHtml(undoCredentials[0].name)) : null
+                ),
+                React.createElement(Button, {
+                    onClick: handleUndoDelete,
+                    appearance: 'primary',
+                    children: 'Undo',
+                    style: { padding: '4px 12px', fontSize: '13px' }
+                }),
+                React.createElement('span', {
+                    style: { fontSize: '12px', color: '#aaa' }
+                }, undoSecondsLeft + 's')
+            ),
 
             // Form modal — dedicated modal wrapper for CredentialForm
             modals.form && React.createElement(FormModal, {
                 isOpen: modals.form,
-                onClose: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
-                title: editingCredential ? 'Edit Credential' : 'Create Credential',
+                onClose: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); setCopyCredential(null); },
+                title: copyCredential ? 'Copy Credential' : (editingCredential ? 'Edit Credential' : 'Create Credential'),
             }, React.createElement(CredentialForm, {
-                credential: editingCredential,
-                onSave: editingCredential ? function(formData) { handleUpdateCredential(editingCredential, formData); } : handleCreateCredential,
-                onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); },
+                credential: copyCredential || editingCredential,
+                isCopy: !!copyCredential,
+                onSave: copyCredential ? handleCreateCredential : (editingCredential ? function(formData) { handleUpdateCredential(editingCredential, formData); } : handleCreateCredential),
+                onCancel: () => { setModals(prev => ({ ...prev, form: false })); setEditingCredential(null); setCopyCredential(null); },
                 availableApps: refData.apps,
                 availableUsers: refData.users,
                 currentUserIdentity: refData.currentUserIdentity,
@@ -490,6 +1284,13 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
             modals.password && React.createElement(PasswordRevealModal, {
                 credential: selectedCredential,
                 onClose: () => { setModals(prev => ({ ...prev, password: false })); setSelectedCredential(null); },
+            }),
+
+            // Credential history modal
+            modals.history && React.createElement(CredentialHistoryModal, {
+                credential: selectedCredential,
+                isOpen: modals.history,
+                onClose: () => { setModals(prev => ({ ...prev, history: false })); setSelectedCredential(null); },
             }),
 
             // Delete confirmation modal — single credential only
@@ -507,6 +1308,16 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onImport: handleCSVImport,
             }),
 
+            // Bulk edit modal
+            modals.bulkEdit && React.createElement(BulkEditModal, {
+                isOpen: modals.bulkEdit,
+                selectedRows: selectedRows,
+                availableRoles: refData.roles,
+                availableUsers: refData.users,
+                onClose: () => setModals(prev => ({ ...prev, bulkEdit: false })),
+                onApply: handleBulkEdit,
+            }),
+
             // Bulk delete confirmation modal
             modals.bulkDelete && React.createElement(BulkDeleteModal, {
                 isOpen: modals.bulkDelete,
@@ -515,11 +1326,42 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 onConfirm: handleBulkDeleteConfirm,
             }),
 
-            // Result modal — replaces all alert() calls
+            // Password rotation modal
+            modals.rotation && React.createElement(PasswordRotationModal, {
+                selectedRows: selectedRows,
+                isOpen: modals.rotation,
+                onClose: () => { setModals(prev => ({ ...prev, rotation: false })); handleDeselectAll(); loadCredentials(); },
+                onApply: function(rotationResults, undoResults) {
+                    handleDeselectAll();
+                    // Don't call loadCredentials here — it sets loading:true which
+                    // unmounts the entire app (including this modal).
+                    // Reload happens when the modal closes via handleClose.
+                },
+            }),
+
+            // Result modal
             modals.result && React.createElement(ResultModal, {
                 title: result.title,
                 messages: result.messages,
                 onClose: () => setModals(prev => ({ ...prev, result: false })),
+            }),
+
+            // Help modal
+            modals.help && React.createElement(HelpModal, {
+                isOpen: modals.help,
+                onClose: () => setModals(prev => ({ ...prev, help: false })),
+            }),
+
+            // Column preset modal
+            presetsOpen && React.createElement(ColumnPresetModal, {
+                isOpen: presetsOpen,
+                onClose: function() { setPresetsOpen(false); },
+                presets: presets,
+                visibleColumns: getCurrentColumns(),
+                onApplyPreset: handleApplyPreset,
+                onSavePreset: handleSavePreset,
+                onDeletePreset: handleDeletePreset,
+                onRenamePreset: handleRenamePreset,
             })
         );
     }
@@ -712,9 +1554,75 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
 
 
 
+    /**
+     * ThemeAwareApp — detects Splunk's theme and wraps children with SplunkThemeProvider
+     * using the correct colorScheme. This lives outside CredentialManager so the provider
+     * sits at the top of the tree, allowing Splunk's styled-components to resolve tokens
+     * (interactiveColorOverlayDrag, etc.) correctly.
+     */
+    function ThemeAwareApp({ appComponent: App, appProps }) {
+        function detectDark() {
+            var html = document.documentElement;
+            if (html.classList.contains('dark-theme') || html.classList.contains('theme-dark')) return true;
+            if (html.getAttribute('data-theme') === 'dark') return true;
+            var body = document.body;
+            if (body && body.classList.contains('dark-theme')) return true;
+            // Fallback: check computed background brightness — Splunk may use a different class name
+            try {
+                var bg = getComputedStyle(body || html).backgroundColor;
+                var match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (match) {
+                    var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                    var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                    if (brightness < 128) return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        var _dark = React.useState(detectDark);
+        var darkTheme = _dark[0];
+        var setDarkTheme = _dark[1];
+
+        React.useEffect(function() {
+            setDarkTheme(detectDark());
+            var observer = new MutationObserver(function() {
+                setDarkTheme(detectDark());
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            if (document.body) {
+                observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            }
+            return function() { observer.disconnect(); };
+        }, []);
+
+        // Sync dark-theme class to document.documentElement BEFORE children render.
+        // This must be imperative (not useEffect) so CredentialTable.jsx reads isDark correctly
+        // on its initial render. Clean up on unmount or theme change.
+        if (darkTheme) {
+            document.documentElement.classList.add('dark-theme');
+        } else {
+            document.documentElement.classList.remove('dark-theme');
+        }
+        React.useEffect(function() {
+            return function() { document.documentElement.classList.remove('dark-theme'); };
+        }, []);
+
+        return React.createElement(SplunkThemeProvider, {
+            family: 'enterprise',
+            colorScheme: darkTheme ? 'dark' : 'light'
+        },
+            React.createElement(GlobalStyles, null),
+            React.createElement(App, appProps || null)
+        );
+    }
+
     window.CredentialManager = {
         Component: CredentialManager,
+        _initialized: false,
         init: function(mvc) {
+            if (window.CredentialManager._initialized) return;
+            window.CredentialManager._initialized = true;
             console.log('Credential Manager: Initializing...');
             if (mvc) {
                 window.CredentialManager.mvc = mvc;
@@ -727,10 +1635,9 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
                 return;
             }
             const root = ReactDOM.createRoot(container);
-            root.render(React.createElement(SplunkThemeProvider, { family: 'enterprise', colorScheme: 'light' },
-                React.createElement(GlobalStyles, null),
-                React.createElement(CredentialManager, null)
-            ));
+            root.render(React.createElement(ThemeAwareApp, {
+                appComponent: CredentialManager
+            }));
             console.log('Credential Manager: Render complete');
         }
     };
@@ -738,6 +1645,18 @@ const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal } = require('./c
     if (typeof window.require === 'function') {
         window.require(['splunkjs/mvc/simplexml/ready!', 'splunkjs/mvc'], function(ready, mvc) {
             window.CredentialManager.init(mvc);
+
+            // AuditLog init — guard against double init
+            if (window.CredentialManager._auditInitialized) return;
+            window.CredentialManager._auditInitialized = true;
+            var auditContainer = document.getElementById('audit-log-app');
+            if (auditContainer) {
+                var auditRoot = ReactDOM.createRoot(auditContainer);
+                auditRoot.render(React.createElement(ThemeAwareApp, {
+                    appComponent: AuditLog,
+                    appProps: { mvc: mvc }
+                }));
+            }
         });
     } else {
         if (document.readyState === 'loading') {

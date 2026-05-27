@@ -29,6 +29,27 @@ const SHARING_OPTIONS_LABELS = [
   { label: 'User-scoped (Specific users)', value: 'user' },
 ];
 
+// Password strength scoring: 0-5 → weak/fair/good/strong
+function getPasswordStrength(pw) {
+    if (!pw) return null;
+    var score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[a-z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (score <= 1) return { label: 'Weak', color: '#d32f2f', width: '20%' };
+    if (score === 2) return { label: 'Fair', color: '#f57c00', width: '40%' };
+    if (score === 3) return { label: 'Good', color: '#f9a825', width: '60%' };
+    return { label: 'Strong', color: '#2e7d32', width: '100%' };
+}
+
+// Password generator — imported from api.js for reuse in bulk rotation
+var _API = require('../api');
+var generatePassword = _API.generatePassword;
+var parseExpiryFromRealm = _API.parseExpiryFromRealm;
+var buildRealmWithExpiry = _API.buildRealmWithExpiry;
+
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
     var allItem = { label: '* (all)', value: '* (all)' };
@@ -47,6 +68,7 @@ function CredentialForm({
   credential = null,
   onSave,
   onCancel,
+  isCopy = false,
   availableApps = [],
   availableUsers = [],
   currentUserIdentity = 'nobody',
@@ -64,7 +86,17 @@ function CredentialForm({
     const [writeRolesArray, setWriteRolesArray] = React.useState([]);
     const [sharing, setSharing] = React.useState('app');
     const [isChangingPassword, setIsChangingPassword] = React.useState(false);
+    const [expiryDate, setExpiryDate] = React.useState('');
     const [errors, setErrors] = React.useState({});
+    const [showGenerator, setShowGenerator] = React.useState(false);
+    const [copiedPassword, setCopiedPassword] = React.useState(false);
+    const [genLength, setGenLength] = React.useState(16);
+    const [genOptions, setGenOptions] = React.useState({
+        uppercase: true,
+        lowercase: true,
+        numbers: true,
+        symbols: true,
+    });
     const prevReadRolesRef = React.useRef(readRolesArray);
     const prevWriteRolesRef = React.useRef(writeRolesArray);
 
@@ -75,11 +107,20 @@ function CredentialForm({
     // Initialize form when credential changes
     React.useEffect(function() {
         if (credential) {
-            setUsername(credential.name || '');
-            setRealm(credential.realm || '');
+            var today = new Date();
+            var dateSuffix = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+            if (isCopy) {
+                setUsername((credential.name || '') + '-' + dateSuffix);
+            } else {
+                setUsername(credential.name || '');
+            }
+            var expiryInfo = parseExpiryFromRealm(credential.realm || '');
+            setRealm(expiryInfo.baseRealm || '');
             setApp(credential.app || 'search');
-            setOwner(credential.owner || 'nobody');
+            setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
+            setExpiryDate(expiryInfo.expiryDate || '');
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
             var aclRead = normalize((credential.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
@@ -97,6 +138,7 @@ function CredentialForm({
             setApp('search');
             setOwner(currentUserIdentity);
             setSharing('app');
+            setExpiryDate('');
 
             var defRead = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
             var defWrite = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
@@ -104,7 +146,7 @@ function CredentialForm({
             setWriteRolesArray(defWrite);
         }
         setErrors({});
-    }, [credential, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
+    }, [credential, isCopy, currentUserIdentity, defaultReadRoles, defaultWriteRoles]);
 
     // Submit handler
     function handleSubmit(e) {
@@ -115,13 +157,13 @@ function CredentialForm({
         if (!username.trim()) {
             newErrors.username = 'Username is required';
         }
-        if (!credential && !password) {
+        if ((!credential || isCopy) && !password) {
             newErrors.password = 'Password is required';
         }
         if (isChangingPassword && !password) {
             newErrors.password = 'Password is required';
         }
-        if ((!credential || isChangingPassword) && password !== confirmPassword) {
+        if ((!credential || isCopy || isChangingPassword) && password !== confirmPassword) {
             newErrors.passwordMismatch = 'Passwords do not match';
         }
         if (!readRolesArray.length) {
@@ -139,6 +181,7 @@ function CredentialForm({
                 username: username.trim(),
                 password: password || null,
                 realm: realm.trim(),
+                expiryDate: expiryDate,
                 app: app,
                 owner: owner,
                 readRoles: resolveRoles(readRolesArray),
@@ -179,6 +222,30 @@ function CredentialForm({
         });
     }
 
+    // Generator handlers
+    function handleGenerate() {
+        var pw = generatePassword(Object.assign({}, genOptions, { length: genLength }));
+        setPassword(pw);
+        setConfirmPassword(pw);
+        setErrors({});
+    }
+
+    function handleCopyPassword() {
+        if (!password) return;
+        navigator.clipboard.writeText(password).then(function() {
+            setCopiedPassword(true);
+            setTimeout(function() { setCopiedPassword(false); }, 1500);
+        }).catch(function() {});
+    }
+
+    function toggleGenerator() {
+        setShowGenerator(function(p) { return !p; });
+    }
+
+    function handleOptionChange(key) {
+        setGenOptions(function(prev) { return Object.assign({}, prev, { [key]: !prev[key] }); });
+    }
+
     // Resolve role list for API: map '* (all)' → '*' (wildcard), or pass through normal roles
     function resolveRoles(roles) {
         if (!roles || roles.length === 0) return [];
@@ -202,7 +269,9 @@ function CredentialForm({
     }
     var rolesData = toSelectData(rolesList);
 
-    var showPasswordFields = !credential || isChangingPassword;
+    var showPasswordFields = !credential || isChangingPassword || isCopy;
+
+
 
     // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
     function formField(label, inputEl, opts) {
@@ -234,7 +303,7 @@ function CredentialForm({
                     value: username,
                     onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setUsername(val); clearError('username'); },
                     placeholder: 'Enter username',
-                    disabled: !!credential,
+                    disabled: !!(credential && !isCopy),
                     error: !!errors.username,
                 }),
                 { errorText: errors.username, required: true }
@@ -243,10 +312,10 @@ function CredentialForm({
                 React.createElement(Text, {
                     value: realm,
                     onChange: function(e, data) { var val = data && typeof data.value === 'string' ? data.value : ''; setRealm(val); },
-                    placeholder: credential ? '(set at create time)' : 'Enter realm (or leave empty)',
-                    disabled: !!credential,
+                    placeholder: credential && !isCopy ? '(set at create time)' : 'Enter realm (or leave empty)',
+                    disabled: !!(credential && !isCopy),
                 }),
-                { helpText: credential ? undefined : 'Cannot be changed after creation' }
+                { helpText: (credential && !isCopy) ? undefined : 'Cannot be changed after creation' }
             )
         ),
 
@@ -373,12 +442,134 @@ function CredentialForm({
             )
         ),
 
+        // Generator toggle button
+        showPasswordFields && React.createElement('div', { style: { textAlign: 'center', width: '100%' } },
+            React.createElement(Button, {
+                type: 'button',
+                appearance: 'subtle',
+                onClick: toggleGenerator,
+            }, showGenerator ? 'Hide Password Generator' : 'Generate Password')
+        ),
+
+        // Generator panel (expandable)
+        showPasswordFields && showGenerator && React.createElement('div', {
+            className: 'credential-form-generator-panel',
+            style: {
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                padding: '1rem',
+                backgroundColor: '#f9f9f9',
+            }
+        },
+            React.createElement('div', {
+                className: 'credential-form-generator-header',
+                style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }
+            },
+                // Left column: length slider + generate/copy buttons
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
+                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500' } }, 'Length: ' + genLength),
+                    React.createElement('input', {
+                        type: 'range',
+                        min: 8,
+                        max: 64,
+                        value: genLength,
+                        onChange: function(e) { setGenLength(parseInt(e.target.value)); },
+                        style: { width: '100%' }
+                    }),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
+                        React.createElement(Button, {
+                            type: 'button',
+                            appearance: 'primary',
+                            onClick: handleGenerate,
+                        }, 'Generate'),
+                        React.createElement(Button, {
+                            type: 'button',
+                            appearance: 'subtle',
+                            onClick: handleCopyPassword,
+                        }, copiedPassword ? 'Copied!' : 'Copy')
+                    )
+                ),
+                // Right column: character set checkboxes
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500', marginBottom: '0.25rem' } }, 'Character Set'),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.uppercase,
+                            onChange: function() { handleOptionChange('uppercase'); },
+                        }),
+                        ' Uppercase (A-Z)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.lowercase,
+                            onChange: function() { handleOptionChange('lowercase'); },
+                        }),
+                        ' Lowercase (a-z)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.numbers,
+                            onChange: function() { handleOptionChange('numbers'); },
+                        }),
+                        ' Numbers (0-9)'
+                    ),
+                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
+                        React.createElement('input', {
+                            type: 'checkbox',
+                            checked: genOptions.symbols,
+                            onChange: function() { handleOptionChange('symbols'); },
+                        }),
+                        ' Symbols (!@#$%^&*...)'
+                    )
+                )
+            )
+        ),
+
+        // Password strength indicator
+        showPasswordFields && password.length > 0 && React.createElement('div', { style: { width: '100%' } },
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '4px' } },
+                React.createElement('span', { style: { fontSize: '12px', color: getPasswordStrength(password).color, fontWeight: '600' } },
+                    getPasswordStrength(password).label
+                )
+            ),
+            React.createElement('div', { className: 'credential-form-password-strength-track', style: { height: '4px', backgroundColor: '#e0e0e0', borderRadius: '2px', overflow: 'hidden' } },
+                React.createElement('div', { style: { height: '100%', width: getPasswordStrength(password).width, backgroundColor: getPasswordStrength(password).color, borderRadius: '2px', transition: 'width 0.2s, background-color 0.2s' } })
+            )
+        ),
+
+        // Password Expiry date picker — always available (realm + expiry combine via delimiter)
+        React.createElement('div', { style: { width: '100%' } },
+            formField('Password Expiry',
+                React.createElement('input', {
+                    type: 'date',
+                    value: expiryDate,
+                    onChange: function(e) { setExpiryDate(e.target.value); },
+                    placeholder: 'YYYY-MM-DD',
+                    style: {
+                        width: '100%',
+                        padding: '6px 8px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        height: '36px',
+                        boxSizing: 'border-box',
+                    }
+                }),
+                {
+                    helpText: 'Optional — set a password rotation reminder date'
+                }
+            )
+        ),
+
         // Action buttons
         React.createElement(
       'div',
             { style: { marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center' } },
             React.createElement(Button, { onClick: onCancel, appearance: 'subtle', children: 'Cancel' }),
-            React.createElement(Button, { onClick: handleSubmit, appearance: 'primary', children: credential ? 'Update' : 'Create' })
+            React.createElement(Button, { onClick: handleSubmit, appearance: 'primary', children: isCopy ? 'Create Copy' : (credential ? 'Update' : 'Create') })
         )
     );
 }
