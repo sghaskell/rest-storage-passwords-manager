@@ -62,8 +62,7 @@ function loadVisibleColumns() {
             var hasAllFixed = COLUMNS.filter(function(c) { return c.fixed; }).every(function(c) { return parsed.indexOf(c.key) !== -1; });
             if (Array.isArray(parsed) && hasAllFixed) {
                 var validKeys = COLUMNS.map(function(c) { return c.key; });
-                var valid = parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
-                return COLUMNS.map(function(c) { return c.key; }).filter(function(k) { return valid.indexOf(k) !== -1; });
+                return parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
             }
         }
     } catch (e) {}
@@ -160,6 +159,13 @@ function CredentialTable({
     React.useEffect(function() {
         saveRowsPerPage(rowsPerPage);
     }, [rowsPerPage]);
+
+    // Check if any credentials are expired or expiring soon (for conditional button rendering)
+    const hasExpiredCredentials = React.useMemo(function() {
+        return credentials.some(function(c) {
+            return c.rotationStatus === 'overdue' || c.rotationStatus === 'due-soon';
+        });
+    }, [credentials]);
 
     // Filter credentials — only when using local state; parent already provides filtered data
     const filteredCredentials = useParentState ? credentials : React.useMemo(function() {
@@ -354,8 +360,7 @@ function CredentialTable({
             if (idx !== -1) {
                 return prev.filter(function(k) { return k !== colKey; });
             } else {
-                return COLUMNS.map(function(c) { return c.key; })
-                    .filter(function(k) { return k === colKey || prev.indexOf(k) !== -1; });
+                return prev.concat(colKey);
             }
         });
     }
@@ -833,7 +838,7 @@ function CredentialTable({
                     'Duplicates only'
                 ),
                 // Expired only toggle
-                React.createElement(
+                hasExpiredCredentials && React.createElement(
                     'button',
                     {
                         onClick: function() {
