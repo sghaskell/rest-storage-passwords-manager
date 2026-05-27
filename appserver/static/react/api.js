@@ -1832,6 +1832,152 @@ async function deleteExpiryAlert() {
     });
 }
 
+// ─── Password Policy (localStorage + Splunk sync) ───────────────────────────
+
+const POLICY_KEY = 'password-policy-config';
+
+const DEFAULT_POLICY = {
+    enabled: false,
+    minLength: 8,
+    maxLength: 128,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireDigits: true,
+    requireSpecial: true,
+    minDigits: 1,
+    minUppercase: 1,
+    minLowercase: 1,
+    minSpecial: 1,
+    bannedPasswords: [],
+};
+
+function loadPolicy() {
+    try {
+        var stored = localStorage.getItem(POLICY_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            return Object.assign({}, DEFAULT_POLICY, parsed);
+        }
+    } catch (e) {
+        console.warn('Failed to load password policy:', e);
+    }
+    return Object.assign({}, DEFAULT_POLICY);
+}
+
+function savePolicy(policy) {
+    try {
+        localStorage.setItem(POLICY_KEY, JSON.stringify(policy));
+    } catch (e) {
+        console.warn('Failed to save password policy:', e);
+    }
+}
+
+/**
+ * Validate a password against the current policy.
+ * @param {string} password - The password to validate
+ * @param {Object} policy - Policy config (or null to use stored)
+ * @returns {string[]} Array of error strings (empty = valid)
+ */
+function validatePasswordAgainstPolicy(password, policy) {
+    policy = policy || loadPolicy();
+    if (!policy.enabled || !password) return [];
+
+    var errors = [];
+    var len = password.length;
+
+    if (len < policy.minLength) {
+        errors.push('Password must be at least ' + policy.minLength + ' characters (got ' + len + ')');
+    }
+    if (len > policy.maxLength) {
+        errors.push('Password must be at most ' + policy.maxLength + ' characters (got ' + len + ')');
+    }
+
+    if (policy.requireUppercase) {
+        var upperCount = (password.match(/[A-Z]/g) || []).length;
+        if (upperCount < policy.minUppercase) {
+            errors.push('Password must contain at least ' + policy.minUppercase + ' uppercase letter(s)');
+        }
+    }
+    if (policy.requireLowercase) {
+        var lowerCount = (password.match(/[a-z]/g) || []).length;
+        if (lowerCount < policy.minLowercase) {
+            errors.push('Password must contain at least ' + policy.minLowercase + ' lowercase letter(s)');
+        }
+    }
+    if (policy.requireDigits) {
+        var digitCount = (password.match(/[0-9]/g) || []).length;
+        if (digitCount < policy.minDigits) {
+            errors.push('Password must contain at least ' + policy.minDigits + ' digit(s)');
+        }
+    }
+    if (policy.requireSpecial) {
+        var specialCount = (password.match(/[^A-Za-z0-9]/g) || []).length;
+        if (specialCount < policy.minSpecial) {
+            errors.push('Password must contain at least ' + policy.minSpecial + ' special character(s)');
+        }
+    }
+
+    if (policy.bannedPasswords && policy.bannedPasswords.length > 0) {
+        var pwdLower = password.toLowerCase();
+        var banned = policy.bannedPasswords.map(function(s) { return s.toLowerCase(); });
+        if (banned.indexOf(pwdLower) !== -1) {
+            errors.push('This password is on the banned list');
+        }
+    }
+
+    return errors;
+}
+
+/**
+ * Sync password policy to Splunk server-side validation.
+ */
+async function updateSplunkValidator(policy) {
+    if (!policy.enabled) {
+        return splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
+            method: 'POST',
+            body: {
+                min_length: 1,
+                max_length: 256,
+                min_digits: 0,
+                min_upper: 0,
+                min_lower: 0,
+                min_special: 0,
+            },
+        });
+    }
+
+    var body = {
+        min_length: policy.minLength,
+        max_length: policy.maxLength,
+        min_digits: policy.requireDigits ? policy.minDigits : 0,
+        min_upper: policy.requireUppercase ? policy.minUppercase : 0,
+        min_lower: policy.requireLowercase ? policy.minLowercase : 0,
+        min_special: policy.requireSpecial ? policy.minSpecial : 0,
+    };
+
+    if (policy.bannedPasswords && policy.bannedPasswords.length > 0) {
+        policy.bannedPasswords.forEach(function(pwd) {
+            body['banned_passwords'] = (body['banned_passwords'] ? body['banned_passwords'] + ',' : '') + pwd;
+        });
+    }
+
+    return splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
+        method: 'POST',
+        body: body,
+    });
+}
+
+async function getSplunkValidator() {
+    try {
+        return await splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
+            method: 'GET',
+        });
+    } catch (e) {
+        if (e.status === 404) return null;
+        throw e;
+    }
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -1872,4 +2018,9 @@ module.exports = {
     createOrUpdateExpiryAlert,
     getExpiryAlert,
     deleteExpiryAlert,
+    loadPolicy,
+    savePolicy,
+    validatePasswordAgainstPolicy,
+    updateSplunkValidator,
+    getSplunkValidator,
 };

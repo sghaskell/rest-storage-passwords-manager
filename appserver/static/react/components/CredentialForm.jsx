@@ -49,6 +49,8 @@ var _API = require('../api');
 var generatePassword = _API.generatePassword;
 var parseExpiryFromRealm = _API.parseExpiryFromRealm;
 var buildRealmWithExpiry = _API.buildRealmWithExpiry;
+var loadPolicy = _API.loadPolicy;
+var validatePasswordAgainstPolicy = _API.validatePasswordAgainstPolicy;
 
 /** Helper — convert role array to Splunk data format [{ label, value }] */
 function toSelectData(roles) {
@@ -173,6 +175,14 @@ function CredentialForm({
             newErrors.writeRoles = 'Select at least one Write role (or * for all)';
         }
 
+        // Policy validation — only when a new password is being set
+        if ((!credential || isCopy) || isChangingPassword) {
+            var policyErrors = validatePasswordAgainstPolicy(password);
+            if (policyErrors.length > 0) {
+                newErrors.policy = policyErrors.join('. ');
+            }
+        }
+
         setErrors(newErrors);
         if (Object.keys(newErrors).length > 0) return;
 
@@ -295,6 +305,22 @@ function CredentialForm({
     return React.createElement(
         'form',
         { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: '1rem' } },
+
+        // Policy banner — show when policy is enabled
+        loadPolicy().enabled ? React.createElement('div', {
+            key: 'policy-banner',
+            style: {
+                padding: '0.5rem 0.75rem',
+                backgroundColor: '#fff3cd',
+                border: '1px solid #ffc107',
+                borderRadius: '4px',
+                fontSize: '12px',
+                color: '#856404',
+                marginBottom: '0.5rem',
+            }
+        },
+            'Active password policy: min ' + loadPolicy().minLength + ' chars'
+        ) : null,
 
         // Row 1: Username + Realm
         gridRow(
@@ -426,9 +452,9 @@ function CredentialForm({
                     value: password,
                     onChange: handlePasswordChange,
                     placeholder: 'Enter password',
-                    error: !!errors.password,
+                    error: !!(errors.password || errors.policy),
                 }),
-                { errorText: errors.password, required: true }
+                { errorText: errors.password || errors.policy, required: true }
             ),
             formField('Confirm Password',
                 React.createElement(Text, {

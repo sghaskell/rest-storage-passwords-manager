@@ -113,6 +113,7 @@ var GlobalStyles = _sc.createGlobalStyle`
 // Import self-contained application components
 const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
+const PasswordPolicySettings = require('./components/PasswordPolicySettings');
 const AuditLog = require('./components/AuditLog');
 const ExpiryDashboard = require('./components/ExpiryDashboard');
 const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
@@ -153,6 +154,7 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             help: false,
             history: false,
             rotation: false,
+            policySettings: false,
         });
 
         // Modal data
@@ -324,6 +326,7 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                         help: false,
                         history: false,
                         rotation: false,
+                        policySettings: false,
                     }));
                     return;
                 }
@@ -1143,6 +1146,11 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                         onClick: function() { setAlertConfigModalOpen(true); },
                         appearance: 'subtle',
                         children: '⚙ Alert Settings'
+                    }),
+                    React.createElement(Button, {
+                        onClick: function() { setModals(prev => ({ ...prev, policySettings: true })); },
+                        appearance: 'subtle',
+                        children: 'Password Policy'
                     })
                 )
             ),
@@ -1404,6 +1412,15 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             modals.help && React.createElement(HelpModal, {
                 isOpen: modals.help,
                 onClose: () => setModals(prev => ({ ...prev, help: false })),
+            }),
+
+            // Password Policy settings modal
+            modals.policySettings && React.createElement(PasswordPolicySettings, {
+                isOpen: modals.policySettings,
+                onClose: () => setModals(prev => ({ ...prev, policySettings: false })),
+                onSave: function(policy) {
+                    setModals(prev => ({ ...prev, policySettings: false }));
+                },
             }),
 
             // Column preset modal
