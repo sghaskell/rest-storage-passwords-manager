@@ -128,17 +128,54 @@ function RoleAccessDashboard({
         if (!names.some(function(r) { return r === '* (all)'; })) {
             names.unshift('* (all)');
         }
+        console.log('[RoleAccess] rolesWithCapabilities:', rolesWithCapabilities);
+        console.log('[RoleAccess] allRoleNames:', names);
+        console.log('[RoleAccess] matrixRoles:', names.slice(0, 50));
+        console.log('[RoleAccess] credentials:', credentials.length, 'creds');
         return names;
     }, [rolesWithCapabilities]);
 
-    // Aggregate credentials by role
-    var aggregation = React.useMemo(function() {
-        return API && API.aggregateByRole ? API.aggregateByRole(credentials, allRoleNames) : { roleMap: {}, openAccessCount: 0, adminWritableCount: 0 };
-    }, [credentials, allRoleNames]);
+    /** Deduplicate credentials by stanzaKey — Splunk returns the same credential
+     * at each namespace level (user/app/global). Merge ACL permissions across
+     * all entries so each credential appears once.
+     */
+    function dedupCredentials(list) {
+        var byKey = {};
+        list.forEach(function(cred) {
+            var key = cred.stanzaKey || '';
+            if (!key) return;
+            if (!byKey[key]) {
+                byKey[key] = Object.assign({}, cred, { aclReadRoles: [], aclWriteRoles: [] });
+            }
+            var merged = byKey[key];
+            // Merge read roles
+            (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean).forEach(function(r) {
+                if (merged.aclReadRoles.indexOf(r) === -1) merged.aclReadRoles.push(r);
+            });
+            // Merge write roles
+            (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean).forEach(function(r) {
+                if (merged.aclWriteRoles.indexOf(r) === -1) merged.aclWriteRoles.push(r);
+            });
+            // Update merged ACL strings
+            merged.aclRead = merged.aclReadRoles.join(', ');
+            merged.aclWrite = merged.aclWriteRoles.join(', ');
+        });
+        return Object.keys(byKey).map(function(k) { return byKey[k]; });
+    }
 
-    // Filtered credentials
+    // Deduplicated credential list (base for all views)
+    var uniqueCredentials = React.useMemo(function() {
+        return dedupCredentials(credentials);
+    }, [credentials]);
+
+    // Aggregate credentials by role (use deduplicated list)
+    var aggregation = React.useMemo(function() {
+        return API && API.aggregateByRole ? API.aggregateByRole(uniqueCredentials, allRoleNames) : { roleMap: {}, openAccessCount: 0, adminWritableCount: 0 };
+    }, [uniqueCredentials, allRoleNames]);
+
+    // Filtered credentials (deduplicated)
     var filteredCreds = React.useMemo(function() {
-        return credentials.filter(function(cred) {
+        return uniqueCredentials.filter(function(cred) {
             var readRoles = (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
             var writeRoles = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
 
@@ -154,7 +191,7 @@ function RoleAccessDashboard({
             }
             return true;
         });
-    }, [credentials, filterRole, showOpenAccess, showAdminWritable, adminRoleNames]);
+    }, [uniqueCredentials, filterRole, showOpenAccess, showAdminWritable, adminRoleNames]);
 
     // Sort: open access first, then by name
     filteredCreds.sort(function(a, b) {
@@ -173,13 +210,19 @@ function RoleAccessDashboard({
         var readRoles = (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
         var writeRoles = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
 
+        // Check for wildcard first — * in ACL means ALL roles get that access
+        var readWildcard = readRoles.indexOf('*') !== -1 || readRoles.indexOf('* (all)') !== -1;
+        var writeWildcard = writeRoles.indexOf('*') !== -1 || writeRoles.indexOf('* (all)') !== -1;
+
+        // If role is the sentinel * (all), show WILDCARD for wildcard ACLs
         if (role === '* (all)') {
-            if (readRoles.indexOf('*') !== -1 || readRoles.indexOf('* (all)') !== -1) return 'WILDCARD';
-            if (writeRoles.indexOf('*') !== -1 || writeRoles.indexOf('* (all)') !== -1) return 'WILDCARD';
+            if (readWildcard || writeWildcard) return 'WILDCARD';
             return '-';
         }
-        var hasRead = readRoles.indexOf(role) !== -1;
-        var hasWrite = writeRoles.indexOf(role) !== -1;
+
+        // For real roles: wildcard ACL grants access, OR explicit role match
+        var hasRead = readWildcard || readRoles.indexOf(role) !== -1;
+        var hasWrite = writeWildcard || writeRoles.indexOf(role) !== -1;
         if (hasRead && hasWrite) return 'RW';
         if (hasRead) return 'R';
         if (hasWrite) return 'W';
@@ -247,7 +290,7 @@ function RoleAccessDashboard({
         },
             React.createElement(StatCard, {
                 label: 'Total Credentials',
-                value: credentials.length,
+                value: uniqueCredentials.length,
                 color: '#3b82f6'
             }),
             React.createElement(StatCard, {
@@ -494,7 +537,7 @@ function RoleAccessDashboard({
                     color: '#f59e0b',
                     marginBottom: '0.5rem'
                 }
-            }, '⚠ Performance cap: showing ' + matrixRoles.length + ' roles × ' + matrixCreds.length + ' credentials (max 50×200)'),
+            }, '⚠ Performance cap: showing ' + matrixCreds.length + ' credentials × ' + matrixRoles.length + ' roles (max 200×50)'),
             React.createElement('table', {
                 style: {
                     width: '100%',
@@ -503,7 +546,7 @@ function RoleAccessDashboard({
                     color: inputColor,
                 }
             },
-                // Header row
+                // Header row — roles as columns
                 React.createElement('thead', null,
                     React.createElement('tr', {
                         style: { backgroundColor: headerBg, borderBottom: '2px solid ' + cardBorder }
@@ -518,63 +561,70 @@ function RoleAccessDashboard({
                                 backgroundColor: headerBg,
                                 zIndex: 1,
                                 borderRight: '1px solid ' + cardBorder,
-                                minWidth: '120px',
+                                minWidth: '140px',
                             }
-                        }, 'Role \u2192'),
-                        matrixCreds.map(function(cred) {
+                        }, 'Credential →'),
+                        matrixRoles.map(function(role) {
+                            var isWildcard = role === '* (all)';
                             return React.createElement('th', {
-                                key: cred.stanzaKey + ':' + cred.app + ':' + cred.owner,
+                                key: 'role-th-' + role,
                                 style: {
                                     padding: '4px 6px',
                                     textAlign: 'center',
                                     fontWeight: '500',
-                                    color: headerColor,
+                                    color: isWildcard ? '#f59e0b' : headerColor,
                                     borderBottom: '1px solid ' + cardBorder,
-                                    minWidth: '80px',
+                                    minWidth: '60px',
                                     whiteSpace: 'nowrap',
                                 }
                             }, React.createElement('div', {
-                                style: { fontSize: '11px', fontWeight: '600' },
-                                title: (cred.realm || '') + ':' + (cred.app || '')
-                            }, cred.name || ''),
+                                style: { fontSize: '11px', fontWeight: '600' }
+                            }, role),
                             );
                         })
                     )
                 ),
-                // Data rows
+                // Data rows — one per credential
                 React.createElement('tbody', null,
-                    matrixRoles.map(function(role) {
-                        var isWildcard = role === '* (all)';
+                    matrixCreds.map(function(cred) {
+                        var realm = cred.realm || 'global';
+                        var displayName = cred.name || '';
+                        var isOpen = hasOpenAccess(cred);
                         return React.createElement('tr', {
-                            key: role,
-                            style: {
-                                backgroundColor: isWildcard ? (isDark ? '#3d3400' : '#fff8e1') : cardBg,
-                                borderBottom: '1px solid ' + cardBorder,
-                            }
+                            key: cred.stanzaKey + ':' + cred.app + ':' + cred.owner,
+                            style: { borderBottom: '1px solid ' + cardBorder, backgroundColor: cardBg }
                         },
-                            // Role label (sticky)
+                            // Credential label (sticky first column)
                             React.createElement('td', {
                                 style: {
                                     padding: '6px 8px',
                                     fontWeight: '600',
                                     fontSize: '12px',
-                                    color: isWildcard ? '#f59e0b' : (isDark ? '#e0e0e0' : '#333'),
+                                    color: inputColor,
                                     position: 'sticky',
                                     left: 0,
-                                    backgroundColor: isWildcard ? (isDark ? '#3d3400' : '#fff8e1') : headerBg,
+                                    backgroundColor: cardBg,
                                     zIndex: 0,
                                     borderRight: '1px solid ' + cardBorder,
                                     whiteSpace: 'nowrap',
-                                }
-                            }, role),
-                            // Access cells
-                            matrixCreds.map(function(cred) {
+                                },
+                                title: cred.stanzaKey || ''
+                            }, React.createElement('span', {
+                                style: { cursor: 'pointer', color: '#3b82f6', textDecoration: 'underline' }
+                            }, realm + ':' + displayName),
+                            isOpen && React.createElement('span', {
+                                style: { marginLeft: '4px', fontSize: '10px', color: '#f59e0b' }
+                            }, '⚠')
+                            ),
+                            // Access cells — one per role
+                            matrixRoles.map(function(role) {
                                 var level = getAccessLevel(role, cred);
-                                return React.createElement(MatrixCell, {
-                                    key: cred.stanzaKey + ':' + cred.app + ':' + cred.owner,
+                                return React.createElement('td', {
+                                    key: role + ':' + cred.stanzaKey
+                                }, React.createElement(MatrixCell, {
                                     accessLevel: level,
                                     isDark: isDark
-                                });
+                                }));
                             })
                         );
                     })
