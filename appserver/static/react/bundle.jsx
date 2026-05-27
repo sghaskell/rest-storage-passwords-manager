@@ -381,9 +381,12 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var val = f.value.toLowerCase();
                     if (f.field === 'username' && name !== val) return false;
                     if (f.field === 'realm') {
-                        var isGlobal = !credential.realm || credential.realm === 'nobody';
-                        if (val === 'global' && !isGlobal) return false;
-                        if (val !== 'global' && ((credential.realm || '').toLowerCase()) !== val) return false;
+                        // Parse realm to match on base realm (handles combined "prod;expiry_..." format)
+                        var _rInfo = API.parseExpiryFromRealm(credential.realm || '');
+                        var _baseRealm = _rInfo.baseRealm || '';
+                        var _isGlobal = !_baseRealm || _baseRealm === 'nobody';
+                        if (val === 'global' && !_isGlobal) return false;
+                        if (val !== 'global' && _baseRealm.toLowerCase() !== val) return false;
                     }
                     if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                     if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
@@ -411,10 +414,14 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             return [...filteredCredentials].sort(function(a, b) {
                 var aValue = sortConfig.key === 'owner'
                     ? (a.namespaceOwner || a.owner || '')
-                    : (a[sortConfig.key] || '');
+                    : sortConfig.key === 'expiry'
+                        ? (a.expiryDate || '')
+                        : (a[sortConfig.key] || '');
                 var bValue = sortConfig.key === 'owner'
                     ? (b.namespaceOwner || b.owner || '')
-                    : (b[sortConfig.key] || '');
+                    : sortConfig.key === 'expiry'
+                        ? (b.expiryDate || '')
+                        : (b[sortConfig.key] || '');
                 if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -452,6 +459,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
                     var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
                     return Object.assign({}, cred, {
+                        expiryDate: expiryInfo.expiryDate || '',
                         rotationStatus: rotationStatus,
                         rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus)
                     });
@@ -510,11 +518,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
         async function handleCreateCredential(data) {
             try {
-                // Construct realm with expiry if provided
-                var realmToSave = data.realm || '';
-                if (data.expiryDate && !realmToSave) {
-                    realmToSave = API.buildRealmWithExpiry(realmToSave, data.expiryDate);
-                }
+                // Construct realm combining base realm + expiry
+                var realmToSave = API.buildRealmWithExpiry(data.realm || '', data.expiryDate);
                 await API.createCredential(
                     data.username, data.password, realmToSave,
                     data.app, data.owner, data.readRoles, data.writeRoles,
@@ -543,23 +548,14 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             const messages = [];
             try {
                 // Determine new realm based on expiry change
-                var newRealm = credential.realm;
+                // With combined format, expiry can change independently of base realm
                 var expiryInfo = API.parseExpiryFromRealm(credential.realm || '');
+                var baseRealm = expiryInfo.baseRealm;
                 var oldExpiry = expiryInfo.expiryDate;
                 var newExpiry = data.expiryDate;
 
-                // Only realm change is possible when there's no base realm.
-                // When baseRealm exists, expiry field is disabled — user can't change it.
-                if (!expiryInfo.baseRealm) {
-                    if (newExpiry && newExpiry !== oldExpiry) {
-                        // Add or change expiry
-                        newRealm = API.buildRealmWithExpiry('', newExpiry);
-                    } else if (!newExpiry && oldExpiry) {
-                        // Remove expiry — revert to empty realm
-                        newRealm = '';
-                    }
-                    // else: same expiry or no change — keep current realm
-                }
+                // Build new realm — preserve base realm, update expiry if changed
+                var newRealm = API.buildRealmWithExpiry(baseRealm, newExpiry || '');
 
                 if (newRealm !== credential.realm) {
                     // Realm changed — need to rename: create new credential + delete old

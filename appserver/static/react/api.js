@@ -1691,38 +1691,63 @@ function renamePreset(oldName, newName) {
 
 /**
  * Parse expiry date from realm string.
+ * Supports formats:
+ *   - "prod;expiry_2026-05-26"  (base realm + expiry, combined)
+ *   - "expiry_2026-05-26"        (expiry only, legacy)
+ *   - "expiry:2026-05-26"       (expiry only, legacy colon format)
+ *   - "prod"                      (realm only, no expiry)
+ *   - ""                          (empty, no expiry)
  * Returns { hasExpiry: bool, expiryDate: string|null, baseRealm: string }
  */
 function parseExpiryFromRealm(realm) {
     if (!realm || typeof realm !== 'string') {
         return { hasExpiry: false, expiryDate: null, baseRealm: realm || '' };
     }
-    // Support both old 'expiry:YYYY-MM-DD' and new 'expiry_YYYY-MM-DD' formats
+
+    // New combined format: "baseRealm;expiry_YYYY-MM-DD"
+    var semiIdx = realm.lastIndexOf(';');
+    if (semiIdx !== -1) {
+        var before = realm.substring(0, semiIdx);
+        var after = realm.substring(semiIdx + 1);
+        if (after.startsWith('expiry_')) {
+            var dateStr = after.substring(7);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                return { hasExpiry: true, expiryDate: dateStr, baseRealm: before };
+            }
+        }
+    }
+
+    // Legacy: "expiry_YYYY-MM-DD" (no base realm)
     if (realm.startsWith('expiry_')) {
         var dateStr = realm.substring(7);
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
         }
     }
+
+    // Legacy: "expiry:YYYY-MM-DD" (no base realm)
     if (realm.startsWith('expiry:')) {
         var dateStr = realm.substring(7);
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
         }
     }
+
     return { hasExpiry: false, expiryDate: null, baseRealm: realm };
 }
 
 /**
- * Build realm string with optional expiry date.
- * If expiryDate is provided and baseRealm is empty, returns "expiry_YYYY-MM-DD".
- * Otherwise returns baseRealm as-is.
+ * Build realm string combining base realm + expiry date.
+ * - both present: "baseRealm;expiry_YYYY-MM-DD"
+ * - expiry only:  "expiry_YYYY-MM-DD"
+ * - realm only:   "baseRealm"
+ * - neither:      ""
  */
 function buildRealmWithExpiry(baseRealm, expiryDate) {
-    if (expiryDate && !baseRealm) {
-        return 'expiry_' + expiryDate;
-    }
-    return baseRealm || '';
+    var parts = [];
+    if (baseRealm) parts.push(baseRealm);
+    if (expiryDate) parts.push('expiry_' + expiryDate);
+    return parts.length > 1 ? parts.join(';') : (parts[0] || '');
 }
 
 /**

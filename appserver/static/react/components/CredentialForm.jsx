@@ -115,11 +115,11 @@ function CredentialForm({
             } else {
                 setUsername(credential.name || '');
             }
-            setRealm(credential.realm || '');
+            var expiryInfo = parseExpiryFromRealm(credential.realm || '');
+            setRealm(expiryInfo.baseRealm || '');
             setApp(credential.app || 'search');
             setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
-            var expiryInfo = parseExpiryFromRealm(credential.realm || '');
             setExpiryDate(expiryInfo.expiryDate || '');
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
@@ -271,15 +271,7 @@ function CredentialForm({
 
     var showPasswordFields = !credential || isChangingPassword || isCopy;
 
-    // Expiry: determine if realm is empty (expiry usable) and extract base realm
-    var _baseRealmForExpiry = '';
-    if (credential) {
-        var _parsed = parseExpiryFromRealm(credential.realm || '');
-        _baseRealmForExpiry = _parsed.baseRealm;
-    } else {
-        _baseRealmForExpiry = realm.trim();
-    }
-    var expiryUsable = !_baseRealmForExpiry;
+
 
     // Form field wrapper helper — uses ControlGroup for proper accessibility, layout, error/help text, required indicators
     function formField(label, inputEl, opts) {
@@ -548,15 +540,14 @@ function CredentialForm({
             )
         ),
 
-        // Password Expiry date picker — only usable when realm is empty
+        // Password Expiry date picker — always available (realm + expiry combine via delimiter)
         React.createElement('div', { style: { width: '100%' } },
             formField('Password Expiry',
                 React.createElement('input', {
                     type: 'date',
                     value: expiryDate,
                     onChange: function(e) { setExpiryDate(e.target.value); },
-                    disabled: !expiryUsable,
-                    placeholder: expiryUsable ? 'YYYY-MM-DD' : 'N/A',
+                    placeholder: 'YYYY-MM-DD',
                     style: {
                         width: '100%',
                         padding: '6px 8px',
@@ -568,9 +559,7 @@ function CredentialForm({
                     }
                 }),
                 {
-                    helpText: expiryUsable
-                        ? 'Optional — set a password rotation reminder date'
-                        : 'Expiry requires an empty realm field'
+                    helpText: 'Optional — set a password rotation reminder date'
                 }
             )
         ),

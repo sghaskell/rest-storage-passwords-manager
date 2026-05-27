@@ -40,6 +40,7 @@ var Checkbox = CheckboxMod.default;
 var COLUMNS = [
     { key: 'name',     label: 'Username',   sortable: true,  fixed: true  },
     { key: 'realm',    label: 'Realm',      sortable: true,  fixed: false },
+    { key: 'expiry',   label: 'Expiry',     sortable: true,  fixed: false },
     { key: 'app',      label: 'App',        sortable: true,  fixed: false },
     { key: 'owner',    label: 'Owner',      sortable: true,  fixed: false },
     { key: 'rotation', label: 'Rotation',   sortable: true,  fixed: false },
@@ -50,7 +51,7 @@ var COLUMNS = [
 ];
 
 var VISIBLE_COLUMNS_KEY = 'credential-table-visible-columns';
-var DEFAULT_VISIBLE = ['name', 'realm', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'];
+var DEFAULT_VISIBLE = ['name', 'realm', 'expiry', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'];
 var ROWS_PER_PAGE_KEY = 'credential-table-rows-per-page';
 var DEFAULT_ROWS_PER_PAGE = 10;
 
@@ -62,7 +63,13 @@ function loadVisibleColumns() {
             var hasAllFixed = COLUMNS.filter(function(c) { return c.fixed; }).every(function(c) { return parsed.indexOf(c.key) !== -1; });
             if (Array.isArray(parsed) && hasAllFixed) {
                 var validKeys = COLUMNS.map(function(c) { return c.key; });
-                return parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
+                var result = parsed.filter(function(k) { return validKeys.indexOf(k) !== -1; });
+                // Migrate: insert 'expiry' after 'realm' if missing
+                if (result.indexOf('expiry') === -1 && result.indexOf('realm') !== -1) {
+                    result.splice(result.indexOf('realm') + 1, 0, 'expiry');
+                    localStorage.setItem(VISIBLE_COLUMNS_KEY, JSON.stringify(result));
+                }
+                return result;
             }
         }
     } catch (e) {}
@@ -192,13 +199,32 @@ function CredentialTable({
                 var val = f.value.toLowerCase();
                 if (f.field === 'username' && name !== val) return false;
                 if (f.field === 'realm') {
-                    var realmStr = (credential.realm || '').toLowerCase();
-                    var isGlobal = !credential.realm || credential.realm === 'nobody';
-                    if (val === 'global' && !isGlobal) return false;
-                    if (val !== 'global' && realmStr !== val) return false;
+                    var _fRealmInfo = _parseRealmForDisplay(credential.realm);
+                    var _fDisplayRealm = _fRealmInfo.baseRealm && _fRealmInfo.baseRealm !== 'nobody'
+                        ? _fRealmInfo.baseRealm.toLowerCase()
+                        : (val === 'Exp: ...' ? '' : '');
+                    var _fIsGlobal = !_fRealmInfo.baseRealm || _fRealmInfo.baseRealm === 'nobody';
+                    // Handle expiry-only display labels ("Exp: 26 May 2026")
+                    var _fRealmLabel;
+                    if (!_fIsGlobal && _fRealmInfo.baseRealm) {
+                        _fRealmLabel = _fRealmInfo.baseRealm.toLowerCase();
+                    } else if (_fRealmInfo.hasExpiry) {
+                        // For expiry-only realms, the label is "Exp: ..." — match any expiry credential
+                        // In practice this shouldn't happen since we parse and display base realm first
+                        _fRealmLabel = 'exp';
+                    } else {
+                        _fRealmLabel = 'global';
+                    }
+                    if (val === 'global' && !_fIsGlobal) return false;
+                    if (val !== 'global' && _fRealmLabel !== val) return false;
                 }
                 if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                 if (f.field === 'owner' && (credential.namespaceOwner || credential.owner || '').toLowerCase() !== val) return false;
+                if (f.field === 'expiry') {
+                    var _expInfo = _parseRealmForDisplay(credential.realm);
+                    var _expDate = _expInfo.expiryDate || '';
+                    if (_expDate !== val) return false;
+                }
                 if (f.field === 'rotation' && (credential.rotationStatus || 'none').toLowerCase() !== val) return false;
                 if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                 if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
@@ -285,6 +311,7 @@ function CredentialTable({
     var FILTER_FIELDS = [
         { key: 'username', label: 'Username' },
         { key: 'realm', label: 'Realm' },
+        { key: 'expiry', label: 'Expiry' },
         { key: 'app', label: 'App' },
         { key: 'owner', label: 'Owner' },
         { key: 'rotation', label: 'Rotation' },
@@ -298,6 +325,7 @@ function CredentialTable({
     var COLUMN_TO_FILTER = {
         name: 'username',
         realm: 'realm',
+        expiry: 'expiry',
         app: 'app',
         owner: 'owner',
         aclRead: 'readRoles',
@@ -396,6 +424,21 @@ function CredentialTable({
         return day + ' ' + mon + ' ' + year + ' ' + hh + ':' + mm;
     }
 
+    // Parse expiry from realm — extract base realm for display
+    // Supports: "prod;expiry_2026-05-26", "expiry_2026-05-26", "prod", ""
+    function _parseRealmForDisplay(realm) {
+        if (!realm) return { baseRealm: '', hasExpiry: false, expiryDate: null };
+        // Combined: "baseRealm;expiry_YYYY-MM-DD"
+        var m = realm.match(/^(.+);(expiry_(\d{4}-\d{2}-\d{2}))$/);
+        if (m) return { baseRealm: m[1], hasExpiry: true, expiryDate: m[3] };
+        // Legacy: "expiry_YYYY-MM-DD"
+        if (realm.startsWith('expiry_')) {
+            var d = realm.substring(7);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return { baseRealm: '', hasExpiry: true, expiryDate: d };
+        }
+        return { baseRealm: realm, hasExpiry: false, expiryDate: null };
+    }
+
     // Build data cell for a column + credential
     function buildDataCell(col, cred) {
         if (col.key === 'actions') {
@@ -417,18 +460,22 @@ function CredentialTable({
             }, formatMtime(cred.mtime));
         }
         if (col.key === 'realm') {
-            var isGlobal = !cred.realm || cred.realm === 'nobody';
-            // If realm is an expiry marker, show a friendly label instead of raw expiry_YYYY-MM-DD
-            var _expiryMatch = (cred.realm || '').match(/^expiry_(\d{4}-\d{2}-\d{2})$/);
+            var _parsed = _parseRealmForDisplay(cred.realm);
+            var baseRealm = _parsed.baseRealm;
+            var hasExpiry = _parsed.hasExpiry;
+            var isGlobal = !baseRealm || baseRealm === 'nobody';
+
             var realmLabel;
-            if (_expiryMatch) {
-                var _ed = new Date(_expiryMatch[1] + 'T00:00:00');
+            if (!isGlobal) {
+                // Has a base realm — display it
+                realmLabel = baseRealm;
+            } else if (hasExpiry) {
+                // No base realm but has expiry — show friendly expiry label
+                var _ed = new Date(_parsed.expiryDate + 'T00:00:00');
                 var _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 realmLabel = 'Exp: ' + _ed.getDate() + ' ' + _months[_ed.getMonth()] + ' ' + _ed.getFullYear();
-            } else if (isGlobal) {
-                realmLabel = 'global';
             } else {
-                realmLabel = cred.realm || '';
+                realmLabel = 'global';
             }
             var realmActive = isFilterActive('realm', realmLabel);
             return React.createElement(TableCell, null,
@@ -598,6 +645,51 @@ function CredentialTable({
                 React.createElement('div', {
                     style: { display: 'flex', alignItems: 'center', gap: '4px' }
                 }, nameCellChildren)
+            );
+        }
+        if (col.key === 'expiry') {
+            var expiryInfo = _parseRealmForDisplay(cred.realm);
+            var expiryDate = expiryInfo.expiryDate;
+            if (!expiryDate) {
+                var noneColor = '#9e9e9e';
+                return React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: isDark ? noneColor + '22' : noneColor + '22',
+                            color: noneColor,
+                            border: '1px solid ' + (isDark ? noneColor + '88' : noneColor + '55'),
+                            whiteSpace: 'nowrap',
+                        }
+                    }, 'None')
+                );
+            }
+            var d = new Date(expiryDate + 'T00:00:00');
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            var status = cred.rotationStatus || 'none';
+            var expiryColor = status === 'overdue' ? '#d32f2f' : status === 'due-soon' ? '#f59e0b' : '#0d8469';
+            var expiryLabel = dateStr + (status === 'overdue' ? ' ⚠' : '');
+            return React.createElement(TableCell, null,
+                React.createElement('span', {
+                    onClick: function() { handleAddFilter('expiry', expiryDate); },
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: isDark ? expiryColor + '22' : expiryColor + '15',
+                        color: expiryColor,
+                        border: '1px solid ' + expiryColor + '40',
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                    }
+                }, expiryLabel)
             );
         }
         if (col.key === 'rotation') {
@@ -779,7 +871,7 @@ function CredentialTable({
         // Search + pagination controls
         React.createElement(
             'div',
-            { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' } },
+            { style: { marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' } },
             React.createElement('strong', { style: labelStyle }, 'Search:'),
             React.createElement('input', {
                 type: 'text',

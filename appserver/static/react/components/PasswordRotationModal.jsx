@@ -506,6 +506,9 @@ function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
                 });
                 return updated;
             });
+
+            // Close modal after undo completes
+            handleClose();
         } catch (err) {
             console.error('Undo failed:', err);
         }
