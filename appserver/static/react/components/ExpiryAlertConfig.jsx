@@ -201,8 +201,8 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
         // Enable toggle
         formField('Enable alerts',
             React.createElement(Switch, {
-                checked: config.enabled,
-                onChange: function(e) { handleFieldChange('enabled', e.target.checked); },
+                selected: config.enabled,
+                onClick: function() { handleFieldChange('enabled', !config.enabled); },
             })
         ),
 
@@ -263,8 +263,8 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
         // Include due-soon
         formField('Include "due soon" credentials in alerts',
             React.createElement(Switch, {
-                checked: config.includeDueSoon,
-                onChange: function(e) { handleFieldChange('includeDueSoon', e.target.checked); },
+                selected: config.includeDueSoon,
+                onClick: function() { handleFieldChange('includeDueSoon', !config.includeDueSoon); },
             })
         ),
 

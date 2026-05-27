@@ -422,6 +422,11 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         var isExpired = (credential.rotationStatus === 'overdue' || credential.rotationStatus === 'due-soon');
                         if (val === 'true' && !isExpired) return false;
                     }
+                    // Tag filter — check if credential has the specific tag
+                    if (f.field === 'tag') {
+                        var tagList = (credential.tags || []).map(function(t) { return t.name || t; });
+                        if (tagList.indexOf(val) === -1) return false;
+                    }
                 }
 
                 return true;
@@ -475,9 +480,19 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             try {
                 const fetched = await API.getAllCredentials();
 
-                // Fetch all tag data in batch — one API call for all credentials
-                var allTags = await API.getAllTagsData();
-                var tagDefs = await API.getAllTagDefinitions();
+                // Fetch tag data — failures should NOT break credential loading
+                var allTags = {};
+                var tagDefs = [];
+                try {
+                    // Ensure collections exist before reading
+                    await API.ensureTagCollections();
+                    allTags = await API.getAllTagsData();
+                    console.log('[TAGS][LOAD] allTags keys:', Object.keys(allTags));
+                    tagDefs = await API.getAllTagDefinitions();
+                    console.log('[TAGS][LOAD] tagDefs:', tagDefs.length, 'definitions');
+                } catch (tagErr) {
+                    console.warn('[TAGS][LOAD] tag data fetch failed (KVStore may not be available):', tagErr);
+                }
                 var tagColorMap = {};
                 tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
 
@@ -485,8 +500,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 var enriched = fetched.map(function(cred) {
                     var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
                     var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
-                    var credKey = cred.stanzaKey + ':' + cred.app + ':' +
-                                  (cred.namespaceOwner || cred.owner || '') + ':' + cred.sharing;
+                    var credKey = API.tagCredKey(cred);
                     var tags = allTags[credKey] || [];
 
                     var enrichedTags = tags.map(function(t) {
@@ -565,16 +579,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 // Save tags if provided
                 if (data.tags && data.tags.length > 0) {
                     try {
-                        await API.setTagsForCredential({
+                        var createTagCred = {
                             name: data.username,
                             realm: realmToSave,
                             app: data.app,
                             namespaceOwner: data.owner,
                             sharing: data.sharing || 'app',
-                            stanzaKey: realmToSave + ':' + data.username + ':',
-                        }, data.tags);
+                        };
+                        await API.setTagsForCredential(createTagCred, data.tags);
                     } catch (tagErr) {
-                        console.warn('[handleCreateCredential] failed to save tags (non-fatal):', tagErr.message);
+                        console.error('[TAGS][CREATE] failed:', tagErr.message);
                     }
                 }
 
@@ -655,16 +669,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 if (data.tags && data.tags.length > 0) {
                     var realmToUse = newRealm !== credential.realm ? newRealm : credential.realm;
                     try {
-                        await API.setTagsForCredential({
+                        var updateTagCred = {
                             name: credential.name,
                             realm: realmToUse,
                             app: data.app,
                             namespaceOwner: data.owner,
                             sharing: data.sharing || 'app',
-                            stanzaKey: realmToUse + ':' + credential.name + ':',
-                        }, data.tags);
+                        };
+                        await API.setTagsForCredential(updateTagCred, data.tags);
                     } catch (tagErr) {
-                        console.warn('[handleUpdateCredential] failed to save tags (non-fatal):', tagErr.message);
+                        console.error('[TAGS][UPDATE] failed:', tagErr.message);
                     }
                 }
 

@@ -658,8 +658,18 @@ function CredentialForm({
                                 }, '\u00d7')
                             );
                         }),
-                        currentTags.length === 0 && React.createElement('span', { style: { fontSize: '11px', color: '#999' } },
-                            'No tags — type and press Enter to add'
+                        currentTags.length === 0 && React.createElement('span', { style: {
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '500',
+                                backgroundColor: '#f3f4f6',
+                                color: '#9ca3af',
+                                border: '1px solid #d1d5db',
+                                whiteSpace: 'nowrap',
+                            } },
+                            'No tags'
                         )
                     ),
                     // Input + autocomplete

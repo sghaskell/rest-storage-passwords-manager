@@ -217,9 +217,8 @@ function ExpiryDashboard({
         },
             React.createElement('span', { style: { fontSize: '13px', color: 'var(--ed-text-muted)' } }, 'Auto-refresh'),
             React.createElement(Switch, {
-                checked: autoRefresh,
-                onChange: handleToggleAutoRefresh,
-                label: '',
+                selected: autoRefresh,
+                onClick: handleToggleAutoRefresh,
             })
         ),
 

@@ -131,15 +131,22 @@ async function splunkdRequest(path, options = {}) {
     }
 
     if (isMutation && options.body) {
-        // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        // Inject output_mode=json into mutation bodies so Splunk returns JSON instead of XML.
-        // This fixes .json() parsing on POST/PUT/PATCH responses across all callers:
-        // - createCredential (splunkdRequest for POST /storage/passwords and /configs/.../acl)
-        // - updateCredential (apiRequest for /storage/passwords, splunkdRequest for ACL)
-        // - deleteCredential (pre-delete ACL bump via splunkdRequest)
-        const bodyData = { ...options.body, output_mode: 'json' };
-        body = formEncode(bodyData);
+        // KVStore data endpoints require JSON body (application/json).
+        // All other endpoints use form-urlencoded (default for Splunk REST API).
+        if (options.jsonBody) {
+            headers['Content-Type'] = 'application/json';
+            body = JSON.stringify(options.body);
+        } else {
+            // Serialize body for mutations UNCONDITIONALLY — body must reach Splunk even without CSRF
+            headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            // Inject output_mode=json into mutation bodies so Splunk returns JSON instead of XML.
+            // This fixes .json() parsing on POST/PUT/PATCH responses across all callers:
+            // - createCredential (splunkdRequest for POST /storage/passwords and /configs/.../acl)
+            // - updateCredential (apiRequest for /storage/passwords, splunkdRequest for ACL)
+            // - deleteCredential (pre-delete ACL bump via splunkdRequest)
+            const bodyData = { ...options.body, output_mode: 'json' };
+            body = formEncode(bodyData);
+        }
     }
 
     const timeout = options.timeout || DEFAULT_FETCH_TIMEOUT_MS;
@@ -1978,13 +1985,25 @@ async function getSplunkValidator() {
     }
 }
 
-// ─── Credential Tagging (kvstore) ────────────────────────────────────────
+// ─── Credential Tagging (KVStore) ─────────────────────────────────────────
 
 const TAGS_COLLECTION = 'credential_tags';
 const TAG_DEFS_COLLECTION = 'tag_definitions';
 
+// KVStore collections live at nobody/search namespace.
+// Splunk requires 'nobody' user context for collection config operations.
+// Data operations work at any namespace.
 /**
- * Helper — hash tag name to consistent color from a fixed palette
+ * Splunk 10.2 KV Store endpoints (replaces deprecated /data/collections).
+ * - Collection management: /servicesNS/nobody/search/storage/collections/config
+ * - Data operations: /servicesNS/nobody/search/storage/collections/data/<collection>
+ * - Documents: /servicesNS/nobody/search/storage/collections/data/<collection>/<key>
+ */
+const KVSTORE_CONFIG = '/servicesNS/nobody/search/storage/collections/config';
+const KVSTORE_DATA = '/servicesNS/nobody/search/storage/collections/data';
+
+/**
+ * Hash tag name to consistent color from fixed palette.
  */
 function hashToColor(str) {
     var hash = 0;
@@ -2000,53 +2019,72 @@ function hashToColor(str) {
 }
 
 /**
- * Ensure a kvstore collection exists; create if missing.
+ * Ensure a KVStore collection exists. Create if missing.
+ * Uses the schema endpoint for reliable existence checking — the documents
+ * endpoint can return 200 for empty collections or non-404 errors that
+ * silently skip creation.
  */
-async function ensureCollection(name, fields) {
+/**
+ * Ensure a KVStore collection exists. Create if missing.
+ * Splunk 10.2: collections are schema-less, fields auto-inferred from first document.
+ * No schema validation needed.
+ */
+async function ensureCollection(name) {
+    // Check if collection config exists — returns 404 when missing
+    var configUrl = KVSTORE_CONFIG + '/' + name;
     try {
-        await splunkdRequest('/servicesNS/admin/search/data/collections/' + name, { method: 'GET' });
-        return true;
+        await splunkdRequest(configUrl, { method: 'GET' });
+        return true; // Collection exists
     } catch (e) {
         if (e.status === 404) {
-            var fieldStr = fields.map(function(f) { return f.name + ':' + f.type; }).join(',');
+            // Collection doesn't exist — create it
+            // Splunk 10.2: POST with name only, fields auto-inferred
             try {
-                await splunkdRequest('/servicesNS/admin/search/data/collections', {
+                await splunkdRequest(KVSTORE_CONFIG, {
                     method: 'POST',
-                    body: { name: name, fields: fieldStr },
+                    body: { name: name },
                 });
+                console.log('[TAGS] Created KVStore collection:', name);
                 return true;
             } catch (createErr) {
-                if (createErr.status === 409) return true;
+                if (createErr.status === 409) {
+                    // Another request beat us to it — collection now exists
+                    console.log('[TAGS] Collection', name, 'already exists (race condition resolved)');
+                    return true;
+                }
+                console.error('[TAGS] Failed to create collection', name, ':', createErr.message);
                 throw createErr;
             }
         }
+        // Non-404 error — KVStore may be unavailable
         throw e;
     }
 }
 
+/**
+ * Initialize tag collections lazily.
+ * Splunk 10.2: fields auto-inferred from first document, no schema.
+ */
 async function ensureTagCollections() {
-    await ensureCollection(TAGS_COLLECTION, [
-        { name: 'cred_key', type: 'string' },
-        { name: 'tags', type: 'string' },
-    ]);
-    await ensureCollection(TAG_DEFS_COLLECTION, [
-        { name: 'tag_name', type: 'string' },
-        { name: 'color', type: 'string' },
-    ]);
+    await ensureCollection(TAGS_COLLECTION);
+    await ensureCollection(TAG_DEFS_COLLECTION);
 }
 
 /**
- * Build a kvstore-safe key from a credential object.
+ * Build unique key from credential object.
+ * Format: realm|name|app|owner|sharing
+ * URL-safe — uses | delimiter (NOT :) to avoid collision with realm strings
+ * like "prod;expiry_2026-06-01".
  */
 function tagCredKey(cred) {
-    return (cred.realm || '') + ':' + (cred.name || '') + ':' +
-           (cred.app || 'search') + ':' +
-           (cred.namespaceOwner || cred.owner || 'nobody') + ':' +
+    return (cred.realm || '') + '|' + (cred.name || '') + '|'+
+           (cred.app || 'search') + '|'+
+           (cred.namespaceOwner || cred.owner || 'nobody') + '|'+
            (cred.sharing || 'app');
 }
 
 /**
- * Set tags for a credential (replaces all existing tags).
+ * Set tags for a credential (replace all existing tags).
  */
 async function setTagsForCredential(credential, tags) {
     await ensureTagCollections();
@@ -2055,33 +2093,76 @@ async function setTagsForCredential(credential, tags) {
         .map(function(t) { return t.trim().toLowerCase(); })
         .filter(Boolean)
         .slice(0, 5);
+    console.log('[TAGS][SAVE] credential:', JSON.stringify(credential));
+    console.log('[TAGS][SAVE] key:', key, 'tags:', cleanTags);
 
-    // Validate tag names
     for (var i = 0; i < cleanTags.length; i++) {
         var tag = cleanTags[i];
         if (!/^[a-z0-9_-]{1,50}$/.test(tag)) {
-            throw new Error('Invalid tag name: ' + tag + ' — use only letters, numbers, hyphens, underscores (max 50 chars)');
+            throw new Error('Invalid tag name: ' + tag + ' — use only lowercase letters, numbers, hyphens, underscores (max 50 chars)');
         }
     }
 
-    // Upsert tag definitions for new tags
     var existingDefs = await getAllTagDefinitions();
     for (var j = 0; j < cleanTags.length; j++) {
         var tag = cleanTags[j];
         if (!existingDefs.some(function(d) { return d.tag_name === tag; })) {
-            await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION, {
-                method: 'POST',
-                body: { tag_name: tag, color: hashToColor(tag), _key: tag },
-            });
+            try {
+                await splunkdRequest(KVSTORE_DATA + '/' + TAG_DEFS_COLLECTION, {
+                    method: 'POST',
+                    body: {
+                        _key: tag,
+                        color: hashToColor(tag),
+                    },
+                    jsonBody: true,
+                });
+            } catch (tagErr) {
+                if (tagErr.status === 409) continue;
+                throw tagErr;
+            }
         }
     }
 
-    // Upsert credential tags document
-    await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
-        method: 'POST',
-        body: { cred_key: key, tags: JSON.stringify(cleanTags), _key: key },
-    });
+    try {
+        var postUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION;
+        var postBody = {
+            _key: key,
+            tags: JSON.stringify(cleanTags),
+        };
+        console.log('[TAGS][SAVE] POST url:', postUrl, 'body:', JSON.stringify(postBody));
+        await splunkdRequest(postUrl, {
+            method: 'POST',
+            body: postBody,
+            jsonBody: true,
+        });
+    } catch (e) {
+        if (e.status === 409) {
+            var putUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
+            var putBody = {
+                _key: key,
+                tags: JSON.stringify(cleanTags),
+            };
+            console.log('[TAGS][SAVE] PUT url:', putUrl, 'body:', JSON.stringify(putBody));
+            await splunkdRequest(putUrl, {
+                method: 'POST',
+                body: putBody,
+                jsonBody: true,
+            });
+        } else {
+            throw e;
+        }
+    }
 
+    // Verify: read back what we just wrote
+    try {
+        var verifyUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
+        var verifyData = await splunkdRequest(verifyUrl, { method: 'GET' });
+        console.log('[TAGS][SAVE] verify read:', JSON.stringify(verifyData));
+    } catch (vErr) {
+        console.error('[TAGS][SAVE] verify FAILED:', vErr.message);
+    }
+
+    console.log('[TAGS][SAVE] tags saved successfully', cleanTags);
     return cleanTags;
 }
 
@@ -2090,15 +2171,25 @@ async function setTagsForCredential(credential, tags) {
  */
 async function getTagsForCredential(credential) {
     var key = tagCredKey(credential);
+    console.log('[TAGS][LOAD] credential:', JSON.stringify(credential));
+    console.log('[TAGS][LOAD] looking up key:', key);
     try {
-        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
+        var url = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
+        console.log('[TAGS][LOAD] url:', url);
+        var data = await splunkdRequest(url, {
             method: 'GET',
         });
-        var entry = data.entry ? data.entry[0] : null;
-        if (entry && entry.content && entry.content.tags) {
-            return JSON.parse(entry.content.tags);
+        console.log('[TAGS][LOAD] response:', JSON.stringify(data));
+        // Splunk 10.2 KVStore returns flat object for single doc (not {items: [...]}):
+        // { _key: "...", tags: "[\"t1\"]", ... }
+        var doc = data;
+        if (doc && doc.tags) {
+            var parsed = JSON.parse(doc.tags);
+            console.log('[TAGS][LOAD] found tags:', parsed);
+            return parsed;
         }
     } catch (e) {
+        console.log('[TAGS][LOAD] error:', e.status, e.message);
         if (e.status !== 404) throw e;
     }
     return [];
@@ -2109,21 +2200,25 @@ async function getTagsForCredential(credential) {
  */
 async function removeTagFromCredential(credential, tagToRemove) {
     var existing = await getTagsForCredential(credential);
-    var updated = existing.filter(function(t) { return t !== tagToRemove.toLowerCase(); });
+    var updated = existing.filter(function(t) {
+        return t !== tagToRemove.toLowerCase();
+    });
     if (updated.length === existing.length) return existing;
     return setTagsForCredential(credential, updated);
 }
 
 /**
- * Get all tag definitions (tag→color mapping).
+ * Get all tag definitions (tag name → color mapping).
  */
 async function getAllTagDefinitions() {
     try {
-        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION + '?count=0', {
+        var data = await splunkdRequest(KVSTORE_DATA + '/' + TAG_DEFS_COLLECTION, {
             method: 'GET',
         });
-        return (data.entry || []).map(function(e) {
-            return { tag_name: e.content.tag_name, color: e.content.color };
+        // Splunk 10.2 KVStore returns plain array (not {items: [...]})
+        var docs = Array.isArray(data) ? data : (data.entries || []);
+        return docs.map(function(doc) {
+            return { tag_name: doc._key, color: doc.color };
         });
     } catch (e) {
         if (e.status === 404) return [];
@@ -2133,17 +2228,19 @@ async function getAllTagDefinitions() {
 
 /**
  * Get all tag-to-credential mappings (batch fetch for enrichment).
+ * Returns Object: cred_key → [tag strings]
  */
 async function getAllTagsData() {
     try {
-        var data = await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '?count=0', {
+        var data = await splunkdRequest(KVSTORE_DATA + '/' + TAGS_COLLECTION, {
             method: 'GET',
         });
+        // Splunk 10.2 KVStore returns plain array (not {items: [...]})
+        var docs = Array.isArray(data) ? data : (data.entries || []);
         var result = {};
-        (data.entry || []).forEach(function(e) {
-            var content = e.content;
-            if (content.tags) {
-                result[content.cred_key] = JSON.parse(content.tags);
+        docs.forEach(function(doc) {
+            if (doc._key && doc.tags) {
+                result[doc._key] = JSON.parse(doc.tags);
             }
         });
         return result;
@@ -2154,16 +2251,16 @@ async function getAllTagsData() {
 }
 
 /**
- * Delete tags for a credential (called on credential delete).
+ * Delete tags for a credential (cleanup on credential delete).
  */
 async function deleteTagsForCredential(credential) {
     var key = tagCredKey(credential);
     try {
-        await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
+        await splunkdRequest(KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key), {
             method: 'DELETE',
         });
     } catch (e) {
-        if (e.status !== 404) throw e;
+        if (e.status !== 404 && e.status !== 400) throw e;
     }
 }
 
@@ -2171,9 +2268,13 @@ async function deleteTagsForCredential(credential) {
  * Delete a tag definition.
  */
 async function deleteTagDefinition(tagName) {
-    await splunkdRequest('/servicesNS/admin/search/data/collections/' + TAG_DEFS_COLLECTION + '/' + encodeURIComponent(tagName), {
-        method: 'DELETE',
-    });
+    try {
+        await splunkdRequest(KVSTORE_DATA + '/' + TAG_DEFS_COLLECTION + '/' + encodeURIComponent(tagName), {
+            method: 'DELETE',
+        });
+    } catch (e) {
+        if (e.status !== 404 && e.status !== 400) throw e;
+    }
 }
 
 // ─── Role-Based Access (cached capabilities + audit helpers) ───────────────
@@ -2378,9 +2479,6 @@ module.exports = {
     updateSplunkValidator,
     getSplunkValidator,
     // Credential Tagging
-    TAGS_COLLECTION,
-    TAG_DEFS_COLLECTION,
-    ensureCollection,
     ensureTagCollections,
     tagCredKey,
     setTagsForCredential,

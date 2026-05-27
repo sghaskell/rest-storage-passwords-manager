@@ -232,7 +232,7 @@ function CredentialTable({
                 if (f.field === 'modified' && mtime !== val) return false;
                 // Tag filter — check if credential has the specific tag
                 if (f.field === 'tag') {
-                    var credTags = (cred.tags || []).map(function(t) { return t.name || t; });
+                    var credTags = (credential.tags || []).map(function(t) { return t.name || t; });
                     if (credTags.indexOf(val) === -1) return false;
                 }
                 // Duplicates only filter
@@ -734,7 +734,17 @@ function CredentialTable({
             if (tags.length === 0) {
                 return React.createElement(TableCell, null,
                     React.createElement('span', {
-                        style: { fontSize: '11px', color: '#999', fontStyle: 'italic' },
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            backgroundColor: '#f3f4f6',
+                            color: '#9ca3af',
+                            border: '1px solid #d1d5db',
+                            whiteSpace: 'nowrap',
+                        },
                     }, 'No tags')
                 );
             }
