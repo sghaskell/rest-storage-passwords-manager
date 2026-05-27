@@ -246,8 +246,9 @@ function parseCredentialName(fullName) {
     if (str.endsWith(':')) {
         str = str.substring(0, str.length - 1);
     }
-    // Split on first colon to get realm:username
-    var colonIdx = str.indexOf(':');
+    // Split on last colon to get realm:username — handles realms that contain colons
+    // (e.g., expiry:2026-04-28) while still working for normal realm:name stanzas.
+    var colonIdx = str.lastIndexOf(':');
     if (colonIdx === -1) {
         return { name: str, realm: '' };
     }
@@ -1580,9 +1581,9 @@ var PRESETS_KEY = 'credential-manager-column-presets';
 
 // Built-in presets created when localStorage is empty
 var BUILTIN_PRESETS = [
-    { name: 'Default', columns: ['name', 'realm', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'] },
+    { name: 'Default', columns: ['name', 'realm', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'] },
     { name: 'Minimal', columns: ['name', 'actions'] },
-    { name: 'Security', columns: ['name', 'app', 'owner', 'aclRead', 'aclWrite', 'actions'] }
+    { name: 'Security', columns: ['name', 'app', 'owner', 'rotation', 'aclRead', 'aclWrite', 'actions'] }
 ];
 
 /**
@@ -1696,6 +1697,13 @@ function parseExpiryFromRealm(realm) {
     if (!realm || typeof realm !== 'string') {
         return { hasExpiry: false, expiryDate: null, baseRealm: realm || '' };
     }
+    // Support both old 'expiry:YYYY-MM-DD' and new 'expiry_YYYY-MM-DD' formats
+    if (realm.startsWith('expiry_')) {
+        var dateStr = realm.substring(7);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
+        }
+    }
     if (realm.startsWith('expiry:')) {
         var dateStr = realm.substring(7);
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -1707,12 +1715,12 @@ function parseExpiryFromRealm(realm) {
 
 /**
  * Build realm string with optional expiry date.
- * If expiryDate is provided and baseRealm is empty, returns "expiry:YYYY-MM-DD".
+ * If expiryDate is provided and baseRealm is empty, returns "expiry_YYYY-MM-DD".
  * Otherwise returns baseRealm as-is.
  */
 function buildRealmWithExpiry(baseRealm, expiryDate) {
     if (expiryDate && !baseRealm) {
-        return 'expiry:' + expiryDate;
+        return 'expiry_' + expiryDate;
     }
     return baseRealm || '';
 }

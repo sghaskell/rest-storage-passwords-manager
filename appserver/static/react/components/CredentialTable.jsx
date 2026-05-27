@@ -203,6 +203,10 @@ function CredentialTable({
                     var isDup = duplicateInfo && duplicateInfo.duplicateCredentialMap && duplicateInfo.duplicateCredentialMap[dupKey] !== undefined;
                     if (val === 'true' && !isDup) return false;
                 }
+                if (f.field === 'isExpired') {
+                    var isExpired = (credential.rotationStatus === 'overdue' || credential.rotationStatus === 'due-soon');
+                    if (val === 'true' && !isExpired) return false;
+                }
             }
 
             return true;
@@ -280,6 +284,8 @@ function CredentialTable({
         { key: 'rotation', label: 'Rotation' },
         { key: 'readRoles', label: 'Read Roles' },
         { key: 'writeRoles', label: 'Write Roles' },
+        { key: 'isDuplicate', label: 'Duplicate' },
+        { key: 'isExpired', label: 'Expired' },
     ];
 
     // Column key → filter field key mapping
@@ -407,7 +413,18 @@ function CredentialTable({
         }
         if (col.key === 'realm') {
             var isGlobal = !cred.realm || cred.realm === 'nobody';
-            var realmLabel = isGlobal ? 'global' : (cred.realm || '');
+            // If realm is an expiry marker, show a friendly label instead of raw expiry_YYYY-MM-DD
+            var _expiryMatch = (cred.realm || '').match(/^expiry_(\d{4}-\d{2}-\d{2})$/);
+            var realmLabel;
+            if (_expiryMatch) {
+                var _ed = new Date(_expiryMatch[1] + 'T00:00:00');
+                var _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                realmLabel = 'Exp: ' + _ed.getDate() + ' ' + _months[_ed.getMonth()] + ' ' + _ed.getFullYear();
+            } else if (isGlobal) {
+                realmLabel = 'global';
+            } else {
+                realmLabel = cred.realm || '';
+            }
             var realmActive = isFilterActive('realm', realmLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
@@ -549,6 +566,29 @@ function CredentialTable({
                 }, React.createElement(ExclamationTriangle, { size: 14 })));
             }
 
+            // Expiry status indicator — clock icon color-coded by rotation status
+            var _expiryStatus = cred.rotationStatus || 'none';
+            if (_expiryStatus !== 'none') {
+                var _expiryColors = {
+                    ok:      '#2e7d32',
+                    'due-soon': '#f59e0b',
+                    overdue: '#d32f2f'
+                };
+                var _expiryColor = _expiryColors[_expiryStatus] || '#2e7d32';
+                nameCellChildren.push(React.createElement('span', {
+                    key: 'expiry',
+                    title: cred.rotationLabel || (_expiryStatus + ' — click to filter'),
+                    style: {
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        marginLeft: '4px',
+                        color: _expiryColor,
+                        fontSize: '12px',
+                        verticalAlign: 'middle',
+                    }
+                }, React.createElement(Clock, { size: 14 })));
+            }
+
             return React.createElement(TableCell, null,
                 React.createElement('div', {
                     style: { display: 'flex', alignItems: 'center', gap: '4px' }
@@ -564,6 +604,7 @@ function CredentialTable({
                 none:    { color: '#9e9e9e', label: 'None' }
             };
             var rotation = rotationMap[status] || rotationMap.none;
+            var labelText = cred.rotationLabel || rotation.label;
             return React.createElement(TableCell, null,
                 React.createElement('span', {
                     onClick: function() { handleAddFilter('rotation', status); },
@@ -580,7 +621,7 @@ function CredentialTable({
                         whiteSpace: 'nowrap',
                         cursor: 'pointer',
                     }
-                }, rotation.label)
+                }, labelText)
             );
         }
         return React.createElement(TableCell, null, cred[col.key] || '');
@@ -750,42 +791,84 @@ function CredentialTable({
                     boxSizing: 'border-box',
                 },
             }),
-            // Duplicates only toggle — inline near search input
-            duplicateInfo && duplicateInfo.totalDuplicates > 0 && React.createElement(
-                'button',
-                {
-                    onClick: function() {
-                        var dupFilterExists = activeFilters.some(function(f) { return f.field === 'isDuplicate'; });
-                        if (dupFilterExists) {
-                            handleRemoveFilter(activeFilters.findIndex(function(f) { return f.field === 'isDuplicate'; }));
-                        } else {
-                            handleAddFilter('isDuplicate', 'true');
-                        }
+            // Expiry filter toggles — inline near search input
+            React.createElement(
+                'div',
+                { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+                // Duplicates only toggle
+                duplicateInfo && duplicateInfo.totalDuplicates > 0 && React.createElement(
+                    'button',
+                    {
+                        onClick: function() {
+                            var dupFilterExists = activeFilters.some(function(f) { return f.field === 'isDuplicate'; });
+                            if (dupFilterExists) {
+                                handleRemoveFilter(activeFilters.findIndex(function(f) { return f.field === 'isDuplicate'; }));
+                            } else {
+                                handleAddFilter('isDuplicate', 'true');
+                            }
+                        },
+                        style: {
+                            padding: '0.25rem 0.75rem',
+                            border: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                                ? '2px solid #f59e0b'
+                                : '1px solid var(--ct-border)',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            height: '28px',
+                            backgroundColor: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                                ? '#fef3c7'
+                                : 'transparent',
+                            color: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
+                                ? '#92400e'
+                                : 'var(--ct-text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontWeight: activeFilters.some(function(f) { return f.field === 'isDuplicate'; }) ? '600' : 'normal',
+                        },
+                        title: 'Filter to show only credentials with duplicate passwords'
                     },
-                    style: {
-                        padding: '0.25rem 0.75rem',
-                        border: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
-                            ? '2px solid #f59e0b'
-                            : '1px solid var(--ct-border)',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        height: '28px',
-                        backgroundColor: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
-                            ? '#fef3c7'
-                            : 'transparent',
-                        color: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
-                            ? '#92400e'
-                            : 'var(--ct-text-muted)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontWeight: activeFilters.some(function(f) { return f.field === 'isDuplicate'; }) ? '600' : 'normal',
+                    React.createElement(ExclamationTriangle, { variant: 'filled', size: 12, style: { color: '#f59e0b' } }),
+                    'Duplicates only'
+                ),
+                // Expired only toggle
+                React.createElement(
+                    'button',
+                    {
+                        onClick: function() {
+                            var expiredFilterExists = activeFilters.some(function(f) { return f.field === 'isExpired'; });
+                            if (expiredFilterExists) {
+                                handleRemoveFilter(activeFilters.findIndex(function(f) { return f.field === 'isExpired'; }));
+                            } else {
+                                handleAddFilter('isExpired', 'true');
+                            }
+                        },
+                        style: {
+                            padding: '0.25rem 0.75rem',
+                            border: activeFilters.some(function(f) { return f.field === 'isExpired'; })
+                                ? '2px solid #d32f2f'
+                                : '1px solid var(--ct-border)',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            height: '28px',
+                            backgroundColor: activeFilters.some(function(f) { return f.field === 'isExpired'; })
+                                ? '#fde7e9'
+                                : 'transparent',
+                            color: activeFilters.some(function(f) { return f.field === 'isExpired'; })
+                                ? '#741c1c'
+                                : 'var(--ct-text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontWeight: activeFilters.some(function(f) { return f.field === 'isExpired'; }) ? '600' : 'normal',
+                        },
+                        title: 'Filter to show only expired or expiring soon credentials'
                     },
-                    title: 'Filter to show only credentials with duplicate passwords'
-                },
-                React.createElement(ExclamationTriangle, { variant: 'filled', size: 12, style: { color: '#f59e0b' } }),
-                'Duplicates only'
+                    React.createElement(Clock, { variant: 'filled', size: 12, style: { color: '#d32f2f' } }),
+                    'Expired only'
+                )
             ),
 
             React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'baseline' } },

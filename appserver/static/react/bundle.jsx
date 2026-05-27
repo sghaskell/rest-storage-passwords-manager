@@ -390,11 +390,20 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                     if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                     if (f.field === 'modified' && mtime !== val) return false;
+                    if (f.field === 'isDuplicate') {
+                        var dupKey = (credential.name || '') + ':' + (credential.realm || '') + ':' + (credential.app || 'search') + ':' + (credential.namespaceOwner || credential.owner || 'nobody') + ':' + (credential.sharing || 'app');
+                        var isDup = duplicateInfo && duplicateInfo.duplicateCredentialMap && duplicateInfo.duplicateCredentialMap[dupKey] !== undefined;
+                        if (val === 'true' && !isDup) return false;
+                    }
+                    if (f.field === 'isExpired') {
+                        var isExpired = (credential.rotationStatus === 'overdue' || credential.rotationStatus === 'due-soon');
+                        if (val === 'true' && !isExpired) return false;
+                    }
                 }
 
                 return true;
             });
-        }, [credentials, filterText, activeFilters]);
+        }, [credentials, filterText, activeFilters, duplicateInfo]);
 
         // Compute sorted credentials (same logic as CredentialTable)
         const sortedCredentials = React.useMemo(function() {
@@ -464,7 +473,9 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             if (!expiryDate) return 'None';
             var d = new Date(expiryDate + 'T00:00:00');
             var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return 'Expires ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            var dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            if (status === 'overdue') return 'Expired on ' + dateStr;
+            return 'Expires ' + dateStr;
         }
 
         // Scan for duplicate passwords in background
@@ -531,11 +542,65 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         async function handleUpdateCredential(credential, data) {
             const messages = [];
             try {
-                await API.updateCredential(
-                    credential.name, credential.realm,
-                    data.password, data.readRoles, data.writeRoles,
-                    data.owner, data.app, data.sharing || 'app', credential.app
-                );
+                // Determine new realm based on expiry change
+                var newRealm = credential.realm;
+                var expiryInfo = API.parseExpiryFromRealm(credential.realm || '');
+                var oldExpiry = expiryInfo.expiryDate;
+                var newExpiry = data.expiryDate;
+
+                // Only realm change is possible when there's no base realm.
+                // When baseRealm exists, expiry field is disabled — user can't change it.
+                if (!expiryInfo.baseRealm) {
+                    if (newExpiry && newExpiry !== oldExpiry) {
+                        // Add or change expiry
+                        newRealm = API.buildRealmWithExpiry('', newExpiry);
+                    } else if (!newExpiry && oldExpiry) {
+                        // Remove expiry — revert to empty realm
+                        newRealm = '';
+                    }
+                    // else: same expiry or no change — keep current realm
+                }
+
+                if (newRealm !== credential.realm) {
+                    // Realm changed — need to rename: create new credential + delete old
+                    var oldOwner = credential.namespaceOwner || credential.owner || 'nobody';
+                    var password = await API.getCredentialPassword(
+                        credential.name, credential.realm, credential.app,
+                        oldOwner, credential.sharing || 'app'
+                    );
+
+                    try {
+                        await API.createCredential(
+                            credential.name, password, newRealm,
+                            data.app, data.owner, data.readRoles, data.writeRoles,
+                            data.sharing || 'app'
+                        );
+                    } catch (createErr) {
+                        throw createErr;
+                    }
+
+                    // Best-effort delete old; if it fails, warn but don't abort
+                    try {
+                        await API.deleteCredential(
+                            credential.name, credential.realm, credential.app,
+                            oldOwner, data.readRoles, data.writeRoles,
+                            data.sharing || 'app'
+                        );
+                    } catch (deleteErr) {
+                        console.warn(
+                            '[handleUpdateCredential] failed to delete old credential',
+                            credential.name, credential.realm,
+                            deleteErr.message || deleteErr
+                        );
+                        // Continue — new credential was created successfully
+                    }
+                } else {
+                    await API.updateCredential(
+                        credential.name, credential.realm,
+                        data.password, data.readRoles, data.writeRoles,
+                        data.owner, data.app, data.sharing || 'app', credential.app
+                    );
+                }
                 await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
