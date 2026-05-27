@@ -4,7 +4,7 @@
  * Three-phase flow:
  *   A. Settings — password generator options, mode selector
  *   B. Preview — show generated passwords before applying
- *   C. Results — success/failure per credential with undo and CSV export
+ *   C. Results — success/failure per credential with undo
  */
 
 const React = require('react');
@@ -300,26 +300,6 @@ function RotationResults({ results, onUndo, onExpire, onClose }) {
     var hasSuccess = successCount > 0;
     var allFailed = failCount === results.length && results.length > 0;
 
-    // CSV export of old passwords
-    function downloadOldPasswords() {
-        var successResults = results.filter(function(r) { return r.status === 'success' && r.oldPassword; });
-        if (!successResults.length) return;
-        var lines = ['username,realm,app,old_password'];
-        successResults.forEach(function(r) {
-            lines.push([r.name, r.realm || '', r.app || '', '"' + (r.oldPassword || '').replace(/"/g, '""') + '"'].join(','));
-        });
-        var csv = lines.join('\n') + '\n';
-        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'old-passwords-export.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
     // Header cells
     var headerCells = [
         React.createElement(TableHeadCell, { key: 'name' }, 'Credential'),
@@ -360,11 +340,6 @@ function RotationResults({ results, onUndo, onExpire, onClose }) {
             )
         ),
         React.createElement('div', { style: { display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' } },
-            hasSuccess && React.createElement(Button, {
-                onClick: downloadOldPasswords,
-                appearance: 'subtle',
-                children: 'Download Old Passwords CSV'
-            }),
             canUndo && hasSuccess && !undone && React.createElement(Button, {
                 onClick: function() { setUndone(true); onUndo(); },
                 appearance: 'primary',
