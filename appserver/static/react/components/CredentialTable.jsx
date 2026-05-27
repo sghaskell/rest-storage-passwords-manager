@@ -732,6 +732,7 @@ function CredentialTable({
         if (col.key === 'tags') {
             var tags = cred.tags || [];
             if (tags.length === 0) {
+                var noneColor = '#9e9e9e';
                 return React.createElement(TableCell, null,
                     React.createElement('span', {
                         style: {
@@ -739,10 +740,10 @@ function CredentialTable({
                             padding: '2px 8px',
                             borderRadius: '12px',
                             fontSize: '11px',
-                            fontWeight: '500',
-                            backgroundColor: '#f3f4f6',
-                            color: '#9ca3af',
-                            border: '1px solid #d1d5db',
+                            fontWeight: '600',
+                            backgroundColor: noneColor + '22',
+                            color: noneColor,
+                            border: '1px solid ' + (isDark ? noneColor + '88' : noneColor + '55'),
                             whiteSpace: 'nowrap',
                         },
                     }, 'No tags')

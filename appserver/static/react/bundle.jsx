@@ -1304,7 +1304,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                                 ? `Scanning ${scanProgress.current}/${scanProgress.total}...`
                                 : 'Scan for Duplicates'
                         }),
-                        duplicateInfo && !scanning && React.createElement(
+                        duplicateInfo && !scanning && duplicateInfo.totalDuplicates > 0 && React.createElement(
                             'span',
                             {
                                 style: {
@@ -1317,6 +1317,20 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             },
                             React.createElement(ExclamationTriangle, { variant: 'filled', size: 12 }),
                             `${duplicateInfo.totalDuplicates} duplicate(s) found`
+                        ),
+                        duplicateInfo && !scanning && duplicateInfo.totalDuplicates === 0 && React.createElement(
+                            'span',
+                            {
+                                style: {
+                                    fontSize: '12px',
+                                    color: '#0d8469',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                }
+                            },
+                            React.createElement(CheckCircle, { variant: 'filled', size: 12 }),
+                            'No duplicates found'
                         ),
                         scanWarning && React.createElement(
                             'span',
