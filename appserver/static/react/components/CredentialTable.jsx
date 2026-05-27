@@ -813,6 +813,7 @@ function CredentialTable({
                             }
                         },
                         style: {
+                            margin: 0,
                             padding: '0.25rem 0.75rem',
                             border: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
                                 ? '2px solid #f59e0b'
@@ -820,6 +821,7 @@ function CredentialTable({
                             borderRadius: '4px',
                             fontSize: '13px',
                             height: '28px',
+                            boxSizing: 'border-box',
                             backgroundColor: activeFilters.some(function(f) { return f.field === 'isDuplicate'; })
                                 ? '#fef3c7'
                                 : 'transparent',
@@ -831,6 +833,8 @@ function CredentialTable({
                             alignItems: 'center',
                             gap: '4px',
                             fontWeight: activeFilters.some(function(f) { return f.field === 'isDuplicate'; }) ? '600' : 'normal',
+                            lineHeight: 'normal',
+                            verticalAlign: 'middle',
                         },
                         title: 'Filter to show only credentials with duplicate passwords'
                     },
@@ -850,6 +854,7 @@ function CredentialTable({
                             }
                         },
                         style: {
+                            margin: 0,
                             padding: '0.25rem 0.75rem',
                             border: activeFilters.some(function(f) { return f.field === 'isExpired'; })
                                 ? '2px solid #d32f2f'
@@ -857,6 +862,7 @@ function CredentialTable({
                             borderRadius: '4px',
                             fontSize: '13px',
                             height: '28px',
+                            boxSizing: 'border-box',
                             backgroundColor: activeFilters.some(function(f) { return f.field === 'isExpired'; })
                                 ? '#fde7e9'
                                 : 'transparent',
@@ -868,6 +874,8 @@ function CredentialTable({
                             alignItems: 'center',
                             gap: '4px',
                             fontWeight: activeFilters.some(function(f) { return f.field === 'isExpired'; }) ? '600' : 'normal',
+                            lineHeight: 'normal',
+                            verticalAlign: 'middle',
                         },
                         title: 'Filter to show only expired or expiring soon credentials'
                     },
