@@ -1750,19 +1750,86 @@ function buildRealmWithExpiry(baseRealm, expiryDate) {
     return parts.length > 1 ? parts.join(';') : (parts[0] || '');
 }
 
+// ─── Expiry threshold configuration ──────────────────────────────────────────
+
+const DEFAULT_DUE_SOON_DAYS = 7;
+const STORAGE_KEY = 'expiry-threshold-days';
+
+function getDueSoonThreshold() {
+    try {
+        var stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            var days = parseInt(stored, 10);
+            if (days >= 1 && days <= 30) return days;
+        }
+    } catch (e) {
+        console.warn('[expiry] Failed to read threshold:', e);
+    }
+    return DEFAULT_DUE_SOON_DAYS;
+}
+
+function setDueSoonThreshold(days) {
+    var clamped = Math.max(1, Math.min(30, Math.round(days)));
+    try { localStorage.setItem(STORAGE_KEY, String(clamped)); } catch (e) {}
+    return clamped;
+}
+
 /**
  * Get rotation status for a credential.
  * Returns 'ok' | 'due-soon' | 'overdue' | 'none'
+ * Optional thresholdDays overrides the localStorage default.
  */
-function getRotationStatus(expiryDate) {
+function getRotationStatus(expiryDate, thresholdDays) {
     if (!expiryDate) return 'none';
+    var effectiveThreshold = thresholdDays !== undefined ? thresholdDays : getDueSoonThreshold();
     var expiryTime = new Date(expiryDate + 'T00:00:00').getTime();
     var now = Date.now();
     var msUntilExpiry = expiryTime - now;
     var daysUntilExpiry = msUntilExpiry / (1000 * 60 * 60 * 24);
     if (msUntilExpiry < 0) return 'overdue';
-    if (daysUntilExpiry <= 7) return 'due-soon';
+    if (daysUntilExpiry <= effectiveThreshold) return 'due-soon';
     return 'ok';
+}
+
+// ─── Email alert CRUD (Splunk saved searches) ──────────────────────────────────
+
+async function createOrUpdateExpiryAlert(config) {
+    var body = {
+        name: 'credential-expiry-alert',
+        search: '| rest /servicesNS/-/-/storage/passwords count=0 | ' +
+            'where like(realm, "%expiry_\%") | ' +
+            'eval expiry_date = substr(realm, match(realm, "expiry_(\\d{4}-\\d{2}-\\d{2})") + 7, 10) | ' +
+            'eval days_remaining = round((strptime(strftime(expiry_date, "%s"), "%s") - now()) / 86400, 0) | ' +
+            'where days_remaining <= ' + config.thresholdDays + ' | ' +
+            'table username realm expiry_date days_remaining',
+        disabled: !config.enabled,
+        cron_schedule: config.cronMinute + ' ' + config.cronHour + ' * * *',
+        alert_actions: 'email',
+        alert_email_to: config.recipients,
+        alert_compression: 'gzip',
+        description: 'Alert when stored credentials approach or past their expiry date',
+    };
+    return splunkdRequest('/servicesNS/admin/search/saved/searches', {
+        method: 'POST',
+        body: body,
+    });
+}
+
+async function getExpiryAlert() {
+    try {
+        return await splunkdRequest('/servicesNS/admin/search/saved/searches/credential-expiry-alert', {
+            method: 'GET',
+        });
+    } catch (e) {
+        if (e.status === 404) return null;
+        throw e;
+    }
+}
+
+async function deleteExpiryAlert() {
+    return splunkdRequest('/servicesNS/admin/search/saved/searches/credential-expiry-alert', {
+        method: 'DELETE',
+    });
 }
 
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
@@ -1800,4 +1867,9 @@ module.exports = {
     parseExpiryFromRealm,
     buildRealmWithExpiry,
     getRotationStatus,
+    getDueSoonThreshold,
+    setDueSoonThreshold,
+    createOrUpdateExpiryAlert,
+    getExpiryAlert,
+    deleteExpiryAlert,
 };

@@ -114,10 +114,14 @@ var GlobalStyles = _sc.createGlobalStyle`
 const CredentialTable = require('./components/CredentialTable');
 const CredentialForm = require('./components/CredentialForm');
 const AuditLog = require('./components/AuditLog');
+const ExpiryDashboard = require('./components/ExpiryDashboard');
+const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal } = require('./components/Modal');
 const CredentialHistoryModal = require('./components/CredentialHistoryModal');
 const PasswordRotationModal = require('./components/PasswordRotationModal');
+const ExpiryDashboard = require('./components/ExpiryDashboard');
+const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
 
 (function() {
     'use strict';
@@ -182,6 +186,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [presets, setPresets] = React.useState([]);
         const [columnsRefreshKey, setColumnsRefreshKey] = React.useState(0);
 
+        // View mode — 'table' | 'dashboard'
+        const [viewMode, setViewMode] = React.useState('table');
+        const [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
+
         // Load presets on mount
         React.useEffect(function() {
             setPresets(API.loadPresets());
@@ -231,6 +239,12 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             API.renamePreset(oldName, newName);
             setPresets(API.loadPresets());
         }
+
+        // Expiry dashboard view mode — 'table' | 'dashboard'
+        const [viewMode, setViewMode] = React.useState('table');
+
+        // Alert config modal
+        const [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
 
         // Duplicate detection state
         const [duplicateInfo, setDuplicateInfo] = React.useState(null);
@@ -1104,6 +1118,35 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         }
 
         return React.createElement('div', { className: 'credential-manager-app' },
+            // ─── Navigation toggle ──────────────────────────────────────
+            React.createElement('div', {
+                style: {
+                    display: 'flex',
+                    gap: '0.5rem',
+                    marginBottom: '1rem',
+                    borderBottom: '1px solid ' + (document.documentElement.classList.contains('dark-theme') ? '#555' : '#ddd'),
+                    paddingBottom: '0.5rem',
+                }
+            },
+                React.createElement(Button, {
+                    onClick: function() { setViewMode('table'); },
+                    appearance: viewMode === 'table' ? 'primary' : 'subtle',
+                    children: 'Credentials'
+                }),
+                React.createElement(Button, {
+                    onClick: function() { setViewMode('dashboard'); },
+                    appearance: viewMode === 'dashboard' ? 'primary' : 'subtle',
+                    children: 'Expiry Dashboard'
+                }),
+                React.createElement('div', { style: { marginLeft: 'auto' } },
+                    React.createElement(Button, {
+                        onClick: function() { setAlertConfigModalOpen(true); },
+                        appearance: 'subtle',
+                        children: '⚙ Alert Settings'
+                    })
+                )
+            ),
+
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -1220,8 +1263,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 )
             ),
 
-            // Credentials table
-            React.createElement(CredentialTable, {
+            // ─── Conditional view: table vs dashboard ─────────────────
+            viewMode === 'table' && React.createElement(CredentialTable, {
                 credentials: sortedCredentials,
                 selectedRows,
                 onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
@@ -1241,6 +1284,17 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 duplicateInfo: duplicateInfo,
                 onOpenPresetModal: function() { setPresetsOpen(true); },
                 columnsRefreshKey: columnsRefreshKey,
+            }),
+
+            // Expiry Dashboard view
+            viewMode === 'dashboard' && React.createElement(ExpiryDashboard, {
+                credentials: credentials,
+                onNavigateToTable: function() {
+                    setViewMode('table');
+                    setActiveFilters([{ field: 'isExpired', value: 'true' }]);
+                },
+                onOpenAlertConfig: function() { setAlertConfigModalOpen(true); },
+                onRefresh: loadCredentials,
             }),
 
             // Undo delete toast
@@ -1362,6 +1416,12 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onSavePreset: handleSavePreset,
                 onDeletePreset: handleDeletePreset,
                 onRenamePreset: handleRenamePreset,
+            }),
+
+            // Expiry alert config modal
+            alertConfigModalOpen && React.createElement(ExpiryAlertConfig, {
+                isOpen: alertConfigModalOpen,
+                onClose: function() { setAlertConfigModalOpen(false); },
             })
         );
     }
