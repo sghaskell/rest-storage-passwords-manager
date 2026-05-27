@@ -117,12 +117,12 @@ const PasswordPolicySettings = require('./components/PasswordPolicySettings');
 const AuditLog = require('./components/AuditLog');
 const ExpiryDashboard = require('./components/ExpiryDashboard');
 const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
+const RoleAccessDashboard = require('./components/RoleAccessDashboard');
+const BulkRoleAssignmentModal = require('./components/BulkRoleAssignmentModal');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal } = require('./components/Modal');
 const CredentialHistoryModal = require('./components/CredentialHistoryModal');
 const PasswordRotationModal = require('./components/PasswordRotationModal');
-const ExpiryDashboard = require('./components/ExpiryDashboard');
-const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
 
 (function() {
     'use strict';
@@ -242,17 +242,15 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             setPresets(API.loadPresets());
         }
 
-        // Expiry dashboard view mode — 'table' | 'dashboard'
-        const [viewMode, setViewMode] = React.useState('table');
-
-        // Alert config modal
-        const [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
-
         // Duplicate detection state
         const [duplicateInfo, setDuplicateInfo] = React.useState(null);
         const [scanning, setScanning] = React.useState(false);
         const [scanProgress, setScanProgress] = React.useState({ current: 0, total: 0 });
         const [scanWarning, setScanWarning] = React.useState(null);
+
+        // Bulk role assignment modal
+        const [bulkRoleOpen, setBulkRoleOpen] = React.useState(false);
+        const [bulkRoleCreds, setBulkRoleCreds] = React.useState([]);
 
         // Countdown timer for undo toast — only recreates when credentials change
         React.useEffect(() => {
@@ -275,6 +273,7 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             users: [],
             currentUserIdentity: 'nobody',
             roles: [],
+            rolesWithCapabilities: [],
         });
 
         // Error helper -- strips XML tags from Splunk responses for readable messages
@@ -344,10 +343,11 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
         React.useEffect(() => {
             async function fetchReferenceData() {
                 try {
-                    const [appsResult, usersResult, rolesResult] = await Promise.allSettled([
+                    const [appsResult, usersResult, rolesResult, rolesCapabilitiesResult] = await Promise.allSettled([
                         API.getApps(),
                         API.getUsers(),
                         API.getRoles(),
+                        API.getRolesWithCapabilities(),
                     ]);
                     setRefData(prev => {
                         const next = { ...prev };
@@ -359,6 +359,9 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                         }
                         if (rolesResult.status === 'fulfilled') {
                             next.roles = rolesResult.value;
+                        }
+                        if (rolesCapabilitiesResult.status === 'fulfilled') {
+                            next.rolesWithCapabilities = rolesCapabilitiesResult.value;
                         }
                         return next;
                     });
@@ -1216,6 +1219,11 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                     appearance: viewMode === 'dashboard' ? 'primary' : 'subtle',
                     children: 'Expiry Dashboard'
                 }),
+                React.createElement(Button, {
+                    onClick: function() { setViewMode('role-access'); },
+                    appearance: viewMode === 'role-access' ? 'primary' : 'subtle',
+                    children: 'Role Access'
+                }),
                 React.createElement('div', { style: { marginLeft: 'auto' } },
                     React.createElement(Button, {
                         onClick: function() { setAlertConfigModalOpen(true); },
@@ -1380,6 +1388,20 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
                 onRefresh: loadCredentials,
             }),
 
+            // Role Access Dashboard view
+            viewMode === 'role-access' && React.createElement(RoleAccessDashboard, {
+                credentials: credentials,
+                rolesWithCapabilities: refData.rolesWithCapabilities,
+                onOpenBulkAssign: function(creds) {
+                    setBulkRoleCreds(creds);
+                    setBulkRoleOpen(true);
+                },
+                onViewCredential: function(cred) {
+                    setViewMode('table');
+                    setFilterText(cred.name);
+                },
+            }),
+
             // Undo delete toast
             undoCredentials.length > 0 && React.createElement(
                 'div',
@@ -1514,6 +1536,30 @@ const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
             alertConfigModalOpen && React.createElement(ExpiryAlertConfig, {
                 isOpen: alertConfigModalOpen,
                 onClose: function() { setAlertConfigModalOpen(false); },
+            }),
+
+            // Bulk role assignment modal
+            bulkRoleOpen && React.createElement(BulkRoleAssignmentModal, {
+                isOpen: bulkRoleOpen,
+                selectedRows: bulkRoleCreds,
+                availableRoles: refData.roles,
+                onClose: function() {
+                    setBulkRoleOpen(false);
+                    setBulkRoleCreds([]);
+                },
+                onApply: function(results) {
+                    setBulkRoleOpen(false);
+                    setBulkRoleCreds([]);
+                    handleDeselectAll();
+                    loadCredentials();
+                    var successCount = results.filter(function(r) { return r.success; }).length;
+                    var failCount = results.length - successCount;
+                    if (failCount === 0) {
+                        showSuccess('Roles Updated', ['Updated ' + successCount + ' credential(s)']);
+                    } else {
+                        showError('Partial Update', ['Updated ' + successCount + ', failed ' + failCount]);
+                    }
+                }
             })
         );
     }

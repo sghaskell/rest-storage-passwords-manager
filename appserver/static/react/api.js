@@ -2176,6 +2176,162 @@ async function deleteTagDefinition(tagName) {
     });
 }
 
+// ─── Role-Based Access (cached capabilities + audit helpers) ───────────────
+
+var _rolesCapabilitiesCache = null;
+var _rolesCapabilitiesCacheTime = 0;
+var ROLES_CACHE_TTL = 300000; // 5 minutes
+
+/**
+ * Fetch all roles with their capabilities.
+ * Returns array of { name, capabilities: [], isAdmin: bool }
+ * Cached for 5 minutes.
+ */
+async function getRolesWithCapabilities() {
+    if (_rolesCapabilitiesCache && (Date.now() - _rolesCapabilitiesCacheTime < ROLES_CACHE_TTL)) {
+        return _rolesCapabilitiesCache;
+    }
+
+    try {
+        var data = await splunkdRequest('/servicesNS/-/-/authorization/roles', { method: 'GET' });
+        var roles = (data.entry || []).map(function(e) {
+            var caps = e.content?.capabilities || [];
+            var isAdmin = caps.indexOf('admin_all_objects') !== -1;
+            return {
+                name: e.name,
+                capabilities: caps,
+                isAdmin: isAdmin,
+            };
+        });
+        _rolesCapabilitiesCache = roles;
+        _rolesCapabilitiesCacheTime = Date.now();
+        return roles;
+    } catch (err) {
+        console.warn('Failed to fetch roles with capabilities:', err.message);
+        return [];
+    }
+}
+
+/**
+ * Clear the roles capabilities cache (call after role changes).
+ */
+function clearRolesCapabilitiesCache() {
+    _rolesCapabilitiesCache = null;
+    _rolesCapabilitiesCacheTime = 0;
+}
+
+/**
+ * Aggregate credentials by role — builds role → credentials map.
+ * @param {Array} credentials - Enriched credentials array
+ * @param {Array} roleNames - Array of role names to check
+ * @returns {Object} { roleMap, openAccessCount, adminWritableCount }
+ */
+function aggregateByRole(credentials, roleNames) {
+    var roleMap = {};
+    var openAccessCount = 0;
+    var adminWritableCount = 0;
+
+    roleNames.forEach(function(r) {
+        roleMap[r] = { read: [], write: [] };
+    });
+
+    credentials.forEach(function(cred) {
+        var readRoles = (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+        var writeRoles = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+
+        if (readRoles.indexOf('*') !== -1 || readRoles.indexOf('* (all)') !== -1) {
+            openAccessCount++;
+        }
+        if (writeRoles.indexOf('admin') !== -1) {
+            adminWritableCount++;
+        }
+
+        readRoles.forEach(function(r) {
+            var normalized = r === '*' ? '* (all)' : r;
+            if (roleMap[normalized]) {
+                roleMap[normalized].read.push(cred);
+            }
+        });
+        writeRoles.forEach(function(r) {
+            var normalized = r === '*' ? '* (all)' : r;
+            if (roleMap[normalized]) {
+                roleMap[normalized].write.push(cred);
+            }
+        });
+    });
+
+    return {
+        roleMap: roleMap,
+        openAccessCount: openAccessCount,
+        adminWritableCount: adminWritableCount,
+    };
+}
+
+/**
+ * Set roles for a credential (read and write).
+ */
+async function setCredentialRoles(credential, readRoles, writeRoles) {
+    var stanzaKey = credential.stanzaKey ||
+        ((credential.realm || '') + ':' + (credential.name || '') + ':');
+    var aclPath = buildAclPath(
+        stanzaKey,
+        credential.namespaceOwner || credential.owner || 'nobody',
+        credential.app || 'search'
+    );
+    var sharing = credential.sharing || 'app';
+    var owner = credential.namespaceOwner || credential.owner || 'nobody';
+    return _setAcl(aclPath, sharing, readRoles, writeRoles, owner);
+}
+
+/**
+ * Bulk assign roles to multiple credentials.
+ * @param {Array} credentials - Array of credential objects
+ * @param {string[]} readRoles - Read roles to assign
+ * @param {string[]} writeRoles - Write roles to assign
+ * @param {string} mode - 'replace' or 'add'
+ * @param {Function} onProgress - Optional progress callback(index, total)
+ * @returns {Array} Results array
+ */
+async function bulkAssignRoles(credentials, readRoles, writeRoles, mode, onProgress) {
+    var results = [];
+    for (var i = 0; i < credentials.length; i++) {
+        var cred = credentials[i];
+        if (onProgress) onProgress(i, credentials.length);
+
+        try {
+            var finalRead = readRoles;
+            var finalWrite = writeRoles;
+
+            if (mode === 'add') {
+                var existingRead = (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+                var existingWrite = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+                finalRead = Array.from(new Set(existingRead.concat(readRoles)));
+                finalWrite = Array.from(new Set(existingWrite.concat(writeRoles)));
+            }
+
+            await setCredentialRoles(cred, finalRead, finalWrite);
+            results.push({ credential: cred, success: true, error: null });
+        } catch (err) {
+            results.push({ credential: cred, success: false, error: err });
+        }
+    }
+    return results;
+}
+
+/**
+ * Get admin-writable credentials.
+ * @param {Array} credentials - Enriched credentials
+ * @param {Array} adminRoles - Array of role names that have admin_all_objects
+ * @returns {Array} Credentials writable by admin roles
+ */
+function getAdminWritableCredentials(credentials, adminRoles) {
+    return credentials.filter(function(cred) {
+        var writeRoles = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); });
+        if (writeRoles.indexOf('*') !== -1 || writeRoles.indexOf('* (all)') !== -1) return true;
+        return adminRoles.some(function(ar) { return writeRoles.indexOf(ar) !== -1; });
+    });
+}
+
 // Export all API functions (CommonJS, consumed via require('./api') in bundle.jsx)
 module.exports = {
     parseError,
@@ -2235,4 +2391,11 @@ module.exports = {
     deleteTagsForCredential,
     deleteTagDefinition,
     hashToColor,
+    // Role-Based Access
+    getRolesWithCapabilities,
+    clearRolesCapabilitiesCache,
+    aggregateByRole,
+    setCredentialRoles,
+    bulkAssignRoles,
+    getAdminWritableCredentials,
 };
