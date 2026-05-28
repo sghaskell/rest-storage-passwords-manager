@@ -108,6 +108,12 @@ var GlobalStyles = _sc.createGlobalStyle`
         outline: none !important;
         box-shadow: none !important;
     }
+
+    /* Spinner animation for scan progress indicator */
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
 `;
 
 // Import self-contained application components
@@ -242,7 +248,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [duplicateInfo, setDuplicateInfo] = React.useState(null);
         const [scanning, setScanning] = React.useState(false);
         const [scanProgress, setScanProgress] = React.useState({ current: 0, total: 0 });
-        const [scanWarning, setScanWarning] = React.useState(null);
 
         // Countdown timer for undo toast — only recreates when credentials change
         React.useEffect(() => {
@@ -539,18 +544,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             var creds = data.credentials;
             if (!creds || creds.length === 0) return;
             setScanning(true);
-            setScanWarning(null);
+            setScanProgress({ current: 0, total: creds.length });
             try {
                 const result = await API.findDuplicatePasswords(creds, function(current, total) {
                     setScanProgress({ current, total });
                 });
                 setDuplicateInfo(result);
-                if (result.warning) setScanWarning(result.warning);
             } catch (err) {
                 console.error('Duplicate scan failed:', err);
             } finally {
                 setScanning(false);
-                setScanProgress({ current: 0, total: 0 });
             }
         }
 
@@ -1302,16 +1305,37 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         children: `Rotate Passwords (${selectedRows.length})`
                     }),
                     React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
-                    // Scan for Duplicates button + progress indicator
-                    React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' } },
-                        React.createElement(Button, {
-                            onClick: function() { scanForDuplicates(); },
-                            appearance: 'subtle',
-                            disabled: scanning,
-                            children: scanning
-                                ? `Scanning ${scanProgress.current}/${scanProgress.total}...`
-                                : 'Scan for Duplicates'
-                        }),
+                    // Duplicate scan progress + result
+                    React.createElement('span', {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            minWidth: scanning ? '160px' : undefined,
+                        }
+                    },
+                        scanning && React.createElement('span', {
+                            style: {
+                                fontSize: '11px',
+                                color: '#3b82f6',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontWeight: '500',
+                            }
+                        },
+                            React.createElement('span', {
+                                style: {
+                                    display: 'inline-block',
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '50%',
+                                    backgroundColor: '#3b82f6',
+                                    animation: 'pulse 1s ease-in-out infinite',
+                                }
+                            }),
+                            `Scanning ${scanProgress.current}/${scanProgress.total}...`
+                        ),
                         duplicateInfo && !scanning && duplicateInfo.totalDuplicates > 0 && React.createElement(
                             'span',
                             {
@@ -1339,13 +1363,9 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             },
                             React.createElement(CheckCircle, { variant: 'filled', size: 12 }),
                             'No duplicates found'
-                        ),
-                        scanWarning && React.createElement(
-                            'span',
-                            { style: { fontSize: '11px', color: '#92400e', fontStyle: 'italic' } },
-                            scanWarning
                         )
                     ),
+
                     React.createElement(Dropdown, {
                         open: moreDropdownOpen,
                         onRequestOpen: () => setMoreDropdownOpen(true),
@@ -1393,7 +1413,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             })
                         )
                     ),
-                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, help: true })), appearance: 'subtle', title: 'Help', children: '?' })
+                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, help: true })), appearance: 'subtle', title: 'Help', children: '?' }),
+                    React.createElement(Button, { onClick: () => setModals(prev => ({ ...prev, policySettings: true })), appearance: 'subtle', children: 'Password Policy' })
                 )
             ),
 
