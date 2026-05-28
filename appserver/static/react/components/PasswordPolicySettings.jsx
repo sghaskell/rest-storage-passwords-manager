@@ -35,12 +35,10 @@ ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
 var _API = require('../api');
 var loadPolicy = _API.loadPolicy;
 var savePolicy = _API.savePolicy;
-var updateSplunkValidator = _API.updateSplunkValidator;
 
 function PasswordPolicySettings({ isOpen, onClose, onSave }) {
     var initial = loadPolicy();
     const [p, setP] = React.useState(initial);
-    const [saving, setSaving] = React.useState(false);
     const [msg, setMsg] = React.useState('');
     const [err, setErr] = React.useState('');
     const [bannedTxt, setBannedTxt] = React.useState((initial.bannedPasswords || []).join('\n'));
@@ -66,28 +64,10 @@ function PasswordPolicySettings({ isOpen, onClose, onSave }) {
         savePolicy(final);
         setMsg('Password policy saved locally.');
         setErr('');
-        if (onSave) onSave(Object.assign({}, final, { appliedToSplunk: false }));
+        if (onSave) onSave(final);
     }
 
-    // Save and sync to Splunk
-    async function saveAndSync() {
-        setSaving(true);
-        setErr('');
-        setMsg('');
-        var final = Object.assign({}, p, { bannedPasswords: bannedTxt.split('\n').map(function(s) { return s.trim(); }).filter(Boolean) });
-        try {
-            savePolicy(final);
-            await updateSplunkValidator(final);
-            setMsg('Password policy saved and synced to Splunk.');
-            if (onSave) onSave(Object.assign({}, final, { appliedToSplunk: true }));
-        } catch (e) {
-            savePolicy(final);
-            setMsg('Password policy saved locally.');
-            setErr('Failed to sync to Splunk: ' + (e.message || String(e)) + '. Local policy was saved.');
-        } finally {
-            setSaving(false);
-        }
-    }
+
 
     // ─── Shared styles ──────────────────────────────────────────────
     var isDark = detectDark();
@@ -276,11 +256,8 @@ function PasswordPolicySettings({ isOpen, onClose, onSave }) {
                     onClick: onClose, appearance: 'subtle',
                 }, 'Cancel'),
                 React.createElement(Button, {
-                    onClick: saveLocal, appearance: 'subtle', disabled: saving,
-                }, 'Save Locally'),
-                React.createElement(Button, {
-                    onClick: saveAndSync, appearance: 'primary', disabled: saving,
-                }, saving ? 'Saving...' : 'Save & Apply to Splunk')
+                    onClick: saveLocal, appearance: 'primary',
+                }, 'Save')
             )
         )
     );

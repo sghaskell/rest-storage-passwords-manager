@@ -1982,56 +1982,6 @@ function validatePasswordAgainstPolicy(password, policy) {
     return errors;
 }
 
-/**
- * Sync password policy to Splunk server-side validation.
- */
-async function updateSplunkValidator(policy) {
-    if (!policy.enabled) {
-        return splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
-            method: 'POST',
-            body: {
-                min_length: 1,
-                max_length: 256,
-                min_digits: 0,
-                min_upper: 0,
-                min_lower: 0,
-                min_special: 0,
-            },
-        });
-    }
-
-    var body = {
-        min_length: policy.minLength,
-        max_length: policy.maxLength,
-        min_digits: policy.requireDigits ? policy.minDigits : 0,
-        min_upper: policy.requireUppercase ? policy.minUppercase : 0,
-        min_lower: policy.requireLowercase ? policy.minLowercase : 0,
-        min_special: policy.requireSpecial ? policy.minSpecial : 0,
-    };
-
-    if (policy.bannedPasswords && policy.bannedPasswords.length > 0) {
-        policy.bannedPasswords.forEach(function(pwd) {
-            body['banned_passwords'] = (body['banned_passwords'] ? body['banned_passwords'] + ',' : '') + pwd;
-        });
-    }
-
-    return splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
-        method: 'POST',
-        body: body,
-    });
-}
-
-async function getSplunkValidator() {
-    try {
-        return await splunkdRequest('/servicesNS/admin/search/config/password-validation/simple', {
-            method: 'GET',
-        });
-    } catch (e) {
-        if (e.status === 404) return null;
-        throw e;
-    }
-}
-
 // ─── Credential Expiry (KVStore) ──────────────────────────────────────────
 // Expiry dates are stored in a KVStore collection instead of embedding in the realm.
 // This avoids the destructive rename dance (create new + delete old) when updating expiry.
@@ -2761,11 +2711,10 @@ module.exports = {
     getExpiryAlert,
     deleteExpiryAlert,
     // Password Policy
+    // Policy
     loadPolicy,
     savePolicy,
     validatePasswordAgainstPolicy,
-    updateSplunkValidator,
-    getSplunkValidator,
     // Role-Based Access
     getRolesWithCapabilities,
     clearRolesCapabilitiesCache,
