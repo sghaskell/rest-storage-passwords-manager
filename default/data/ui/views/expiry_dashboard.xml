@@ -1,0 +1,16 @@
+<!--
+  expiry_dashboard.xml  –  React-based Splunk Dashboard for expiry monitoring
+-->
+<dashboard version="1.1" script="react/bundle.js" theme="dark">
+  <label>Expiry Dashboard</label>
+  
+  <row>
+    <panel>
+      <html>
+        <div id="expiry-dashboard-app" class="expiry-dashboard-container">
+          <!-- React ExpiryDashboard component will be mounted here -->
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

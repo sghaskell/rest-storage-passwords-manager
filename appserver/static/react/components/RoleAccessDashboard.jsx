@@ -429,8 +429,8 @@ function RoleAccessDashboard({
                                 // Username
                                 React.createElement('td', { style: { padding: '8px 12px' } },
                                     React.createElement('span', {
-                                        onClick: function() { onViewCredential(cred); },
-                                        style: { cursor: 'pointer', color: '#3b82f6', textDecoration: 'underline' }
+                                        onClick: onViewCredential ? function() { onViewCredential(cred); } : null,
+                                        style: { cursor: onViewCredential ? 'pointer' : 'default', color: '#3b82f6', textDecoration: 'underline' }
                                     }, cred.name || ''),
                                     isOpen && React.createElement('span', {
                                         style: { display: 'inline-block', marginLeft: '6px', fontSize: '11px', color: '#f59e0b' }

@@ -197,12 +197,12 @@ function ExpiryDashboard({
             borderBottom: '1px solid var(--ed-border)',
         }
     },
-        // Back button
-        React.createElement(Button, {
+        // Back button — only render if onNavigateToTable is provided
+        onNavigateToTable ? React.createElement(Button, {
             onClick: onNavigateToTable,
             appearance: 'subtle',
             children: '\u2190 Credentials Table'
-        }),
+        }) : null,
 
         // Refresh
         React.createElement(Button, {
@@ -245,12 +245,12 @@ function ExpiryDashboard({
             }, thresholdDays + 'd')
         ),
 
-        // Alert config button
-        React.createElement(Button, {
+        // Alert config button — only render if onOpenAlertConfig is provided
+        onOpenAlertConfig ? React.createElement(Button, {
             onClick: onOpenAlertConfig,
             appearance: 'subtle',
             children: '\u2699 Alert Settings'
-        })
+        }) : null
     );
 
     // ─── Stats cards ──────────────────────────────────────────────────────

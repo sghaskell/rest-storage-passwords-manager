@@ -1,0 +1,16 @@
+<!--
+  role_access.xml  –  React-based Splunk Dashboard for role access auditing
+-->
+<dashboard version="1.1" script="react/bundle.js" theme="dark">
+  <label>Role Access</label>
+  
+  <row>
+    <panel>
+      <html>
+        <div id="role-access-app" class="role-access-container">
+          <!-- React RoleAccessDashboard component will be mounted here -->
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

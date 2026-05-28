@@ -188,10 +188,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [presets, setPresets] = React.useState([]);
         const [columnsRefreshKey, setColumnsRefreshKey] = React.useState(0);
 
-        // View mode — 'table' | 'dashboard'
-        const [viewMode, setViewMode] = React.useState('table');
-        const [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
-
         // Load presets on mount
         React.useEffect(function() {
             setPresets(API.loadPresets());
@@ -247,10 +243,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [scanning, setScanning] = React.useState(false);
         const [scanProgress, setScanProgress] = React.useState({ current: 0, total: 0 });
         const [scanWarning, setScanWarning] = React.useState(null);
-
-        // Bulk role assignment modal
-        const [bulkRoleOpen, setBulkRoleOpen] = React.useState(false);
-        const [bulkRoleCreds, setBulkRoleCreds] = React.useState([]);
 
         // Countdown timer for undo toast — only recreates when credentials change
         React.useEffect(() => {
@@ -1213,45 +1205,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         }
 
         return React.createElement('div', { className: 'credential-manager-app' },
-            // ─── Navigation toggle ──────────────────────────────────────
-            React.createElement('div', {
-                style: {
-                    display: 'flex',
-                    gap: '0.5rem',
-                    marginBottom: '1rem',
-                    borderBottom: '1px solid ' + (document.documentElement.classList.contains('dark-theme') ? '#555' : '#ddd'),
-                    paddingBottom: '0.5rem',
-                }
-            },
-                React.createElement(Button, {
-                    onClick: function() { setViewMode('table'); },
-                    appearance: viewMode === 'table' ? 'primary' : 'subtle',
-                    children: 'Credentials'
-                }),
-                React.createElement(Button, {
-                    onClick: function() { setViewMode('dashboard'); },
-                    appearance: viewMode === 'dashboard' ? 'primary' : 'subtle',
-                    children: 'Expiry Dashboard'
-                }),
-                React.createElement(Button, {
-                    onClick: function() { setViewMode('role-access'); },
-                    appearance: viewMode === 'role-access' ? 'primary' : 'subtle',
-                    children: 'Role Access'
-                }),
-                React.createElement('div', { style: { marginLeft: 'auto' } },
-                    React.createElement(Button, {
-                        onClick: function() { setAlertConfigModalOpen(true); },
-                        appearance: 'subtle',
-                        children: '⚙ Alert Settings'
-                    }),
-                    React.createElement(Button, {
-                        onClick: function() { setModals(prev => ({ ...prev, policySettings: true })); },
-                        appearance: 'subtle',
-                        children: 'Password Policy'
-                    })
-                )
-            ),
-
             // Toolbar with actions
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
                 React.createElement('div', { style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' } },
@@ -1382,8 +1335,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 )
             ),
 
-            // ─── Conditional view: table vs dashboard ─────────────────
-            viewMode === 'table' && React.createElement(CredentialTable, {
+            // Credential table
+            React.createElement(CredentialTable, {
                 credentials: sortedCredentials,
                 selectedRows,
                 onDelete: (credential) => { setSelectedCredential(credential); setModals(prev => ({ ...prev, delete: true })); },
@@ -1403,31 +1356,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 duplicateInfo: duplicateInfo,
                 onOpenPresetModal: function() { setPresetsOpen(true); },
                 columnsRefreshKey: columnsRefreshKey,
-            }),
-
-            // Expiry Dashboard view
-            viewMode === 'dashboard' && React.createElement(ExpiryDashboard, {
-                credentials: credentials,
-                onNavigateToTable: function() {
-                    setViewMode('table');
-                    setActiveFilters([{ field: 'isExpired', value: 'true' }]);
-                },
-                onOpenAlertConfig: function() { setAlertConfigModalOpen(true); },
-                onRefresh: loadCredentials,
-            }),
-
-            // Role Access Dashboard view
-            viewMode === 'role-access' && React.createElement(RoleAccessDashboard, {
-                credentials: credentials,
-                rolesWithCapabilities: refData.rolesWithCapabilities,
-                onOpenBulkAssign: function(creds) {
-                    setBulkRoleCreds(creds);
-                    setBulkRoleOpen(true);
-                },
-                onViewCredential: function(cred) {
-                    setViewMode('table');
-                    setFilterText(cred.name);
-                },
             }),
 
             // Undo delete toast
@@ -1560,35 +1488,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onRenamePreset: handleRenamePreset,
             }),
 
-            // Expiry alert config modal
-            alertConfigModalOpen && React.createElement(ExpiryAlertConfig, {
-                isOpen: alertConfigModalOpen,
-                onClose: function() { setAlertConfigModalOpen(false); },
-            }),
-
-            // Bulk role assignment modal
-            bulkRoleOpen && React.createElement(BulkRoleAssignmentModal, {
-                isOpen: bulkRoleOpen,
-                selectedRows: bulkRoleCreds,
-                availableRoles: refData.roles,
-                onClose: function() {
-                    setBulkRoleOpen(false);
-                    setBulkRoleCreds([]);
-                },
-                onApply: function(results) {
-                    setBulkRoleOpen(false);
-                    setBulkRoleCreds([]);
-                    handleDeselectAll();
-                    loadCredentials();
-                    var successCount = results.filter(function(r) { return r.success; }).length;
-                    var failCount = results.length - successCount;
-                    if (failCount === 0) {
-                        showSuccess('Roles Updated', ['Updated ' + successCount + ' credential(s)']);
-                    } else {
-                        showError('Partial Update', ['Updated ' + successCount + ', failed ' + failCount]);
-                    }
-                }
-            })
+            // Expiry alert config modal — removed (moved to ExpiryDashboardView)
+            // Bulk role assignment modal — removed (moved to RoleAccessView)
         );
     }
 
@@ -1843,6 +1744,193 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         );
     }
 
+    /**
+     * navigateToView — navigate to another Splunk view within the same app.
+     * Replaces the last path segment (current view name) with the target view name.
+     */
+    function navigateToView(viewName) {
+        var parts = window.location.pathname.split('/');
+        if (parts.length >= 4) {
+            parts[parts.length - 1] = viewName;
+            window.location.pathname = parts.join('/');
+        } else {
+            window.location.href = 'credential_management';
+        }
+    }
+
+    /**
+     * ExpiryDashboardView — standalone wrapper for ExpiryDashboard.
+     * Loads and enriches credentials, manages alert config modal.
+     * Mounted independently when the Expiry Dashboard Splunk view is active.
+     */
+    function ExpiryDashboardView() {
+        var [credentials, setCredentials] = React.useState([]);
+        var [loading, setLoading] = React.useState(true);
+        var [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
+
+        React.useEffect(function() {
+            async function load() {
+                setLoading(true);
+                try {
+                    var fetched = await API.getAllCredentials();
+                    // Fetch tag data
+                    var allTags = {};
+                    var tagDefs = [];
+                    try {
+                        await API.ensureTagCollections();
+                        allTags = await API.getAllTagsData();
+                        tagDefs = await API.getAllTagDefinitions();
+                    } catch (tagErr) {
+                        console.warn('[ExpiryDashboard] tag data fetch failed:', tagErr);
+                    }
+                    var tagColorMap = {};
+                    tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
+
+                    var enriched = fetched.map(function(cred) {
+                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                        var credKey = API.tagCredKey(cred);
+                        var tags = allTags[credKey] || [];
+                        var enrichedTags = tags.map(function(t) {
+                            return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
+                        });
+                        return Object.assign({}, cred, {
+                            expiryDate: expiryInfo.expiryDate || '',
+                            rotationStatus: rotationStatus,
+                            tags: enrichedTags,
+                        });
+                    });
+                    setCredentials(enriched);
+                } catch (err) {
+                    console.error('[ExpiryDashboard] Error loading credentials:', err);
+                } finally {
+                    setLoading(false);
+                }
+            }
+            load();
+        }, []);
+
+        if (loading) {
+            return React.createElement('div', { style: { padding: '2rem' } }, React.createElement('p', null, 'Loading credentials...'));
+        }
+
+        return React.createElement(React.Fragment, null,
+            React.createElement(ExpiryDashboard, {
+                credentials: credentials,
+                onNavigateToTable: function() {
+                    navigateToView('credential_management');
+                },
+                onOpenAlertConfig: function() { setAlertConfigModalOpen(true); },
+                onRefresh: async function() {
+                    var fetched = await API.getAllCredentials();
+                    var enriched = fetched.map(function(cred) {
+                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                        return Object.assign({}, cred, {
+                            expiryDate: expiryInfo.expiryDate || '',
+                            rotationStatus: rotationStatus,
+                            tags: [],
+                        });
+                    });
+                    setCredentials(enriched);
+                },
+            }),
+            alertConfigModalOpen && React.createElement(ExpiryAlertConfig, {
+                isOpen: alertConfigModalOpen,
+                onClose: function() { setAlertConfigModalOpen(false); },
+            })
+        );
+    }
+
+    /**
+     * RoleAccessView — standalone wrapper for RoleAccessDashboard.
+     * Loads and enriches credentials + roles, manages bulk role modal.
+     * Mounted independently when the Role Access Splunk view is active.
+     */
+    function RoleAccessView() {
+        var [credentials, setCredentials] = React.useState([]);
+        var [rolesWithCapabilities, setRolesWithCapabilities] = React.useState([]);
+        var [loading, setLoading] = React.useState(true);
+        var [bulkRoleOpen, setBulkRoleOpen] = React.useState(false);
+        var [bulkRoleCreds, setBulkRoleCreds] = React.useState([]);
+
+        React.useEffect(function() {
+            async function load() {
+                setLoading(true);
+                try {
+                    var [fetched, rolesResult] = await Promise.all([
+                        API.getAllCredentials(),
+                        API.getRolesWithCapabilities()
+                    ]);
+
+                    // Enrich credentials
+                    var enriched = fetched.map(function(cred) {
+                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                        return Object.assign({}, cred, {
+                            expiryDate: expiryInfo.expiryDate || '',
+                            rotationStatus: rotationStatus,
+                            tags: [],
+                        });
+                    });
+                    setCredentials(enriched);
+                    setRolesWithCapabilities(rolesResult || []);
+                } catch (err) {
+                    console.error('[RoleAccess] Error loading data:', err);
+                } finally {
+                    setLoading(false);
+                }
+            }
+            load();
+        }, []);
+
+        if (loading) {
+            return React.createElement('div', { style: { padding: '2rem' } }, React.createElement('p', null, 'Loading data...'));
+        }
+
+        return React.createElement(React.Fragment, null,
+            React.createElement(RoleAccessDashboard, {
+                credentials: credentials,
+                rolesWithCapabilities: rolesWithCapabilities,
+                onOpenBulkAssign: function(creds) {
+                    setBulkRoleCreds(creds);
+                    setBulkRoleOpen(true);
+                },
+                onViewCredential: function(cred) {
+                    navigateToView('credential_management');
+                },
+            }),
+            bulkRoleOpen && React.createElement(BulkRoleAssignmentModal, {
+                isOpen: bulkRoleOpen,
+                selectedRows: bulkRoleCreds,
+                availableRoles: rolesWithCapabilities.map(function(r) { return r.name; }),
+                onClose: function() {
+                    setBulkRoleOpen(false);
+                    setBulkRoleCreds([]);
+                },
+                onApply: function(results) {
+                    setBulkRoleOpen(false);
+                    setBulkRoleCreds([]);
+                    // Reload credentials after role update
+                    var doReload = async function() {
+                        var fetched = await API.getAllCredentials();
+                        var enriched = fetched.map(function(cred) {
+                            var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
+                            var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                            return Object.assign({}, cred, {
+                                expiryDate: expiryInfo.expiryDate || '',
+                                rotationStatus: rotationStatus,
+                                tags: [],
+                            });
+                        });
+                        setCredentials(enriched);
+                    };
+                    doReload();
+                }
+            })
+        );
+    }
+
     window.CredentialManager = {
         Component: CredentialManager,
         _initialized: false,
@@ -1873,15 +1961,40 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             window.CredentialManager.init(mvc);
 
             // AuditLog init — guard against double init
-            if (window.CredentialManager._auditInitialized) return;
-            window.CredentialManager._auditInitialized = true;
-            var auditContainer = document.getElementById('audit-log-app');
-            if (auditContainer) {
-                var auditRoot = ReactDOM.createRoot(auditContainer);
-                auditRoot.render(React.createElement(ThemeAwareApp, {
-                    appComponent: AuditLog,
-                    appProps: { mvc: mvc }
-                }));
+            if (!window.CredentialManager._auditInitialized) {
+                window.CredentialManager._auditInitialized = true;
+                var auditContainer = document.getElementById('audit-log-app');
+                if (auditContainer) {
+                    var auditRoot = ReactDOM.createRoot(auditContainer);
+                    auditRoot.render(React.createElement(ThemeAwareApp, {
+                        appComponent: AuditLog,
+                        appProps: { mvc: mvc }
+                    }));
+                }
+            }
+
+            // ExpiryDashboard init — mount only if container exists
+            if (!window.CredentialManager._expiryInitialized) {
+                window.CredentialManager._expiryInitialized = true;
+                var expiryContainer = document.getElementById('expiry-dashboard-app');
+                if (expiryContainer) {
+                    var expiryRoot = ReactDOM.createRoot(expiryContainer);
+                    expiryRoot.render(React.createElement(ThemeAwareApp, {
+                        appComponent: ExpiryDashboardView
+                    }));
+                }
+            }
+
+            // RoleAccess init — mount only if container exists
+            if (!window.CredentialManager._roleAccessInitialized) {
+                window.CredentialManager._roleAccessInitialized = true;
+                var roleAccessContainer = document.getElementById('role-access-app');
+                if (roleAccessContainer) {
+                    var roleAccessRoot = ReactDOM.createRoot(roleAccessContainer);
+                    roleAccessRoot.render(React.createElement(ThemeAwareApp, {
+                        appComponent: RoleAccessView
+                    }));
+                }
             }
         });
     } else {
