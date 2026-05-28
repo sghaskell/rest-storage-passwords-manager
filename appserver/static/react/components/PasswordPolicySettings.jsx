@@ -33,15 +33,27 @@ ModalMod.Body && (Modal.Body = ModalMod.Body);
 ModalMod.Footer && (Modal.Footer = ModalMod.Footer);
 
 var _API = require('../api');
-var loadPolicy = _API.loadPolicy;
+var loadPolicyFromKVStore = _API.loadPolicyFromKVStore;
 var savePolicy = _API.savePolicy;
+var savePolicyToKVStore = _API.savePolicyToKVStore;
 
 function PasswordPolicySettings({ isOpen, onClose, onSave }) {
-    var initial = loadPolicy();
-    const [p, setP] = React.useState(initial);
+    const [p, setP] = React.useState(null);
+    const [saving, setSaving] = React.useState(false);
     const [msg, setMsg] = React.useState('');
     const [err, setErr] = React.useState('');
-    const [bannedTxt, setBannedTxt] = React.useState((initial.bannedPasswords || []).join('\n'));
+    const [bannedTxt, setBannedTxt] = React.useState('');
+
+    // Load policy from KVStore on open
+    React.useEffect(function() {
+        if (!isOpen) return;
+        async function load() {
+            var loaded = await loadPolicyFromKVStore();
+            setP(loaded);
+            setBannedTxt((loaded.bannedPasswords || []).join('\n'));
+        }
+        load();
+    }, [isOpen]);
 
     // Update a single policy field
     function set(key, val) {
@@ -58,13 +70,24 @@ function PasswordPolicySettings({ isOpen, onClose, onSave }) {
         });
     }
 
-    // Save to localStorage only
-    function saveLocal() {
-        var final = Object.assign({}, p, { bannedPasswords: bannedTxt.split('\n').map(function(s) { return s.trim(); }).filter(Boolean) });
-        savePolicy(final);
-        setMsg('Password policy saved locally.');
+    // Save policy to KVStore (and localStorage cache)
+    async function saveLocal() {
+        setSaving(true);
+        setMsg('');
         setErr('');
-        if (onSave) onSave(final);
+        var final = Object.assign({}, p, { bannedPasswords: bannedTxt.split('\n').map(function(s) { return s.trim(); }).filter(Boolean) });
+        try {
+            await savePolicyToKVStore(final);
+            setMsg('Password policy saved.');
+            if (onSave) onSave(final);
+        } catch (e) {
+            // Fallback: save to localStorage only
+            savePolicy(final);
+            setMsg('Password policy saved locally (KVStore unavailable).');
+            setErr('Failed to save to server: ' + (e.message || String(e)) + '. Local copy preserved.');
+        } finally {
+            setSaving(false);
+        }
     }
 
 
@@ -102,6 +125,25 @@ function PasswordPolicySettings({ isOpen, onClose, onSave }) {
 
     // ─── Render ────────────────────────────────────────────────────
     if (!isOpen) return null;
+
+    // Wait for policy to load from KVStore
+    if (!p) {
+        return React.createElement(Modal, {
+            open: true,
+            onRequestClose: onClose,
+            divider: 'both',
+            style: { width: '700px', maxWidth: '95%' },
+        },
+            React.createElement('div', null,
+                React.createElement(Modal.Header, null,
+                    React.createElement('h3', { style: { margin: 0 } }, 'Password Policy Settings')
+                ),
+                React.createElement(Modal.Body, null,
+                    React.createElement('p', null, 'Loading...')
+                )
+            )
+        );
+    }
 
     return React.createElement(Modal, {
         open: true,
@@ -256,8 +298,8 @@ function PasswordPolicySettings({ isOpen, onClose, onSave }) {
                     onClick: onClose, appearance: 'subtle',
                 }, 'Cancel'),
                 React.createElement(Button, {
-                    onClick: saveLocal, appearance: 'primary',
-                }, 'Save')
+                    onClick: saveLocal, appearance: 'primary', disabled: saving,
+                }, saving ? 'Saving...' : 'Save')
             )
         )
     );

@@ -1889,6 +1889,7 @@ async function deleteExpiryAlert() {
 // ─── Password Policy (localStorage + Splunk sync) ───────────────────────────
 
 const POLICY_KEY = 'password-policy-config';
+const POLICY_COLLECTION = 'password_policy';
 
 const DEFAULT_POLICY = {
     enabled: false,
@@ -1906,6 +1907,8 @@ const DEFAULT_POLICY = {
 };
 
 function loadPolicy() {
+    // Load from localStorage only — it's synced by savePolicy.
+    // For async KV Store load, use loadPolicyFromKVStore() instead.
     try {
         var stored = localStorage.getItem(POLICY_KEY);
         if (stored) {
@@ -1924,6 +1927,90 @@ function savePolicy(policy) {
     } catch (e) {
         console.warn('Failed to save password policy:', e);
     }
+}
+
+/**
+ * Ensure the password policy KVStore collection exists.
+ */
+async function ensurePolicyCollection() {
+    return ensureCollection(POLICY_COLLECTION);
+}
+
+/**
+ * Load password policy from KVStore.
+ * Falls back to localStorage if KVStore is unavailable.
+ */
+async function loadPolicyFromKVStore() {
+    try {
+        await ensurePolicyCollection();
+        var response = await splunkdRequest(KVSTORE_DATA + '/' + POLICY_COLLECTION, {
+            method: 'GET',
+        });
+        var entries = response.results || response;
+        if (Array.isArray(entries) && entries.length > 0) {
+            var stored = entries[0];
+            var policy = {
+                enabled: stored.enabled,
+                minLength: stored.minLength || stored.min_length,
+                maxLength: stored.maxLength || stored.max_length,
+                requireUppercase: stored.requireUppercase,
+                requireLowercase: stored.requireLowercase,
+                requireDigits: stored.requireDigits,
+                requireSpecial: stored.requireSpecial,
+                minUppercase: stored.minUppercase,
+                minLowercase: stored.minLowercase,
+                minDigits: stored.minDigits,
+                minSpecial: stored.minSpecial,
+                bannedPasswords: stored.bannedPasswords ? stored.bannedPasswords.split(',') : [],
+            };
+            // Save to localStorage cache
+            savePolicy(policy);
+            return policy;
+        }
+    } catch (e) {
+        console.warn('[POLICY] KVStore load failed, using localStorage:', e.message);
+    }
+    // Fallback: migrate from localStorage if available, otherwise defaults
+    var local = loadPolicy();
+    if (local && Object.keys(local).length > 0) {
+        try {
+            await savePolicyToKVStore(local);
+            console.log('[POLICY] Migrated localStorage policy to KVStore');
+        } catch (saveErr) {
+            console.warn('[POLICY] Migration failed:', saveErr.message);
+        }
+        return local;
+    }
+    return Object.assign({}, DEFAULT_POLICY);
+}
+
+/**
+ * Save password policy to KVStore (and sync to localStorage cache).
+ */
+async function savePolicyToKVStore(policy) {
+    await ensurePolicyCollection();
+    var body = {
+        _key: 'default',
+        enabled: policy.enabled,
+        min_length: policy.minLength,
+        max_length: policy.maxLength,
+        requireUppercase: policy.requireUppercase,
+        requireLowercase: policy.requireLowercase,
+        requireDigits: policy.requireDigits,
+        requireSpecial: policy.requireSpecial,
+        minUppercase: policy.minUppercase,
+        minLowercase: policy.minLowercase,
+        minDigits: policy.minDigits,
+        minSpecial: policy.minSpecial,
+        bannedPasswords: (policy.bannedPasswords || []).join(','),
+    };
+    await splunkdRequest(KVSTORE_DATA + '/' + POLICY_COLLECTION + '/default', {
+        method: 'POST',
+        body: body,
+        jsonBody: true,
+    });
+    // Sync to localStorage cache
+    savePolicy(policy);
 }
 
 /**
@@ -2714,6 +2801,9 @@ module.exports = {
     // Policy
     loadPolicy,
     savePolicy,
+    loadPolicyFromKVStore,
+    savePolicyToKVStore,
+    ensurePolicyCollection,
     validatePasswordAgainstPolicy,
     // Role-Based Access
     getRolesWithCapabilities,
