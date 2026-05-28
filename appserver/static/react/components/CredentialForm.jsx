@@ -92,8 +92,10 @@ function CredentialForm({
     const [isChangingPassword, setIsChangingPassword] = React.useState(false);
     const [expiryDate, setExpiryDate] = React.useState('');
     const [errors, setErrors] = React.useState({});
+    const [showAdvanced, setShowAdvanced] = React.useState(false);
     const [showGenerator, setShowGenerator] = React.useState(false);
     const [copiedPassword, setCopiedPassword] = React.useState(false);
+    const [showGenOptions, setShowGenOptions] = React.useState(false);
     const [genLength, setGenLength] = React.useState(16);
     const [genOptions, setGenOptions] = React.useState({
         uppercase: true,
@@ -315,6 +317,10 @@ function CredentialForm({
         setShowGenerator(function(p) { return !p; });
     }
 
+    function toggleAdvanced() {
+        setShowAdvanced(function(p) { return !p; });
+    }
+
     function handleOptionChange(key) {
         setGenOptions(function(prev) { return Object.assign({}, prev, { [key]: !prev[key] }); });
     }
@@ -364,6 +370,13 @@ function CredentialForm({
     function gridRow(left, right) {
         return React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 1.5rem' } }, left, right);
     }
+
+    // Tag "No tags" pill colors — match CredentialTable Tags column
+    var noneColor = '#9e9e9e';
+    var isDark = document.documentElement.classList.contains('dark-theme') ||
+        document.documentElement.classList.contains('theme-dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (document.body && document.body.classList.contains('dark-theme'));
 
     return React.createElement(
         'form',
@@ -430,71 +443,77 @@ function CredentialForm({
             )
         ),
 
-        // Row 3: Owner (single column, full width)
+        // Advanced Settings — collapsible section for Owner + Roles
         React.createElement('div', { style: { width: '100%' } },
-            formField('Owner',
-                React.createElement(Selector, {
-                    value: owner,
-                    onChange: function(e, data) { var val = data && data.value != null ? data.value : owner; setOwner(val); },
-                    style: { width: '100%' }
-                }, ownerData.map(function(u) {
-                    return React.createElement(SelectOption, { key: 'owner-' + u.value, label: u.label, value: u.value });
-                })),
-                { helpText: 'User who owns this credential' }
-            )
-        ),
-
-        // Row 4: Read Roles + Write Roles (side by side)
-        gridRow(
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
-                React.createElement('label', { style: { fontSize: '14px', fontWeight: '500' } }, 'Read Roles *'),
-                React.createElement(MultiSelector, {
-                    placeholder: 'Select roles...',
-                    values: readRolesArray,
-                    onChange: function(e, data) {
-                        var newVals = data.values ? data.values.slice() : [];
-                        var prevVals = prevReadRolesRef.current;
-                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
-                        if (added.includes('* (all)')) { newVals = ['* (all)']; }
-                        else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
-                        prevReadRolesRef.current = newVals;
-                        setReadRolesArray(newVals);
-                        clearError('readRoles');
-                    },
-                }, rolesData.map(function(r) {
-                    return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
-                })),
-                React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
-                    React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); } }, 'Select All'),
-                    React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); } }, 'Reset')
+            React.createElement(Button, {
+                type: 'button',
+                appearance: 'subtle',
+                onClick: toggleAdvanced,
+                style: { width: '100%', justifyContent: 'center', textAlign: 'center', padding: '6px 0' },
+            }, showAdvanced ? '\u25B2 Hide Advanced Settings' : '\u25BC Show Advanced Settings (Owner, Roles)'),
+            showAdvanced && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '1rem', paddingTop: '0.5rem' } },
+                formField('Owner',
+                    React.createElement(Selector, {
+                        value: owner,
+                        onChange: function(e, data) { var val = data && data.value != null ? data.value : owner; setOwner(val); },
+                        style: { width: '100%' }
+                    }, ownerData.map(function(u) {
+                        return React.createElement(SelectOption, { key: 'owner-' + u.value, label: u.label, value: u.value });
+                    })),
+                    { helpText: 'User who owns this credential' }
                 ),
-                errors.readRoles && React.createElement('span', { style: { fontSize: '12px', color: '#d32f2f' } }, errors.readRoles),
-                React.createElement('span', { style: { fontSize: '12px', color: '#999' } }, '* (all) is mutually exclusive')
-            ),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
-                React.createElement('label', { style: { fontSize: '14px', fontWeight: '500' } }, 'Write Roles *'),
-                React.createElement(MultiSelector, {
-                    placeholder: 'Select roles...',
-                    values: writeRolesArray,
-                    onChange: function(e, data) {
-                        var newVals = data.values ? data.values.slice() : [];
-                        var prevVals = prevWriteRolesRef.current;
-                        var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
-                        if (added.includes('* (all)')) { newVals = ['* (all)']; }
-                        else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
-                        prevWriteRolesRef.current = newVals;
-                        setWriteRolesArray(newVals);
-                        clearError('writeRoles');
-                    },
-                }, rolesData.map(function(r) {
-                    return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
-                })),
-                React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
-                    React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); } }, 'Select All'),
-                    React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); } }, 'Reset')
-                ),
-                errors.writeRoles && React.createElement('span', { style: { fontSize: '12px', color: '#d32f2f' } }, errors.writeRoles),
-                React.createElement('span', { style: { fontSize: '12px', color: '#999' } }, '* (all) is mutually exclusive')
+                gridRow(
+                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                        React.createElement('label', { style: { fontSize: '14px', fontWeight: '500' } }, 'Read Roles *'),
+                        React.createElement(MultiSelector, {
+                            placeholder: 'Select roles...',
+                            values: readRolesArray,
+                            onChange: function(e, data) {
+                                var newVals = data.values ? data.values.slice() : [];
+                                var prevVals = prevReadRolesRef.current;
+                                var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+                                if (added.includes('* (all)')) { newVals = ['* (all)']; }
+                                else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
+                                prevReadRolesRef.current = newVals;
+                                setReadRolesArray(newVals);
+                                clearError('readRoles');
+                            },
+                        }, rolesData.map(function(r) {
+                            return React.createElement(MultiSelectOption, { key: 'role-rd-' + r.value, label: r.label, value: r.value });
+                        })),
+                        React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
+                            React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); } }, 'Select All'),
+                            React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = (defaultReadRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevReadRolesRef.current = arr; setReadRolesArray(arr); clearError('readRoles'); } }, 'Reset')
+                        ),
+                        errors.readRoles && React.createElement('span', { style: { fontSize: '12px', color: '#d32f2f' } }, errors.readRoles),
+                        React.createElement('span', { style: { fontSize: '12px', color: '#999' } }, '* (all) is mutually exclusive')
+                    ),
+                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
+                        React.createElement('label', { style: { fontSize: '14px', fontWeight: '500' } }, 'Write Roles *'),
+                        React.createElement(MultiSelector, {
+                            placeholder: 'Select roles...',
+                            values: writeRolesArray,
+                            onChange: function(e, data) {
+                                var newVals = data.values ? data.values.slice() : [];
+                                var prevVals = prevWriteRolesRef.current;
+                                var added = newVals.filter(function(v) { return prevVals.indexOf(v) === -1; });
+                                if (added.includes('* (all)')) { newVals = ['* (all)']; }
+                                else if (added.length > 0 && !added.includes('* (all)') && prevVals.includes('* (all)')) { newVals = newVals.filter(function(v) { return v !== '* (all)'; }); }
+                                prevWriteRolesRef.current = newVals;
+                                setWriteRolesArray(newVals);
+                                clearError('writeRoles');
+                            },
+                        }, rolesData.map(function(r) {
+                            return React.createElement(MultiSelectOption, { key: 'role-wr-' + r.value, label: r.label, value: r.value });
+                        })),
+                        React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
+                            React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = rolesData.map(function(r) { return r.value !== '* (all)' ? r.value : null; }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); } }, 'Select All'),
+                            React.createElement(Button, { type: 'button', appearance: 'subtle', onClick: function() { var arr = (defaultWriteRoles || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean); prevWriteRolesRef.current = arr; setWriteRolesArray(arr); clearError('writeRoles'); } }, 'Reset')
+                        ),
+                        errors.writeRoles && React.createElement('span', { style: { fontSize: '12px', color: '#d32f2f' } }, errors.writeRoles),
+                        React.createElement('span', { style: { fontSize: '12px', color: '#999' } }, '* (all) is mutually exclusive')
+                    )
+                )
             )
         ),
 
@@ -531,89 +550,71 @@ function CredentialForm({
             )
         ),
 
-        // Generator toggle button
-        showPasswordFields && React.createElement('div', { style: { textAlign: 'center', width: '100%' } },
+        // Generator — compact inline row: [Length slider] [Options ▼] [Generate] [Copy]
+        showPasswordFields && React.createElement('div', {
+            style: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', width: '100%' }
+        },
+            React.createElement('span', { style: { fontSize: '13px', color: '#999', whiteSpace: 'nowrap' } }, 'Length:'),
+            React.createElement('input', {
+                type: 'range',
+                min: 8,
+                max: 64,
+                value: genLength,
+                onChange: function(e) { setGenLength(parseInt(e.target.value)); },
+                style: { width: '120px' }
+            }),
+            React.createElement('span', { style: { fontSize: '13px', fontWeight: '600', minWidth: '20px', textAlign: 'right' } }, genLength),
             React.createElement(Button, {
                 type: 'button',
                 appearance: 'subtle',
-                onClick: toggleGenerator,
-            }, showGenerator ? 'Hide Password Generator' : 'Generate Password')
+                onClick: function() { setShowGenOptions(function(p) { return !p; }); },
+            }, showGenOptions ? '\u25B2 Options' : '\u25BC Options'),
+            React.createElement(Button, {
+                type: 'button',
+                appearance: 'primary',
+                onClick: handleGenerate,
+            }, 'Generate'),
+            React.createElement(Button, {
+                type: 'button',
+                appearance: 'subtle',
+                onClick: handleCopyPassword,
+            }, copiedPassword ? 'Copied!' : 'Copy')
         ),
-
-        // Generator panel (expandable)
-        showPasswordFields && showGenerator && React.createElement('div', {
-            className: 'credential-form-generator-panel',
-            style: {
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                padding: '1rem',
-                backgroundColor: '#f9f9f9',
-            }
+        // Character set options (collapsible)
+        showPasswordFields && showGenOptions && React.createElement('div', {
+            style: { display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '13px', color: '#999' }
         },
-            React.createElement('div', {
-                className: 'credential-form-generator-header',
-                style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }
-            },
-                // Left column: length slider + generate/copy buttons
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
-                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500' } }, 'Length: ' + genLength),
-                    React.createElement('input', {
-                        type: 'range',
-                        min: 8,
-                        max: 64,
-                        value: genLength,
-                        onChange: function(e) { setGenLength(parseInt(e.target.value)); },
-                        style: { width: '100%' }
-                    }),
-                    React.createElement('div', { style: { display: 'flex', gap: '0.5rem' } },
-                        React.createElement(Button, {
-                            type: 'button',
-                            appearance: 'primary',
-                            onClick: handleGenerate,
-                        }, 'Generate'),
-                        React.createElement(Button, {
-                            type: 'button',
-                            appearance: 'subtle',
-                            onClick: handleCopyPassword,
-                        }, copiedPassword ? 'Copied!' : 'Copy')
-                    )
-                ),
-                // Right column: character set checkboxes
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.5rem' } },
-                    React.createElement('label', { style: { fontSize: '13px', fontWeight: '500', marginBottom: '0.25rem' } }, 'Character Set'),
-                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
-                        React.createElement('input', {
-                            type: 'checkbox',
-                            checked: genOptions.uppercase,
-                            onChange: function() { handleOptionChange('uppercase'); },
-                        }),
-                        ' Uppercase (A-Z)'
-                    ),
-                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
-                        React.createElement('input', {
-                            type: 'checkbox',
-                            checked: genOptions.lowercase,
-                            onChange: function() { handleOptionChange('lowercase'); },
-                        }),
-                        ' Lowercase (a-z)'
-                    ),
-                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
-                        React.createElement('input', {
-                            type: 'checkbox',
-                            checked: genOptions.numbers,
-                            onChange: function() { handleOptionChange('numbers'); },
-                        }),
-                        ' Numbers (0-9)'
-                    ),
-                    React.createElement('label', { style: { fontSize: '13px', cursor: 'pointer' } },
-                        React.createElement('input', {
-                            type: 'checkbox',
-                            checked: genOptions.symbols,
-                            onChange: function() { handleOptionChange('symbols'); },
-                        }),
-                        ' Symbols (!@#$%^&*...)'
-                    )
-                )
+            React.createElement('label', { style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' } },
+                React.createElement('input', {
+                    type: 'checkbox',
+                    checked: genOptions.uppercase,
+                    onChange: function() { handleOptionChange('uppercase'); },
+                }),
+                ' A-Z'
+            ),
+            React.createElement('label', { style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' } },
+                React.createElement('input', {
+                    type: 'checkbox',
+                    checked: genOptions.lowercase,
+                    onChange: function() { handleOptionChange('lowercase'); },
+                }),
+                ' a-z'
+            ),
+            React.createElement('label', { style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' } },
+                React.createElement('input', {
+                    type: 'checkbox',
+                    checked: genOptions.numbers,
+                    onChange: function() { handleOptionChange('numbers'); },
+                }),
+                ' 0-9'
+            ),
+            React.createElement('label', { style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' } },
+                React.createElement('input', {
+                    type: 'checkbox',
+                    checked: genOptions.symbols,
+                    onChange: function() { handleOptionChange('symbols'); },
+                }),
+                ' !@#$%'
             )
         ),
 
@@ -665,10 +666,10 @@ function CredentialForm({
                                 padding: '2px 8px',
                                 borderRadius: '12px',
                                 fontSize: '11px',
-                                fontWeight: '500',
-                                backgroundColor: '#f3f4f6',
-                                color: '#9ca3af',
-                                border: '1px solid #d1d5db',
+                                fontWeight: '600',
+                                backgroundColor: noneColor + '22',
+                                color: noneColor,
+                                border: '1px solid ' + (isDark ? noneColor + '88' : noneColor + '55'),
                                 whiteSpace: 'nowrap',
                             } },
                             'No tags'
