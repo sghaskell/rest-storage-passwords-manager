@@ -2004,11 +2004,24 @@ async function savePolicyToKVStore(policy) {
         minSpecial: policy.minSpecial,
         bannedPasswords: (policy.bannedPasswords || []).join(','),
     };
-    await splunkdRequest(KVSTORE_DATA + '/' + POLICY_COLLECTION + '/default', {
-        method: 'POST',
-        body: body,
-        jsonBody: true,
-    });
+    try {
+        await splunkdRequest(KVSTORE_DATA + '/' + POLICY_COLLECTION, {
+            method: 'POST',
+            body: body,
+            jsonBody: true,
+        });
+    } catch (e) {
+        // 409 means the document exists — update it instead
+        if (e.status === 409) {
+            await splunkdRequest(KVSTORE_DATA + '/' + POLICY_COLLECTION + '/default', {
+                method: 'POST',
+                body: body,
+                jsonBody: true,
+            });
+        } else {
+            throw e;
+        }
+    }
     // Sync to localStorage cache
     savePolicy(policy);
 }
