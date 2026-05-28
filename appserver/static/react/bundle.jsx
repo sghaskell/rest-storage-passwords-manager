@@ -472,26 +472,32 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             try {
                 const fetched = await API.getAllCredentials();
 
-                // Fetch tag data — failures should NOT break credential loading
+                // Fetch tag + expiry data — failures should NOT break credential loading
                 var allTags = {};
                 var tagDefs = [];
+                var allExpiry = {};
                 try {
                     // Ensure collections exist before reading
                     await API.ensureTagCollections();
                     allTags = await API.getAllTagsData();
-                    console.log('[TAGS][LOAD] allTags keys:', Object.keys(allTags));
                     tagDefs = await API.getAllTagDefinitions();
-                    console.log('[TAGS][LOAD] tagDefs:', tagDefs.length, 'definitions');
                 } catch (tagErr) {
                     console.warn('[TAGS][LOAD] tag data fetch failed (KVStore may not be available):', tagErr);
+                }
+                try {
+                    await API.ensureExpiryCollection();
+                    allExpiry = await API.getAllExpiryData();
+                } catch (expErr) {
+                    console.warn('[EXPIRY][LOAD] expiry data fetch failed (KVStore may not be available):', expErr);
                 }
                 var tagColorMap = {};
                 tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
 
-                // Enrich credentials with rotation status and tags
+                // Enrich credentials with rotation status, tags, and expiry
                 var enriched = fetched.map(function(cred) {
-                    var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
-                    var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                    // Resolve expiry: KV Store first, then realm fallback (backward compat)
+                    var expiryDate = API.resolveExpiryDate(cred, allExpiry) || '';
+                    var rotationStatus = API.getRotationStatus(expiryDate);
                     var credKey = API.tagCredKey(cred);
                     var tags = allTags[credKey] || [];
 
@@ -500,9 +506,9 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     });
 
                     return Object.assign({}, cred, {
-                        expiryDate: expiryInfo.expiryDate || '',
+                        expiryDate: expiryDate,
                         rotationStatus: rotationStatus,
-                        rotationLabel: getRotationLabel(expiryInfo.expiryDate, rotationStatus),
+                        rotationLabel: getRotationLabel(expiryDate, rotationStatus),
                         tags: enrichedTags,
                     });
                 });
@@ -548,6 +554,57 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             }
         }
 
+        // Migrate expiry from realm to KV Store
+        async function handleMigrateExpiry() {
+            var creds = data.credentials;
+            var withExpiry = creds.filter(function(c) { return (c.realm || '').includes('expiry_'); });
+            if (withExpiry.length === 0) {
+                showSuccess('Migration Not Needed', [
+                    'No credentials have expiry embedded in realm.',
+                    'All credentials are already migrated or have no expiry.'
+                ]);
+                return;
+            }
+
+            if (!confirm('Migrate ' + withExpiry.length + ' credential(s) from realm-embedded expiry to KV Store?\n\nThis will:\n1. Save expiry dates to KV Store\n2. Rename credentials to use clean realm names\n\nThis may take a moment. Continue?')) {
+                return;
+            }
+
+            try {
+                setResult({ title: 'Migrating...', messages: ['Scanning credentials...'] });
+                setModals(prev => ({ ...prev, result: true }));
+
+                var result = await API.migrateExpiryFromRealm(creds, function(current, total) {
+                    setResult({
+                        title: 'Migrating...',
+                        messages: ['Processing ' + current + ' of ' + total + ' credentials...']
+                    });
+                });
+
+                var messages = [
+                    `<strong>${result.migrated}</strong> credential(s) migrated successfully`
+                ];
+                if (result.skipped > 0) {
+                    messages.push(result.skipped + ' credential(s) skipped (no expiry to migrate)');
+                }
+                if (result.errors.length > 0) {
+                    messages.push('---');
+                    result.errors.forEach(function(e) { messages.push('ERROR: ' + e); });
+                }
+
+                if (result.errors.length === 0) {
+                    showSuccess('Migration Complete', messages);
+                } else {
+                    showError('Migration Complete (with errors)', messages);
+                }
+
+                await loadCredentials();
+            } catch (err) {
+                console.error('Migration failed:', err);
+                showError('Migration Failed', ['Error: ' + (err.message || 'unknown error')]);
+            }
+        }
+
         // Scan for duplicates after credentials loaded (debounced to avoid scanning on every load)
         React.useEffect(() => {
             if (credentials.length > 0 && !scanning) {
@@ -560,13 +617,29 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
         async function handleCreateCredential(data) {
             try {
-                // Construct realm combining base realm + expiry
-                var realmToSave = API.buildRealmWithExpiry(data.realm || '', data.expiryDate);
+                // Save realm as base realm — expiry goes to KV Store
+                var realmToSave = data.realm || '';
                 await API.createCredential(
                     data.username, data.password, realmToSave,
                     data.app, data.owner, data.readRoles, data.writeRoles,
                     data.sharing || 'app'
                 );
+
+                // Write expiry to KV Store if set
+                if (data.expiryDate) {
+                    try {
+                        var createExpiryCred = {
+                            name: data.username,
+                            realm: realmToSave,
+                            app: data.app,
+                            namespaceOwner: data.owner,
+                            sharing: data.sharing || 'app',
+                        };
+                        await API.setExpiryForCredential(createExpiryCred, data.expiryDate);
+                    } catch (expErr) {
+                        console.error('[EXPIRY][CREATE] failed:', expErr.message);
+                    }
+                }
 
                 // Save tags if provided
                 if (data.tags && data.tags.length > 0) {
@@ -606,64 +679,44 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         async function handleUpdateCredential(credential, data) {
             const messages = [];
             try {
-                // Determine new realm based on expiry change
-                // With combined format, expiry can change independently of base realm
-                var expiryInfo = API.parseExpiryFromRealm(credential.realm || '');
-                var baseRealm = expiryInfo.baseRealm;
-                var oldExpiry = expiryInfo.expiryDate;
-                var newExpiry = data.expiryDate;
+                // Realm is the base realm only — expiry is in KV Store
+                var credRealm = credential.realm || '';
 
-                // Build new realm — preserve base realm, update expiry if changed
-                var newRealm = API.buildRealmWithExpiry(baseRealm, newExpiry || '');
+                // Update credential (password + ACLs)
+                await API.updateCredential(
+                    credential.name, credRealm,
+                    data.password, data.readRoles, data.writeRoles,
+                    data.owner, data.app, data.sharing || 'app', credential.app
+                );
 
-                if (newRealm !== credential.realm) {
-                    // Realm changed — need to rename: create new credential + delete old
-                    var oldOwner = credential.namespaceOwner || credential.owner || 'nobody';
-                    var password = await API.getCredentialPassword(
-                        credential.name, credential.realm, credential.app,
-                        oldOwner, credential.sharing || 'app'
-                    );
-
-                    try {
-                        await API.createCredential(
-                            credential.name, password, newRealm,
-                            data.app, data.owner, data.readRoles, data.writeRoles,
-                            data.sharing || 'app'
-                        );
-                    } catch (createErr) {
-                        throw createErr;
+                // Update expiry in KV Store if changed
+                try {
+                    var currentExpiry = API.resolveExpiryDate(credential);
+                    var newExpiry = data.expiryDate || '';
+                    if (currentExpiry !== newExpiry) {
+                        var updateExpiryCred = {
+                            name: credential.name,
+                            realm: credRealm,
+                            app: data.app,
+                            namespaceOwner: data.owner,
+                            sharing: data.sharing || 'app',
+                        };
+                        if (newExpiry) {
+                            await API.setExpiryForCredential(updateExpiryCred, newExpiry);
+                        } else {
+                            await API.deleteExpiryForCredential(updateExpiryCred);
+                        }
                     }
-
-                    // Best-effort delete old; if it fails, warn but don't abort
-                    try {
-                        await API.deleteCredential(
-                            credential.name, credential.realm, credential.app,
-                            oldOwner, data.readRoles, data.writeRoles,
-                            data.sharing || 'app'
-                        );
-                    } catch (deleteErr) {
-                        console.warn(
-                            '[handleUpdateCredential] failed to delete old credential',
-                            credential.name, credential.realm,
-                            deleteErr.message || deleteErr
-                        );
-                        // Continue — new credential was created successfully
-                    }
-                } else {
-                    await API.updateCredential(
-                        credential.name, credential.realm,
-                        data.password, data.readRoles, data.writeRoles,
-                        data.owner, data.app, data.sharing || 'app', credential.app
-                    );
+                } catch (expErr) {
+                    console.warn('[EXPIRY][UPDATE] failed (non-fatal):', expErr.message);
                 }
 
                 // Save tags if provided
                 if (data.tags && data.tags.length > 0) {
-                    var realmToUse = newRealm !== credential.realm ? newRealm : credential.realm;
                     try {
                         var updateTagCred = {
                             name: credential.name,
-                            realm: realmToUse,
+                            realm: credRealm,
                             app: data.app,
                             namespaceOwner: data.owner,
                             sharing: data.sharing || 'app',
@@ -693,8 +746,9 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         async function handleDeleteCredential() {
             if (!selectedCredential) return;
             try {
-                // Clean up tags before deleting
+                // Clean up tags and expiry before deleting
                 await API.deleteTagsForCredential(selectedCredential);
+                await API.deleteExpiryForCredential(selectedCredential);
 
                 // Fetch password for undo before deleting
                 var password;
@@ -854,12 +908,13 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     return true;
                 });
 
-                // Clean up tags for all unique rows before deleting
+                // Clean up tags and expiry for all unique rows before deleting
                 for (var tc = 0; tc < uniqueRows.length; tc++) {
                     try {
                         await API.deleteTagsForCredential(uniqueRows[tc]);
+                        await API.deleteExpiryForCredential(uniqueRows[tc]);
                     } catch (e) {
-                        console.warn('[handleBulkDeleteConfirm] tag cleanup warning:', e.message);
+                        console.warn('[handleBulkDeleteConfirm] cleanup warning:', e.message);
                     }
                 }
 
@@ -1328,6 +1383,13 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                                 appearance: 'subtle',
                                 children: 'Export Selected CSV',
                                 style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
+                            }),
+                            React.createElement('hr', { style: { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' } }),
+                            React.createElement(Button, {
+                                onClick: () => { setMoreDropdownOpen(false); handleMigrateExpiry(); },
+                                appearance: 'subtle',
+                                children: 'Migrate Expiry to KV Store',
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
                             })
                         )
                     ),
@@ -1768,14 +1830,53 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         var [loading, setLoading] = React.useState(true);
         var [alertConfigModalOpen, setAlertConfigModalOpen] = React.useState(false);
 
+        // Rotation modal state
+        var [rotationOpen, setRotationOpen] = React.useState(false);
+        var [rotationCreds, setRotationCreds] = React.useState([]);
+
+        // Reload credentials with full enrichment
+        async function reloadCredentials() {
+            var fetched = await API.getAllCredentials();
+            var allTags = {};
+            var tagDefs = [];
+            var allExpiry = {};
+            try {
+                await API.ensureTagCollections();
+                allTags = await API.getAllTagsData();
+                tagDefs = await API.getAllTagDefinitions();
+            } catch (e) {}
+            try {
+                await API.ensureExpiryCollection();
+                allExpiry = await API.getAllExpiryData();
+            } catch (e) {}
+            var tagColorMap = {};
+            tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
+            var enriched = fetched.map(function(cred) {
+                var expiryDate = API.resolveExpiryDate(cred, allExpiry) || '';
+                var rotationStatus = API.getRotationStatus(expiryDate);
+                var credKey = API.tagCredKey(cred);
+                var tags = allTags[credKey] || [];
+                var enrichedTags = tags.map(function(t) {
+                    return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
+                });
+                return Object.assign({}, cred, {
+                    expiryDate: expiryDate,
+                    rotationStatus: rotationStatus,
+                    tags: enrichedTags,
+                });
+            });
+            setCredentials(enriched);
+        }
+
         React.useEffect(function() {
             async function load() {
                 setLoading(true);
                 try {
                     var fetched = await API.getAllCredentials();
-                    // Fetch tag data
+                    // Fetch tag + expiry data
                     var allTags = {};
                     var tagDefs = [];
+                    var allExpiry = {};
                     try {
                         await API.ensureTagCollections();
                         allTags = await API.getAllTagsData();
@@ -1783,19 +1884,25 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     } catch (tagErr) {
                         console.warn('[ExpiryDashboard] tag data fetch failed:', tagErr);
                     }
+                    try {
+                        await API.ensureExpiryCollection();
+                        allExpiry = await API.getAllExpiryData();
+                    } catch (expErr) {
+                        console.warn('[ExpiryDashboard] expiry data fetch failed:', expErr);
+                    }
                     var tagColorMap = {};
                     tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
 
                     var enriched = fetched.map(function(cred) {
-                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
-                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                        var expiryDate = API.resolveExpiryDate(cred, allExpiry) || '';
+                        var rotationStatus = API.getRotationStatus(expiryDate);
                         var credKey = API.tagCredKey(cred);
                         var tags = allTags[credKey] || [];
                         var enrichedTags = tags.map(function(t) {
                             return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
                         });
                         return Object.assign({}, cred, {
-                            expiryDate: expiryInfo.expiryDate || '',
+                            expiryDate: expiryDate,
                             rotationStatus: rotationStatus,
                             tags: enrichedTags,
                         });
@@ -1821,19 +1928,29 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     navigateToView('credential_management');
                 },
                 onOpenAlertConfig: function() { setAlertConfigModalOpen(true); },
-                onRefresh: async function() {
-                    var fetched = await API.getAllCredentials();
-                    var enriched = fetched.map(function(cred) {
-                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
-                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
-                        return Object.assign({}, cred, {
-                            expiryDate: expiryInfo.expiryDate || '',
-                            rotationStatus: rotationStatus,
-                            tags: [],
-                        });
-                    });
-                    setCredentials(enriched);
+                onRotate: function(cred) {
+                    setRotationCreds([cred]);
+                    setRotationOpen(true);
                 },
+                onRotateBulk: function() {
+                    var overdueCreds = credentials.filter(function(c) {
+                        return c.rotationStatus === 'overdue' || c.rotationStatus === 'due-soon';
+                    });
+                    if (overdueCreds.length > 0) {
+                        setRotationCreds(overdueCreds);
+                        setRotationOpen(true);
+                    }
+                },
+                onRefresh: reloadCredentials,
+            }),
+            rotationOpen && React.createElement(PasswordRotationModal, {
+                selectedRows: rotationCreds,
+                isOpen: rotationOpen,
+                onClose: function() {
+                    setRotationOpen(false);
+                    setRotationCreds([]);
+                },
+                onApply: reloadCredentials,
             }),
             alertConfigModalOpen && React.createElement(ExpiryAlertConfig, {
                 isOpen: alertConfigModalOpen,

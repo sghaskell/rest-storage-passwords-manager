@@ -48,7 +48,7 @@ function getPasswordStrength(pw) {
 var _API = require('../api');
 var generatePassword = _API.generatePassword;
 var parseExpiryFromRealm = _API.parseExpiryFromRealm;
-var buildRealmWithExpiry = _API.buildRealmWithExpiry;
+var resolveBaseRealm = _API.resolveBaseRealm;
 var loadPolicy = _API.loadPolicy;
 var validatePasswordAgainstPolicy = _API.validatePasswordAgainstPolicy;
 var getTagsForCredential = _API.getTagsForCredential;
@@ -156,12 +156,14 @@ function CredentialForm({
             } else {
                 setUsername(credential.name || '');
             }
-            var expiryInfo = parseExpiryFromRealm(credential.realm || '');
-            setRealm(expiryInfo.baseRealm || '');
+            // Resolve base realm and expiry — credential may already be enriched with expiryDate from KV Store
+            var baseRealm = resolveBaseRealm(credential.realm || '');
+            setRealm(baseRealm);
             setApp(credential.app || 'search');
             setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
-            setExpiryDate(expiryInfo.expiryDate || '');
+            // Use enriched expiryDate (KV Store) first, fall back to realm parsing
+            setExpiryDate(credential.expiryDate || (parseExpiryFromRealm(credential.realm || '').expiryDate || ''));
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
             var aclRead = normalize((credential.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
@@ -709,24 +711,59 @@ function CredentialForm({
             )
         ),
 
-        // Password Expiry date picker — always available (realm + expiry combine via delimiter)
+        // Password Expiry date picker — preset buttons + calendar
         React.createElement('div', { style: { width: '100%' } },
             formField('Password Expiry',
-                React.createElement('input', {
-                    type: 'date',
-                    value: expiryDate,
-                    onChange: function(e) { setExpiryDate(e.target.value); },
-                    placeholder: 'YYYY-MM-DD',
-                    style: {
-                        width: '100%',
-                        padding: '6px 8px',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        height: '36px',
-                        boxSizing: 'border-box',
-                    }
-                }),
+                React.createElement('div', { style: { display: 'flex', gap: '0.4rem', alignItems: 'center' } },
+                    React.createElement('input', {
+                        type: 'date',
+                        value: expiryDate,
+                        onChange: function(e) { setExpiryDate(e.target.value); },
+                        placeholder: 'YYYY-MM-DD',
+                        style: {
+                            flex: 1,
+                            padding: '6px 8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            height: '36px',
+                            boxSizing: 'border-box',
+                        }
+                    }),
+                    React.createElement('div', { style: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' } },
+                        ['7d', '30d', '60d', '90d', '180d'].map(function(preset) {
+                            var days = parseInt(preset, 10);
+                            var targetDate = new Date();
+                            targetDate.setDate(targetDate.getDate() + days);
+                            var targetStr = targetDate.toISOString().split('T')[0];
+                            return React.createElement(Button, {
+                                key: preset,
+                                type: 'button',
+                                onClick: function() { setExpiryDate(targetStr); },
+                                title: days + ' days from now (' + targetStr + ')',
+                                appearance: expiryDate === targetStr ? 'primary' : 'subtle',
+                                style: {
+                                    padding: '4px 10px',
+                                    fontSize: '12px',
+                                    height: '28px',
+                                    lineHeight: '1',
+                                }
+                            }, preset);
+                        }),
+                        expiryDate && React.createElement(Button, {
+                            type: 'button',
+                            onClick: function() { setExpiryDate(''); },
+                            title: 'Clear expiry',
+                            appearance: 'subtle',
+                            style: {
+                                padding: '4px 10px',
+                                fontSize: '12px',
+                                height: '28px',
+                                lineHeight: '1',
+                            }
+                        }, '\u00d7')
+                    )
+                ),
                 {
                     helpText: 'Optional — set a password rotation reminder date'
                 }

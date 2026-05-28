@@ -1355,15 +1355,18 @@ function generatePassword(options) {
 /**
  * Rotate passwords for a batch of credentials.
  * Sequential execution to avoid race conditions with ACL bump.
+ * Expiry is persisted in KV Store — no realm rename dance.
  *
  * @param {Array} selectedRows - Array of credential objects
- * @param {Object} options - { mode: 'individual' | 'shared', generatorOptions: {...} }
+ * @param {Object} options - { mode: 'individual' | 'shared', generatorOptions: {...}, expiryStrategy, customExpiryDate }
  * @returns {Array} Per-credential results with status, oldPassword, newPassword, error
  */
 async function rotatePasswords(selectedRows, options) {
     options = options || {};
     var mode = options.mode || 'individual';
     var genOpts = options.generatorOptions || {};
+    var expiryStrategy = options.expiryStrategy || 'extend-original';
+    var customExpiryDate = options.customExpiryDate || null;
     var results = [];
 
     // Generate shared password upfront if in shared mode
@@ -1372,6 +1375,9 @@ async function rotatePasswords(selectedRows, options) {
         sharedPassword = generatePassword(genOpts);
     }
 
+    // Ensure KVStore collection exists
+    try { await ensureExpiryCollection(); } catch(e) { console.warn('[rotatePasswords] expiry KV unavailable:', e.message); }
+
     for (var i = 0; i < selectedRows.length; i++) {
         var cred = selectedRows[i];
         var nsOwner = cred.namespaceOwner || cred.owner || 'nobody';
@@ -1379,6 +1385,36 @@ async function rotatePasswords(selectedRows, options) {
         var credSharing = cred.sharing || 'app';
         var credRealm = cred.realm || '';
         var credName = cred.name;
+
+        // Compute new expiry if strategy changes it
+        var newExpiryDate = null;
+        var credExpiryDate = resolveExpiryDate(cred);
+
+        if (expiryStrategy === 'extend-original' && credExpiryDate) {
+            // Compute original period: expiryDate - mtime
+            var mtime = cred.mtime || '';
+            var expiryDateParsed = new Date(credExpiryDate + 'T00:00:00');
+            var mtimeParsed = new Date(mtime);
+            if (!isNaN(expiryDateParsed) && !isNaN(mtimeParsed)) {
+                var originalMs = expiryDateParsed.getTime() - mtimeParsed.getTime();
+                var originalDays = Math.max(1, Math.round(originalMs / 86400000));
+                var today = new Date();
+                today.setHours(0, 0, 0, 0);
+                var newExpiry = new Date(today.getTime() + originalDays * 86400000);
+                newExpiryDate = newExpiry.toISOString().split('T')[0];
+            }
+        } else if (expiryStrategy === 'custom' && customExpiryDate) {
+            newExpiryDate = customExpiryDate;
+        } else if (expiryStrategy !== 'keep-current') {
+            // Numeric presets: "30", "60", "90", "180"
+            var days = parseInt(expiryStrategy, 10);
+            if (!isNaN(days) && days > 0) {
+                var today2 = new Date();
+                today2.setHours(0, 0, 0, 0);
+                var newExpiry2 = new Date(today2.getTime() + days * 86400000);
+                newExpiryDate = newExpiry2.toISOString().split('T')[0];
+            }
+        }
 
         // Step 1: Fetch old password
         var oldPassword = null;
@@ -1426,7 +1462,7 @@ async function rotatePasswords(selectedRows, options) {
             newPassword = generatePassword(genOpts);
         }
 
-        // Step 3: Update password
+        // Step 3: Update password (always uses updateCredential — no realm rename)
         var aclReadArr = cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
         var aclWriteArr = cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
 
@@ -1436,12 +1472,23 @@ async function rotatePasswords(selectedRows, options) {
                 aclReadArr, aclWriteArr,
                 nsOwner, credApp, credSharing, credApp
             );
+
+            // Update expiry in KV Store if strategy changed it
+            if (newExpiryDate !== null) {
+                try {
+                    await setExpiryForCredential(cred, newExpiryDate);
+                } catch (expErr) {
+                    console.warn('[rotatePasswords] expiry update failed (non-fatal):', expErr.message);
+                }
+            }
+
             results.push({
                 name: credName,
                 realm: credRealm,
                 app: credApp,
                 oldPassword: oldPassword,
                 newPassword: newPassword,
+                newExpiryDate: newExpiryDate,
                 status: 'success',
                 error: null
             });
@@ -1452,9 +1499,9 @@ async function rotatePasswords(selectedRows, options) {
                 realm: credRealm,
                 app: credApp,
                 oldPassword: oldPassword,
-                newPassword: newPassword,
+                newPassword: null,
                 status: 'failed',
-                error: 'Update failed: ' + errMsg
+                error: 'Rotation failed: ' + errMsg
             });
         }
     }
@@ -1985,6 +2032,225 @@ async function getSplunkValidator() {
     }
 }
 
+// ─── Credential Expiry (KVStore) ──────────────────────────────────────────
+// Expiry dates are stored in a KVStore collection instead of embedding in the realm.
+// This avoids the destructive rename dance (create new + delete old) when updating expiry.
+// Backward compat: parseExpiryFromRealm still works for legacy credentials during migration.
+
+const EXPIRY_COLLECTION = 'credential_expiry';
+
+/**
+ * Ensure the expiry KVStore collection exists.
+ */
+async function ensureExpiryCollection() {
+    return ensureCollection(EXPIRY_COLLECTION);
+}
+
+/**
+ * Set expiry date for a credential in KVStore.
+ * Pass empty string or null to clear expiry.
+ */
+async function setExpiryForCredential(credential, expiryDate) {
+    await ensureExpiryCollection();
+    var key = tagCredKey(credential);
+    var body = {
+        _key: key,
+        expiry_date: expiryDate || '',
+    };
+    try {
+        await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION, {
+            method: 'POST',
+            body: body,
+            jsonBody: true,
+        });
+    } catch (e) {
+        if (e.status === 409) {
+            // Update existing
+            await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), {
+                method: 'POST',
+                body: body,
+                jsonBody: true,
+            });
+        } else {
+            throw e;
+        }
+    }
+    console.log('[EXPIRY][SAVE] key:', key, 'expiry_date:', expiryDate || '(cleared)');
+}
+
+/**
+ * Get expiry date for a credential from KVStore.
+ * Returns string (ISO date) or null.
+ */
+async function getExpiryForCredential(credential) {
+    var key = tagCredKey(credential);
+    try {
+        var data = await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), {
+            method: 'GET',
+        });
+        var doc = data;
+        if (doc && doc.expiry_date) {
+            return doc.expiry_date;
+        }
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
+    return null;
+}
+
+/**
+ * Batch fetch all expiry data for enrichment.
+ * Returns Object: cred_key → expiry_date string.
+ */
+async function getAllExpiryData() {
+    try {
+        var data = await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION, {
+            method: 'GET',
+        });
+        var docs = Array.isArray(data) ? data : (data.entries || []);
+        var result = {};
+        docs.forEach(function(doc) {
+            if (doc._key && doc.expiry_date) {
+                result[doc._key] = doc.expiry_date;
+            }
+        });
+        return result;
+    } catch (e) {
+        if (e.status === 404) return {};
+        throw e;
+    }
+}
+
+/**
+ * Delete expiry entry for a credential (cleanup on credential delete).
+ */
+async function deleteExpiryForCredential(credential) {
+    var key = tagCredKey(credential);
+    try {
+        await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), {
+            method: 'DELETE',
+        });
+    } catch (e) {
+        if (e.status !== 404 && e.status !== 400) throw e;
+    }
+}
+
+/**
+ * Resolve expiry date for a credential — KVStore first, then realm fallback.
+ * This is the unified entry point used during credential enrichment.
+ *
+ * @param {Object} cred - Credential object (with realm, name, app, etc.)
+ * @param {Object} [expiryMap] - Pre-fetched expiry map from getAllExpiryData() (optional)
+ * @returns {string|null} ISO date string or null
+ */
+function resolveExpiryDate(cred, expiryMap) {
+    // 1. Check KVStore map (if provided)
+    if (expiryMap) {
+        var key = tagCredKey(cred);
+        if (expiryMap[key]) return expiryMap[key];
+    }
+    // 2. Fall back to realm parsing (backward compat for legacy credentials)
+    var realm = cred.realm || '';
+    if (realm.includes('expiry_')) {
+        var info = parseExpiryFromRealm(realm);
+        if (info.expiryDate) return info.expiryDate;
+    }
+    return null;
+}
+
+/**
+ * Resolve base realm for a credential — strips expiry from combined format.
+ * For credentials already using KV Store, realm IS the base realm.
+ */
+function resolveBaseRealm(cred) {
+    var realm = cred.realm || '';
+    if (realm.includes('expiry_')) {
+        var info = parseExpiryFromRealm(realm);
+        return info.baseRealm || '';
+    }
+    return realm;
+}
+
+/**
+ * Migrate expiry dates from realm to KV Store.
+ * For each credential with expiry in realm:
+ *   1. Write expiry to KV Store
+ *   2. Rename credential: create new with clean realm + delete old
+ *
+ * @param {Array} credentials - Array of credential objects (from getAllCredentials)
+ * @param {Function} [onProgress] - Optional callback(current, total)
+ * @returns {Object} { migrated, skipped, errors }
+ */
+async function migrateExpiryFromRealm(credentials, onProgress) {
+    var migrated = 0;
+    var skipped = 0;
+    var errors = [];
+
+    // Ensure expiry collection exists
+    try { await ensureExpiryCollection(); } catch(e) {
+        errors.push('Failed to ensure expiry collection: ' + e.message);
+        return { migrated: 0, skipped: 0, errors };
+    }
+
+    // Filter to credentials that have expiry in realm
+    var toMigrate = credentials.filter(function(c) {
+        return (c.realm || '').includes('expiry_');
+    });
+
+    for (var i = 0; i < toMigrate.length; i++) {
+        if (onProgress) onProgress(i + 1, toMigrate.length);
+        var cred = toMigrate[i];
+        var credRealm = cred.realm || '';
+        var expiryInfo = parseExpiryFromRealm(credRealm);
+        var baseRealm = expiryInfo.baseRealm || '';
+        var expiryDate = expiryInfo.expiryDate;
+
+        if (!expiryDate) {
+            skipped++;
+            continue;
+        }
+
+        var nsOwner = cred.namespaceOwner || cred.owner || 'nobody';
+        var credApp = cred.app || getCurrentApp() || 'search';
+        var credSharing = cred.sharing || 'app';
+        var credName = cred.name;
+
+        try {
+            // Step 1: Write expiry to KV Store
+            await setExpiryForCredential(cred, expiryDate);
+
+            // Step 2: Rename credential to use clean realm
+            var newRealm = baseRealm;
+            if (newRealm !== credRealm) {
+                var password;
+                try {
+                    password = await getCredentialPassword(credName, credRealm, credApp, nsOwner, credSharing);
+                } catch (pwdErr) {
+                    errors.push(credName + ': could not fetch password for rename — expiry saved but realm unchanged: ' + pwdErr.message);
+                    continue;
+                }
+
+                var aclReadArr = cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+                var aclWriteArr = cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+                await createCredential(credName, password, newRealm, credApp, nsOwner, aclReadArr, aclWriteArr, credSharing);
+
+                try {
+                    await deleteCredential(credName, credRealm, credApp, nsOwner, aclReadArr, aclWriteArr, credSharing);
+                } catch (delErr) {
+                    console.warn('[migrate] delete old failed:', delErr.message);
+                }
+            }
+
+            migrated++;
+        } catch (e) {
+            errors.push(credName + ': ' + (e.message || 'unknown error'));
+        }
+    }
+
+    return { migrated, skipped, errors };
+}
+
 // ─── Credential Tagging (KVStore) ─────────────────────────────────────────
 
 const TAGS_COLLECTION = 'credential_tags';
@@ -2465,19 +2731,6 @@ module.exports = {
     renamePreset,
     DEFAULT_READ_ROLES,
     DEFAULT_WRITE_ROLES,
-    parseExpiryFromRealm,
-    buildRealmWithExpiry,
-    getRotationStatus,
-    getDueSoonThreshold,
-    setDueSoonThreshold,
-    createOrUpdateExpiryAlert,
-    getExpiryAlert,
-    deleteExpiryAlert,
-    loadPolicy,
-    savePolicy,
-    validatePasswordAgainstPolicy,
-    updateSplunkValidator,
-    getSplunkValidator,
     // Credential Tagging
     ensureTagCollections,
     tagCredKey,
@@ -2489,6 +2742,30 @@ module.exports = {
     deleteTagsForCredential,
     deleteTagDefinition,
     hashToColor,
+    // Credential Expiry (KVStore)
+    ensureExpiryCollection,
+    setExpiryForCredential,
+    getExpiryForCredential,
+    getAllExpiryData,
+    deleteExpiryForCredential,
+    resolveExpiryDate,
+    resolveBaseRealm,
+    migrateExpiryFromRealm,
+    // Expiry / Rotation
+    parseExpiryFromRealm,
+    buildRealmWithExpiry,
+    getRotationStatus,
+    getDueSoonThreshold,
+    setDueSoonThreshold,
+    createOrUpdateExpiryAlert,
+    getExpiryAlert,
+    deleteExpiryAlert,
+    // Password Policy
+    loadPolicy,
+    savePolicy,
+    validatePasswordAgainstPolicy,
+    updateSplunkValidator,
+    getSplunkValidator,
     // Role-Based Access
     getRolesWithCapabilities,
     clearRolesCapabilitiesCache,

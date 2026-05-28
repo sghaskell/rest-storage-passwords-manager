@@ -84,6 +84,8 @@ function ExpiryDashboard({
     onNavigateToTable,
     onOpenAlertConfig,
     onRefresh,
+    onRotate,
+    onRotateBulk,
 }) {
     const [autoRefresh, setAutoRefreshState] = React.useState(getAutoRefreshEnabled());
     const [thresholdDays, setThresholdDaysState] = React.useState(API.getDueSoonThreshold());
@@ -250,6 +252,13 @@ function ExpiryDashboard({
             onClick: onOpenAlertConfig,
             appearance: 'subtle',
             children: '\u2699 Alert Settings'
+        }) : null,
+
+        // Rotate Overdue button — only render if onRotateBulk is provided
+        onRotateBulk && stats.overdue + stats.dueSoon > 0 ? React.createElement(Button, {
+            onClick: onRotateBulk,
+            appearance: 'subtle',
+            children: '\u21bb Rotate Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')'
         }) : null
     );
 
@@ -293,7 +302,7 @@ function ExpiryDashboard({
     var tableHeader = React.createElement('div', {
         style: {
             display: 'grid',
-            gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr',
+            gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr 90px',
             padding: '0.5rem 0.75rem',
             fontWeight: '600',
             fontSize: '12px',
@@ -304,7 +313,7 @@ function ExpiryDashboard({
             borderBottom: '1px solid var(--ed-header-border)',
         }
     },
-        'Username', 'Realm', 'Expiry Date', 'Days Remaining', 'Status'
+        'Username', 'Realm', 'Expiry Date', 'Days Remaining', 'Status', 'Actions'
     );
 
     var tableRows = sortedCreds.map(function(cred, i) {
@@ -330,7 +339,7 @@ function ExpiryDashboard({
             key: cred.stanzaKey || (cred.name + ':' + (cred.realm || '') + ':' + i),
             style: {
                 display: 'grid',
-                gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr',
+                gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr 90px',
                 padding: '0.5rem 0.75rem',
                 fontSize: '13px',
                 borderBottom: '1px solid var(--ed-border)',
@@ -369,7 +378,15 @@ function ExpiryDashboard({
                     border: '1px solid ' + rowColor + '40',
                     whiteSpace: 'nowrap',
                 }
-            }, status.charAt(0).toUpperCase() + status.slice(1))
+            }, status.charAt(0).toUpperCase() + status.slice(1)),
+            // Actions — Rotate button for overdue and due-soon credentials
+            onRotate && (status === 'overdue' || status === 'due-soon')
+                ? React.createElement(Button, {
+                    onClick: function() { onRotate(cred); },
+                    appearance: status === 'overdue' ? 'destructive' : 'subtle',
+                    children: '\u21bb Rotate'
+                })
+                : React.createElement('span', { style: { visibility: 'hidden' } }, '-')
         );
     });
 

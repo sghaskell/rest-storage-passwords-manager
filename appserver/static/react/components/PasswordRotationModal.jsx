@@ -35,6 +35,8 @@ function RotationSettings({ onPreview, onExecute }) {
     const [nums, setNums] = React.useState(true);
     const [syms, setSyms] = React.useState(true);
     const [mode, setMode] = React.useState('individual'); // 'individual' | 'shared'
+    const [expiryStrategy, setExpiryStrategy] = React.useState('extend-original');
+    const [customExpiryDate, setCustomExpiryDate] = React.useState('');
 
     var genOpts = {
         length: length,
@@ -45,11 +47,11 @@ function RotationSettings({ onPreview, onExecute }) {
     };
 
     function handlePreview() {
-        onPreview(genOpts, mode);
+        onPreview(genOpts, mode, expiryStrategy, customExpiryDate);
     }
 
     function handleExecute() {
-        onExecute(genOpts, mode);
+        onExecute(genOpts, mode, expiryStrategy, customExpiryDate);
     }
 
     return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '1rem' } },
@@ -135,6 +137,58 @@ function RotationSettings({ onPreview, onExecute }) {
                     ' Shared — same password for all credentials'
                 )
             )
+        ),
+
+        // Expiry strategy — inline preset row + date picker
+        React.createElement('div', { style: { display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' } },
+            React.createElement('label', { style: { fontSize: '13px', fontWeight: '500', marginRight: '0.25rem', whiteSpace: 'nowrap' } },
+                'Expiry:'
+            ),
+            React.createElement('input', {
+                type: 'date',
+                value: expiryStrategy === 'custom' ? customExpiryDate : '',
+                onChange: function(e) {
+                    setExpiryStrategy('custom');
+                    setCustomExpiryDate(e.target.value);
+                },
+                style: {
+                    padding: '4px 8px',
+                    fontSize: '12px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    height: '28px',
+                    boxSizing: 'border-box',
+                }
+            }),
+            ['extend-original', '7', '30', '60', '90', '180', 'keep-current'].map(function(strat) {
+                var labels = {
+                    'extend-original': 'Auto',
+                    '7': '7d',
+                    '30': '30d',
+                    '60': '60d',
+                    '90': '90d',
+                    '180': '180d',
+                    'keep-current': '—',
+                };
+                var titles = {
+                    'extend-original': 'Extend by original period',
+                    '7': '7 days from now',
+                    '30': '30 days from now',
+                    '60': '60 days from now',
+                    '90': '90 days from now',
+                    '180': '180 days from now',
+                    'keep-current': 'Keep current (no change)',
+                };
+                return React.createElement(Button, {
+                    key: strat,
+                    type: 'button',
+                    onClick: function() { setExpiryStrategy(strat); setCustomExpiryDate(''); },
+                    appearance: expiryStrategy === strat ? 'primary' : 'subtle',
+                    title: titles[strat],
+                    style: { padding: '4px 10px', fontSize: '12px', height: '28px', lineHeight: '1' },
+                    children: labels[strat],
+                });
+            }),
         ),
 
         // Action buttons
@@ -359,6 +413,8 @@ function RotationResults({ results, onUndo, onExpire, onClose }) {
 function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
     const [phase, setPhase] = React.useState('settings'); // 'settings' | 'preview' | 'results' | 'executing'
     const [generatorOptions, setGeneratorOptions] = React.useState({});
+    const [expiryStrategy, setExpiryStrategy] = React.useState('extend-original');
+    const [customExpiryDate, setCustomExpiryDate] = React.useState('');
     const [rotationMode, setRotationMode] = React.useState('individual');
     const [results, setResults] = React.useState([]);
     const [progress, setProgress] = React.useState({ current: 0, total: 0 });
@@ -385,9 +441,11 @@ function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
         }
     }, [isOpen]);
 
-    function handlePreview(genOpts, mode) {
+    function handlePreview(genOpts, mode, strategy, customDate) {
         setGeneratorOptions(genOpts);
         setRotationMode(mode);
+        setExpiryStrategy(strategy);
+        setCustomExpiryDate(customDate);
         setPhase('preview');
     }
 
@@ -398,22 +456,26 @@ function PasswordRotationModal({ selectedRows, isOpen, onClose, onApply }) {
     async function handleExecuteFromPreview() {
         setPhase('executing');
         setProgress({ current: 0, total: selectedRows.length });
-        await runRotation(rotationMode, generatorOptions);
+        await runRotation(rotationMode, generatorOptions, expiryStrategy, customExpiryDate);
     }
 
-    async function handleExecuteFromSettings(genOpts, mode) {
+    async function handleExecuteFromSettings(genOpts, mode, strategy, customDate) {
         setGeneratorOptions(genOpts);
         setRotationMode(mode);
+        setExpiryStrategy(strategy);
+        setCustomExpiryDate(customDate);
         setPhase('executing');
         setProgress({ current: 0, total: selectedRows.length });
-        await runRotation(mode, genOpts);
+        await runRotation(mode, genOpts, strategy, customDate);
     }
 
-    async function runRotation(mode, genOpts) {
+    async function runRotation(mode, genOpts, strategy, customDate) {
         try {
             var rotResults = await API.rotatePasswords(selectedRows, {
                 mode: mode,
                 generatorOptions: genOpts,
+                expiryStrategy: strategy,
+                customExpiryDate: customDate,
             });
 
             // Build undo entries from successful rotations
