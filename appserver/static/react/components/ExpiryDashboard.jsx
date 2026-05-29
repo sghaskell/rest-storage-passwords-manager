@@ -302,7 +302,7 @@ function ExpiryDashboard({
     var tableHeader = React.createElement('div', {
         style: {
             display: 'grid',
-            gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr 90px',
+            gridTemplateColumns: '1fr 1.2fr 1fr 1fr 100px 120px',
             padding: '0.5rem 0.75rem',
             fontWeight: '600',
             fontSize: '12px',
@@ -313,7 +313,12 @@ function ExpiryDashboard({
             borderBottom: '1px solid var(--ed-header-border)',
         }
     },
-        'Username', 'Realm', 'Expiry Date', 'Days Remaining', 'Status', 'Actions'
+        React.createElement('span', null, 'Username'),
+        React.createElement('span', null, 'Realm'),
+        React.createElement('span', null, 'Expiry Date'),
+        React.createElement('span', null, 'Days Remaining'),
+        React.createElement('span', null, 'Status'),
+        React.createElement('span', null, 'Actions')
     );
 
     var tableRows = sortedCreds.map(function(cred, i) {
@@ -335,11 +340,17 @@ function ExpiryDashboard({
             daysDisplay = daysRem + ' days';
         }
 
+        // Days pill color
+        var daysPillColor = daysRem !== null && daysRem < 0 ? '#d32f2f' :
+                           daysRem !== null && daysRem <= thresholdDays ? '#f59e0b' :
+                           daysRem !== null ? '#0d8469' : '#9e9e9e';
+
         return React.createElement('div', {
             key: cred.stanzaKey || (cred.name + ':' + (cred.realm || '') + ':' + i),
             style: {
                 display: 'grid',
-                gridTemplateColumns: '1fr 1.2fr 1fr 1fr 0.8fr 90px',
+                gridTemplateColumns: '1fr 1.2fr 1fr 1fr 100px 120px',
+                alignItems: 'center',
                 padding: '0.5rem 0.75rem',
                 fontSize: '13px',
                 borderBottom: '1px solid var(--ed-border)',
@@ -348,26 +359,70 @@ function ExpiryDashboard({
                 borderLeft: '3px solid ' + rowColor,
             }
         },
-            // Username
-            React.createElement('span', { style: { fontWeight: '600' } }, cred.name || '—'),
-            // Realm
-            React.createElement('span', { style: { color: 'var(--ed-text-muted)' } }, displayRealm),
-            // Expiry Date
-            React.createElement('span', {
-                style: { color: cred.expiryDate ? rowColor : 'var(--ed-text-muted)' }
-            }, cred.expiryDate ? formatDateShort(cred.expiryDate) : '—'),
-            // Days Remaining
+            // Username — pill
             React.createElement('span', {
                 style: {
-                    fontWeight: daysRem !== null && daysRem <= thresholdDays ? '700' : 'normal',
-                    color: daysRem !== null && daysRem < 0 ? '#d32f2f' :
-                           daysRem !== null && daysRem <= thresholdDays ? '#f59e0b' :
-                           'var(--ed-text)',
+                    justifySelf: 'start',
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: isDark ? '#1a237e' : '#e8eaf6',
+                    color: isDark ? '#c5cae9' : '#283593',
+                    border: '1px solid ' + (isDark ? '#5c6bc0' : '#9fa8da'),
+                    whiteSpace: 'nowrap',
+                }
+            }, cred.name || '—'),
+            // Realm — pill
+            React.createElement('span', {
+                style: {
+                    justifySelf: 'start',
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: isDark ? '#37474f' : '#f5f5f5',
+                    color: isDark ? '#b0bec5' : '#757575',
+                    border: '1px solid ' + (isDark ? '#546e7a' : '#e0e0e0'),
+                    whiteSpace: 'nowrap',
+                }
+            }, displayRealm),
+            // Expiry Date — pill
+            React.createElement('span', {
+                style: {
+                    justifySelf: 'start',
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: cred.expiryDate ? (isDark ? rowColor + '22' : rowColor + '15') : (isDark ? '#9e9e9e22' : '#9e9e9e22'),
+                    color: cred.expiryDate ? rowColor : '#9e9e9e',
+                    border: '1px solid ' + (cred.expiryDate ? rowColor + '40' : (isDark ? '#9e9e9e88' : '#9e9e9e55')),
+                    whiteSpace: 'nowrap',
+                }
+            }, cred.expiryDate ? formatDateShort(cred.expiryDate) : '—'),
+            // Days Remaining — pill
+            React.createElement('span', {
+                style: {
+                    justifySelf: 'start',
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: daysRem !== null && daysRem <= thresholdDays ? '700' : '600',
+                    backgroundColor: isDark ? daysPillColor + '22' : daysPillColor + '15',
+                    color: daysPillColor,
+                    border: '1px solid ' + daysPillColor + '40',
+                    whiteSpace: 'nowrap',
                 }
             }, daysDisplay),
             // Status badge
             React.createElement('span', {
                 style: {
+                    justifySelf: 'start',
                     display: 'inline-block',
                     padding: '2px 8px',
                     borderRadius: '12px',
@@ -393,14 +448,6 @@ function ExpiryDashboard({
     // ─── Render ───────────────────────────────────────────────────────────
     return React.createElement('div', { className: 'expiry-dashboard' },
         themeCSS,
-        React.createElement('h2', {
-            style: {
-                margin: '0 0 1rem 0',
-                fontSize: '18px',
-                fontWeight: '600',
-                color: 'var(--ed-text)',
-            }
-        }, 'Expiry Dashboard'),
         toolbar,
         statsCards,
         React.createElement('div', {

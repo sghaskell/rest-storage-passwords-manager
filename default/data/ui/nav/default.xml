@@ -1,6 +1,6 @@
 <nav search_view="credential_management" color="#65A637">
   <view name="credential_management" />
-  <view name="expiry_dashboard" />
+  <view name="password_rotation" />
   <view name="role_access" />
   <view name="audit_log" />
 </nav>
