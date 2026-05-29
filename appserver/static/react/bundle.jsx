@@ -506,16 +506,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var credKey = API.tagCredKey(cred);
                     var tags = allTags[credKey] || [];
 
-                    // Debug: log key mismatch on first credential
-                    if (fetched.indexOf(cred) === 0) {
-                        console.log('[LOAD] cred:', JSON.stringify({name: cred.name, realm: cred.realm, app: cred.app, nsOwner: cred.namespaceOwner, owner: cred.owner, sharing: cred.sharing}));
-                        console.log('[LOAD] credKey:', credKey);
-                        console.log('[LOAD] expiryMap keys:', Object.keys(allExpiry));
-                        console.log('[LOAD] tagsMap keys:', Object.keys(allTags));
-                        console.log('[LOAD] expiry found:', !!allExpiry[credKey]);
-                        console.log('[LOAD] tags found:', !!allTags[credKey]);
-                    }
-
                     var enrichedTags = tags.map(function(t) {
                         return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
                     });

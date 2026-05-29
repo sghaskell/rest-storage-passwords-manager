@@ -2115,11 +2115,12 @@ async function setExpiryForCredential(credential, expiryDate) {
         expiry_date: expiryDate || '',
     };
     await kvStoreSetDocument(EXPIRY_COLLECTION, key, body);
-    console.log('[EXPIRY][SAVE] key:', key, 'expiry_date:', expiryDate || '(cleared)');
     // Verify: read back what we just wrote
     try {
         var verifyData = await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), { method: 'GET' });
-        console.log('[EXPIRY][VERIFY] read back:', JSON.stringify(verifyData));
+        if (!verifyData || !verifyData.expiry_date) {
+            throw new Error('Expiry write verification failed — data not persisted');
+        }
     } catch (vErr) {
         console.error('[EXPIRY][VERIFY] FAILED:', vErr.message);
     }
@@ -2386,7 +2387,6 @@ async function waitForCollectionReady(name, maxAttempts, intervalMs) {
     }
     // Last resort: collection exists but state unknown — assume it's ready
     // The retry loop in kvStoreSetDocument will catch any remaining issues
-    console.warn('[KVSTORE] Collection', name, 'state not "created" after polling — proceeding anyway');
     return true;
 }
 
@@ -2424,14 +2424,11 @@ async function kvStoreSetDocument(collectionName, key, body) {
             }
             if (e.status === 404 && !useKeyPath) {
                 // Collection might not exist — ensure it exists and retry
-                console.warn('[KVSTORE] 404 for', collectionName, '- ensuring collection exists');
                 await ensureCollection(collectionName);
                 continue; // Retry after ensuring collection
             }
             if (attempt < maxAttempts - 1 && (e.status === 500 || e.status === 503 || e.status === 400)) {
                 // Transient error (collection not ready, etc.) — retry with backoff
-                var backoff = 200 * Math.pow(2, attempt);
-                console.warn('[KVSTORE] attempt', attempt + 1, 'failed for', collectionName + '/' + key, ':', e.message, '- retrying in', backoff, 'ms');
                 await new Promise(function(resolve) { setTimeout(resolve, backoff); });
                 continue;
             }
@@ -2462,7 +2459,6 @@ async function ensureCollection(name) {
         }
     } catch (e) {
         // GET failed — collection likely doesn't exist (404, 400, or other)
-        console.log('[KVSTORE] GET for collection', name, 'failed (status=' + e.status + '), will attempt creation');
     }
 
     if (collectionExists) {
@@ -2488,11 +2484,9 @@ async function ensureCollection(name) {
             });
             // Wait for the collection to finish initializing
             await waitForCollectionReady(name);
-            console.log('[KVSTORE] Created collection:', name);
         } catch (createErr) {
             if (createErr.status === 409) {
                 // Someone else created it — wait for it to be ready too
-                console.log('[KVSTORE] Collection', name, 'created by another request');
                 await waitForCollectionReady(name);
                 return;
             }
@@ -2541,9 +2535,6 @@ async function setTagsForCredential(credential, tags) {
         .map(function(t) { return t.trim().toLowerCase(); })
         .filter(Boolean)
         .slice(0, 5);
-    console.log('[TAGS][SAVE] credential:', JSON.stringify(credential));
-    console.log('[TAGS][SAVE] key:', key, 'tags:', cleanTags);
-
     for (var i = 0; i < cleanTags.length; i++) {
         var tag = cleanTags[i];
         if (!/^[a-z0-9_-]{1,50}$/.test(tag)) {
@@ -2562,7 +2553,6 @@ async function setTagsForCredential(credential, tags) {
         }
     }
 
-    console.log('[TAGS][SAVE] POST url:', KVSTORE_DATA + '/' + TAGS_COLLECTION, 'body:', JSON.stringify({ _key: key, tags: JSON.stringify(cleanTags) }));
     await kvStoreSetDocument(TAGS_COLLECTION, key, {
         _key: key,
         tags: JSON.stringify(cleanTags),
@@ -2572,12 +2562,9 @@ async function setTagsForCredential(credential, tags) {
     try {
         var verifyUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
         var verifyData = await splunkdRequest(verifyUrl, { method: 'GET' });
-        console.log('[TAGS][SAVE] verify read:', JSON.stringify(verifyData));
     } catch (vErr) {
         console.error('[TAGS][SAVE] verify FAILED:', vErr.message);
     }
-
-    console.log('[TAGS][SAVE] tags saved successfully', cleanTags);
     return cleanTags;
 }
 
@@ -2586,25 +2573,19 @@ async function setTagsForCredential(credential, tags) {
  */
 async function getTagsForCredential(credential) {
     var key = tagCredKey(credential);
-    console.log('[TAGS][LOAD] credential:', JSON.stringify(credential));
-    console.log('[TAGS][LOAD] looking up key:', key);
     try {
         var url = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
-        console.log('[TAGS][LOAD] url:', url);
         var data = await splunkdRequest(url, {
             method: 'GET',
         });
-        console.log('[TAGS][LOAD] response:', JSON.stringify(data));
         // Splunk 10.2 KVStore returns flat object for single doc (not {items: [...]}):
         // { _key: "...", tags: "[\"t1\"]", ... }
         var doc = data;
         if (doc && doc.tags) {
             var parsed = JSON.parse(doc.tags);
-            console.log('[TAGS][LOAD] found tags:', parsed);
             return parsed;
         }
     } catch (e) {
-        console.log('[TAGS][LOAD] error:', e.status, e.message);
         if (e.status !== 404) throw e;
     }
     return [];
