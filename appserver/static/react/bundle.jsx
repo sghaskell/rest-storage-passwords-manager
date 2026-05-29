@@ -506,6 +506,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var credKey = API.tagCredKey(cred);
                     var tags = allTags[credKey] || [];
 
+                    // Debug: log key mismatch on first credential
+                    if (fetched.indexOf(cred) === 0) {
+                        console.log('[LOAD] cred:', JSON.stringify({name: cred.name, realm: cred.realm, app: cred.app, nsOwner: cred.namespaceOwner, owner: cred.owner, sharing: cred.sharing}));
+                        console.log('[LOAD] credKey:', credKey);
+                        console.log('[LOAD] expiryMap keys:', Object.keys(allExpiry));
+                        console.log('[LOAD] tagsMap keys:', Object.keys(allTags));
+                        console.log('[LOAD] expiry found:', !!allExpiry[credKey]);
+                        console.log('[LOAD] tags found:', !!allTags[credKey]);
+                    }
+
                     var enrichedTags = tags.map(function(t) {
                         return { name: t, color: tagColorMap[t] || API.hashToColor(t) };
                     });
@@ -622,11 +632,15 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             try {
                 // Save realm as base realm — expiry goes to KV Store
                 var realmToSave = data.realm || '';
-                await API.createCredential(
+                var createdEntry = await API.createCredential(
                     data.username, data.password, realmToSave,
                     data.app, data.owner, data.readRoles, data.writeRoles,
                     data.sharing || 'app'
                 );
+
+                // Use the ACTUAL namespaceOwner from the created entry (parsed from entry.id)
+                // not the form's owner value — Splunk may store at a different namespace
+                var actualNsOwner = createdEntry && createdEntry.namespaceOwner ? createdEntry.namespaceOwner : data.owner;
 
                 // Write expiry to KV Store if set
                 if (data.expiryDate) {
@@ -635,7 +649,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             name: data.username,
                             realm: realmToSave,
                             app: data.app,
-                            namespaceOwner: data.owner,
+                            namespaceOwner: actualNsOwner,
                             sharing: data.sharing || 'app',
                         };
                         await API.setExpiryForCredential(createExpiryCred, data.expiryDate);
@@ -655,7 +669,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             name: data.username,
                             realm: realmToSave,
                             app: data.app,
-                            namespaceOwner: data.owner,
+                            namespaceOwner: actualNsOwner,
                             sharing: data.sharing || 'app',
                         };
                         await API.setTagsForCredential(createTagCred, data.tags);

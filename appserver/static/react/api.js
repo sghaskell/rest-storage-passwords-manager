@@ -366,7 +366,13 @@ async function createCredential(username, password, realm, app, owner, readRoles
             }
         );
         await _setAcl(aclPath, sharing, readRoles, writeRoles, owner);
-        return created.entry || null;
+        // Flatten the created entry so callers get the actual namespaceOwner from entry.id
+        // (not the form's owner value, which may differ from where Splunk actually stores it)
+        var createdEntry = (created && created.entry) || null;
+        if (createdEntry) {
+            return flattenConfigEntry(createdEntry);
+        }
+        return null;
     } catch (error) {
         // 409 means stanza already exists — fall back to configs endpoint
         // which creates at the exact namespace level.
@@ -2110,6 +2116,13 @@ async function setExpiryForCredential(credential, expiryDate) {
     };
     await kvStoreSetDocument(EXPIRY_COLLECTION, key, body);
     console.log('[EXPIRY][SAVE] key:', key, 'expiry_date:', expiryDate || '(cleared)');
+    // Verify: read back what we just wrote
+    try {
+        var verifyData = await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), { method: 'GET' });
+        console.log('[EXPIRY][VERIFY] read back:', JSON.stringify(verifyData));
+    } catch (vErr) {
+        console.error('[EXPIRY][VERIFY] FAILED:', vErr.message);
+    }
 }
 
 /**
