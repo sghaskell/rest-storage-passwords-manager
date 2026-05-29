@@ -88,8 +88,10 @@ function ExpiryDashboard({
     onRotateBulk,
 }) {
     const [autoRefresh, setAutoRefreshState] = React.useState(getAutoRefreshEnabled());
+    const [autoRefreshInterval, setAutoRefreshIntervalState] = React.useState(getAutoRefreshInterval());
     const [thresholdDays, setThresholdDaysState] = React.useState(API.getDueSoonThreshold());
     const [lastRefresh, setLastRefresh] = React.useState(Date.now());
+    const [refreshing, setRefreshing] = React.useState(false);
 
     // Re-classify credentials using current threshold
     const classifiedCreds = React.useMemo(function() {
@@ -132,21 +134,39 @@ function ExpiryDashboard({
         };
     }, [classifiedCreds]);
 
-    // Auto-refresh timer
+    // Auto-refresh timer — uses interval state directly
     React.useEffect(function() {
         if (!autoRefresh) return;
-        var interval = getAutoRefreshInterval();
         var timer = setInterval(function() {
-            if (onRefresh) onRefresh();
-        }, interval);
+            if (onRefresh) {
+                setRefreshing(true);
+                onRefresh();
+                setLastRefresh(Date.now());
+                setTimeout(function() { setRefreshing(false); }, 300);
+            }
+        }, autoRefreshInterval);
         return function() { clearInterval(timer); };
-    }, [autoRefresh]);
+    }, [autoRefresh, autoRefreshInterval]);
 
     // Toggle auto-refresh
     function handleToggleAutoRefresh() {
         var next = !autoRefresh;
         setAutoRefreshState(next);
         setAutoRefreshEnabled(next);
+    }
+
+    // Auto-refresh interval change — slider (minutes)
+    function handleIntervalChange(e) {
+        var minutes = parseInt(e.target.value, 10);
+        var ms = minutes * 60 * 1000;
+        setAutoRefreshInterval(ms); // saves to localStorage
+        setAutoRefreshIntervalState(ms); // updates state
+    }
+
+    // Format interval for display
+    function formatInterval(ms) {
+        var minutes = Math.round(ms / 60000);
+        return minutes + ' min';
     }
 
     // Threshold slider change
@@ -156,10 +176,18 @@ function ExpiryDashboard({
         API.setDueSoonThreshold(val);
     }
 
-    // Manual refresh
+    // Manual refresh — uses CSS animation frame instead of isLoading state
+    // (the fetch completes faster than React can render the loading UI)
     function handleRefresh() {
-        if (onRefresh) onRefresh();
-        setLastRefresh(Date.now());
+        setRefreshing(true);
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                if (onRefresh) onRefresh();
+                setLastRefresh(Date.now());
+                // Hide spinner after 300ms regardless of fetch completion
+                setTimeout(function() { setRefreshing(false); }, 300);
+            });
+        });
     }
 
     // Dark theme detection
@@ -185,6 +213,7 @@ function ExpiryDashboard({
         '  --ed-input-border: ' + (isDark ? '#555' : '#ccc') + ';',
         '  --ed-input-color: ' + (isDark ? '#e0e0e0' : '#333') + ';',
         '}',
+        '@keyframes spin { to { transform: rotate(360deg); } }',
     );
 
     // ─── Toolbar ──────────────────────────────────────────────────────────
@@ -206,22 +235,92 @@ function ExpiryDashboard({
             children: '\u2190 Credentials Table'
         }) : null,
 
-        // Refresh
-        React.createElement(Button, {
-            onClick: handleRefresh,
-            appearance: 'subtle',
-            children: '\u21bb Refresh'
-        }),
-
-        // Auto-refresh toggle
+        // Refresh + timestamp
         React.createElement('div', {
-            style: { display: 'flex', alignItems: 'center', gap: '0.35rem' }
+            style: { display: 'flex', alignItems: 'center', gap: '6px' }
+        },
+            React.createElement(Button, {
+                onClick: handleRefresh,
+                appearance: 'subtle',
+                children: React.createElement('span', {
+                    style: {
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                    }
+                },
+                    '\u21bb',
+                    'Refresh',
+                    refreshing && React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            width: '10px',
+                            height: '10px',
+                            border: '2px solid var(--ed-text-muted)',
+                            borderTopColor: 'transparent',
+                            borderRadius: '50%',
+                            animation: 'spin 0.6s linear infinite',
+                        }
+                    })
+                )
+            }),
+            React.createElement('span', {
+                style: {
+                    fontSize: '11px',
+                    color: 'var(--ed-text-muted)',
+                    whiteSpace: 'nowrap',
+                }
+            }, new Date(lastRefresh).toLocaleTimeString())
+        ),
+
+        // Auto-refresh toggle + interval slider
+        React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', gap: '0.5rem' }
         },
             React.createElement('span', { style: { fontSize: '13px', color: 'var(--ed-text-muted)' } }, 'Auto-refresh'),
             React.createElement(Switch, {
                 selected: autoRefresh,
                 onClick: handleToggleAutoRefresh,
-            })
+            }),
+            autoRefresh && React.createElement('span', {
+                style: {
+                    fontSize: '10px',
+                    color: '#0d8469',
+                    display: 'flex',
+                    alignItems: 'center',
+                }
+            },
+                React.createElement('span', {
+                    style: {
+                        display: 'inline-block',
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: '#0d8469',
+                        marginRight: '3px',
+                    }
+                })
+            ),
+            !autoRefresh ? null : React.createElement('div', {
+                style: { display: 'flex', alignItems: 'center', gap: '0.4rem' }
+            },
+                React.createElement('input', {
+                    type: 'range',
+                    min: 1,
+                    max: 60,
+                    value: Math.round(autoRefreshInterval / 60000),
+                    onChange: handleIntervalChange,
+                    style: { width: '80px', accentColor: '#0d8469' }
+                }),
+                React.createElement('span', {
+                    style: {
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        color: '#0d8469',
+                        minWidth: '3em',
+                    }
+                }, formatInterval(autoRefreshInterval))
+            )
         ),
 
         // Threshold slider
@@ -469,14 +568,7 @@ function ExpiryDashboard({
                     }
                 }, 'No credentials found')
         ),
-        React.createElement('div', {
-            style: {
-                marginTop: '0.5rem',
-                fontSize: '11px',
-                color: 'var(--ed-text-muted)',
-                textAlign: 'right',
-            }
-        }, 'Last refresh: ' + new Date(lastRefresh).toLocaleTimeString())
+        // No timestamp here — it's in the toolbar now
     );
 }
 
