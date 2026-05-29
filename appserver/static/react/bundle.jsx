@@ -641,6 +641,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         await API.setExpiryForCredential(createExpiryCred, data.expiryDate);
                     } catch (expErr) {
                         console.error('[EXPIRY][CREATE] failed:', expErr.message);
+                        showWarning('Expiry Not Set', [
+                            'The credential was created, but the expiry date could not be saved.',
+                            'Error: ' + getErrorMessage(expErr),
+                        ]);
                     }
                 }
 
@@ -657,6 +661,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         await API.setTagsForCredential(createTagCred, data.tags);
                     } catch (tagErr) {
                         console.error('[TAGS][CREATE] failed:', tagErr.message);
+                        showWarning('Tags Not Saved', [
+                            'The credential was created, but tags could not be saved.',
+                            'Error: ' + getErrorMessage(tagErr),
+                        ]);
                     }
                 }
 
@@ -712,6 +720,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }
                 } catch (expErr) {
                     console.warn('[EXPIRY][UPDATE] failed (non-fatal):', expErr.message);
+                    showWarning('Expiry Not Updated', [
+                        'The credential was updated, but the expiry change could not be saved.',
+                        'Error: ' + getErrorMessage(expErr),
+                    ]);
                 }
 
                 // Save tags if provided
@@ -727,6 +739,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         await API.setTagsForCredential(updateTagCred, data.tags);
                     } catch (tagErr) {
                         console.error('[TAGS][UPDATE] failed:', tagErr.message);
+                        showWarning('Tags Not Saved', [
+                            'The credential was updated, but tags could not be saved.',
+                            'Error: ' + getErrorMessage(tagErr),
+                        ]);
                     }
                 }
 

@@ -2099,6 +2099,7 @@ async function ensureExpiryCollection() {
 /**
  * Set expiry date for a credential in KVStore.
  * Pass empty string or null to clear expiry.
+ * Retries on transient errors (500/503) with exponential backoff.
  */
 async function setExpiryForCredential(credential, expiryDate) {
     await ensureExpiryCollection();
@@ -2107,24 +2108,7 @@ async function setExpiryForCredential(credential, expiryDate) {
         _key: key,
         expiry_date: expiryDate || '',
     };
-    try {
-        await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION, {
-            method: 'POST',
-            body: body,
-            jsonBody: true,
-        });
-    } catch (e) {
-        if (e.status === 409) {
-            // Update existing
-            await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), {
-                method: 'POST',
-                body: body,
-                jsonBody: true,
-            });
-        } else {
-            throw e;
-        }
-    }
+    await kvStoreSetDocument(EXPIRY_COLLECTION, key, body);
     console.log('[EXPIRY][SAVE] key:', key, 'expiry_date:', expiryDate || '(cleared)');
 }
 
@@ -2173,15 +2157,26 @@ async function getAllExpiryData() {
 
 /**
  * Delete expiry entry for a credential (cleanup on credential delete).
+ * Retries on transient errors (500/503) with exponential backoff.
  */
 async function deleteExpiryForCredential(credential) {
     var key = tagCredKey(credential);
-    try {
-        await splunkdRequest(KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key), {
-            method: 'DELETE',
-        });
-    } catch (e) {
-        if (e.status !== 404 && e.status !== 400) throw e;
+    var url = KVSTORE_DATA + '/' + EXPIRY_COLLECTION + '/' + encodeURIComponent(key);
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+            await splunkdRequest(url, { method: 'DELETE' });
+            return; // Success
+        } catch (e) {
+            if (e.status === 404 || e.status === 400) {
+                return; // Not found or bad key — not an error
+            }
+            if (attempt < 2 && (e.status === 500 || e.status === 503)) {
+                await new Promise(function(resolve) { setTimeout(resolve, 200 * Math.pow(2, attempt)); });
+                continue;
+            }
+            throw e;
+        }
     }
 }
 
@@ -2335,11 +2330,84 @@ function hashToColor(str) {
 }
 
 /**
- * Ensure a KVStore collection exists. Create if missing.
- * Uses the schema endpoint for reliable existence checking — the documents
- * endpoint can return 200 for empty collections or non-404 errors that
- * silently skip creation.
+ * Poll the KVStore config endpoint until the collection reports "created" state.
+ * Splunk 10.2: after POST to /storage/collections/config, the collection needs
+ * a moment to initialize its internal index. During this window, data POSTs fail with 500.
  */
+async function waitForCollectionReady(name, maxAttempts, intervalMs) {
+    maxAttempts = maxAttempts || 10;   // Up to 2 seconds
+    intervalMs = intervalMs || 200;
+    var configUrl = KVSTORE_CONFIG + '/' + name;
+
+    for (var i = 0; i < maxAttempts; i++) {
+        try {
+            var config = await splunkdRequest(configUrl, { method: 'GET' });
+            var state = null;
+            // Splunk returns { entry: [{ content: { state: "created" } }] }
+            if (config && config.entry && config.entry[0]) {
+                state = config.entry[0].content.state;
+            }
+            if (state === 'created') {
+                return true;
+            }
+        } catch (e) {
+            // Collection still initializing — GET may 500 or 404 briefly
+        }
+        await new Promise(function(resolve) { setTimeout(resolve, intervalMs); });
+    }
+    // Last resort: collection exists but state unknown — assume it's ready
+    // The retry loop in kvStoreSetDocument will catch any remaining issues
+    console.warn('[KVSTORE] Collection', name, 'state not "created" after polling — proceeding anyway');
+    return true;
+}
+
+/**
+ * POST or update a document in a KVStore collection with retry logic.
+ * Handles: 409 (duplicate → switch to key path), 500/503 (transient → retry with backoff).
+ */
+async function kvStoreSetDocument(collectionName, key, body) {
+    var maxAttempts = 3;
+    var baseUrl = KVSTORE_DATA + '/' + collectionName;
+    var useKeyPath = false;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            if (useKeyPath) {
+                await splunkdRequest(baseUrl + '/' + encodeURIComponent(key), {
+                    method: 'POST',
+                    body: body,
+                    jsonBody: true,
+                });
+            } else {
+                await splunkdRequest(baseUrl, {
+                    method: 'POST',
+                    body: body,
+                    jsonBody: true,
+                });
+            }
+            return; // Success
+        } catch (e) {
+            if (e.status === 409) {
+                // Document already exists — switch to update path
+                useKeyPath = true;
+                continue; // Retry immediately with the key path
+            }
+            if (attempt < maxAttempts - 1 && (e.status === 500 || e.status === 503)) {
+                // Transient error (collection not ready, etc.) — retry with backoff
+                var backoff = 200 * Math.pow(2, attempt);
+                console.warn('[KVSTORE] attempt', attempt + 1, 'failed for', collectionName + '/' + key, ':', e.message, '- retrying in', backoff, 'ms');
+                await new Promise(function(resolve) { setTimeout(resolve, backoff); });
+                continue;
+            }
+            // Max attempts reached or non-retryable error
+            throw e;
+        }
+    }
+}
+
+// Deduplicate in-flight collection creation requests
+var collectionCreationPromises = {};
+
 /**
  * Ensure a KVStore collection exists. Create if missing.
  * Splunk 10.2: collections are schema-less, fields auto-inferred from first document.
@@ -2352,28 +2420,46 @@ async function ensureCollection(name) {
         await splunkdRequest(configUrl, { method: 'GET' });
         return true; // Collection exists
     } catch (e) {
-        if (e.status === 404) {
-            // Collection doesn't exist — create it
-            // Splunk 10.2: POST with name only, fields auto-inferred
+        if (e.status !== 404) throw e;
+
+        // If another request is already creating this collection, wait for it
+        if (collectionCreationPromises[name]) {
+            try {
+                await collectionCreationPromises[name];
+                return true;
+            } catch (waitErr) {
+                // Creation failed, fall through to try ourselves
+            }
+            delete collectionCreationPromises[name];
+        }
+
+        var createPromise = (async function() {
             try {
                 await splunkdRequest(KVSTORE_CONFIG, {
                     method: 'POST',
                     body: { name: name },
                 });
-                console.log('[TAGS] Created KVStore collection:', name);
-                return true;
+                // Wait for the collection to finish initializing
+                await waitForCollectionReady(name);
+                console.log('[KVSTORE] Created collection:', name);
             } catch (createErr) {
                 if (createErr.status === 409) {
-                    // Another request beat us to it — collection now exists
-                    console.log('[TAGS] Collection', name, 'already exists (race condition resolved)');
-                    return true;
+                    // Someone else created it — wait for it to be ready too
+                    console.log('[KVSTORE] Collection', name, 'created by another request');
+                    await waitForCollectionReady(name);
+                    return;
                 }
-                console.error('[TAGS] Failed to create collection', name, ':', createErr.message);
                 throw createErr;
             }
+        })();
+
+        collectionCreationPromises[name] = createPromise;
+        try {
+            await createPromise;
+        } finally {
+            delete collectionCreationPromises[name];
         }
-        // Non-404 error — KVStore may be unavailable
-        throw e;
+        return true;
     }
 }
 
@@ -2423,51 +2509,18 @@ async function setTagsForCredential(credential, tags) {
     for (var j = 0; j < cleanTags.length; j++) {
         var tag = cleanTags[j];
         if (!existingDefs.some(function(d) { return d.tag_name === tag; })) {
-            try {
-                await splunkdRequest(KVSTORE_DATA + '/' + TAG_DEFS_COLLECTION, {
-                    method: 'POST',
-                    body: {
-                        _key: tag,
-                        color: hashToColor(tag),
-                    },
-                    jsonBody: true,
-                });
-            } catch (tagErr) {
-                if (tagErr.status === 409) continue;
-                throw tagErr;
-            }
+            await kvStoreSetDocument(TAG_DEFS_COLLECTION, tag, {
+                _key: tag,
+                color: hashToColor(tag),
+            });
         }
     }
 
-    try {
-        var postUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION;
-        var postBody = {
-            _key: key,
-            tags: JSON.stringify(cleanTags),
-        };
-        console.log('[TAGS][SAVE] POST url:', postUrl, 'body:', JSON.stringify(postBody));
-        await splunkdRequest(postUrl, {
-            method: 'POST',
-            body: postBody,
-            jsonBody: true,
-        });
-    } catch (e) {
-        if (e.status === 409) {
-            var putUrl = KVSTORE_DATA + '/' + TAGS_COLLECTION + '/' + encodeURIComponent(key);
-            var putBody = {
-                _key: key,
-                tags: JSON.stringify(cleanTags),
-            };
-            console.log('[TAGS][SAVE] PUT url:', putUrl, 'body:', JSON.stringify(putBody));
-            await splunkdRequest(putUrl, {
-                method: 'POST',
-                body: putBody,
-                jsonBody: true,
-            });
-        } else {
-            throw e;
-        }
-    }
+    console.log('[TAGS][SAVE] POST url:', KVSTORE_DATA + '/' + TAGS_COLLECTION, 'body:', JSON.stringify({ _key: key, tags: JSON.stringify(cleanTags) }));
+    await kvStoreSetDocument(TAGS_COLLECTION, key, {
+        _key: key,
+        tags: JSON.stringify(cleanTags),
+    });
 
     // Verify: read back what we just wrote
     try {
