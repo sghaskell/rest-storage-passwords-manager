@@ -201,29 +201,15 @@ function CredentialTable({
                 if (f.field === 'username' && name !== val) return false;
                 if (f.field === 'realm') {
                     var _fRealmInfo = _parseRealmForDisplay(credential.realm);
-                    var _fDisplayRealm = _fRealmInfo.baseRealm && _fRealmInfo.baseRealm !== 'nobody'
-                        ? _fRealmInfo.baseRealm.toLowerCase()
-                        : (val === 'Exp: ...' ? '' : '');
                     var _fIsGlobal = !_fRealmInfo.baseRealm || _fRealmInfo.baseRealm === 'nobody';
-                    // Handle expiry-only display labels ("Exp: 26 May 2026")
-                    var _fRealmLabel;
-                    if (!_fIsGlobal && _fRealmInfo.baseRealm) {
-                        _fRealmLabel = _fRealmInfo.baseRealm.toLowerCase();
-                    } else if (_fRealmInfo.hasExpiry) {
-                        // For expiry-only realms, the label is "Exp: ..." — match any expiry credential
-                        // In practice this shouldn't happen since we parse and display base realm first
-                        _fRealmLabel = 'exp';
-                    } else {
-                        _fRealmLabel = 'global';
-                    }
-                    if (val === 'global' && !_fIsGlobal) return false;
-                    if (val !== 'global' && _fRealmLabel !== val) return false;
+                    var _fRealmLabel = !_fIsGlobal ? _fRealmInfo.baseRealm.toLowerCase() : 'none';
+                    if (val === 'none' && !_fIsGlobal) return false;
+                    if (val !== 'none' && _fRealmLabel !== val) return false;
                 }
                 if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                 if (f.field === 'owner' && (credential.namespaceOwner || credential.owner || '').toLowerCase() !== val) return false;
                 if (f.field === 'expiry') {
-                    var _expInfo = _parseRealmForDisplay(credential.realm);
-                    var _expDate = _expInfo.expiryDate || '';
+                    var _expDate = credential.expiryDate || '';
                     if (_expDate !== val) return false;
                 }
                 if (f.field === 'rotation' && (credential.rotationStatus || 'none').toLowerCase() !== val) return false;
@@ -473,18 +459,7 @@ function CredentialTable({
             var hasExpiry = _parsed.hasExpiry;
             var isGlobal = !baseRealm || baseRealm === 'nobody';
 
-            var realmLabel;
-            if (!isGlobal) {
-                // Has a base realm — display it
-                realmLabel = baseRealm;
-            } else if (hasExpiry) {
-                // No base realm but has expiry — show friendly expiry label
-                var _ed = new Date(_parsed.expiryDate + 'T00:00:00');
-                var _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                realmLabel = 'Exp: ' + _ed.getDate() + ' ' + _months[_ed.getMonth()] + ' ' + _ed.getFullYear();
-            } else {
-                realmLabel = 'global';
-            }
+            var realmLabel = !isGlobal ? baseRealm : 'None';
             var realmActive = isFilterActive('realm', realmLabel);
             return React.createElement(TableCell, null,
                 React.createElement('span', {

@@ -2333,22 +2333,38 @@ function hashToColor(str) {
  * Poll the KVStore config endpoint until the collection reports "created" state.
  * Splunk 10.2: after POST to /storage/collections/config, the collection needs
  * a moment to initialize its internal index. During this window, data POSTs fail with 500.
+ * Falls back to testing the data endpoint directly if state polling doesn't work.
  */
 async function waitForCollectionReady(name, maxAttempts, intervalMs) {
-    maxAttempts = maxAttempts || 10;   // Up to 2 seconds
+    maxAttempts = maxAttempts || 15;   // Up to 3 seconds
     intervalMs = intervalMs || 200;
     var configUrl = KVSTORE_CONFIG + '/' + name;
+    var dataUrl = KVSTORE_DATA + '/' + name;
 
     for (var i = 0; i < maxAttempts; i++) {
         try {
+            // Check config state
             var config = await splunkdRequest(configUrl, { method: 'GET' });
             var state = null;
-            // Splunk returns { entry: [{ content: { state: "created" } }] }
-            if (config && config.entry && config.entry[0]) {
-                state = config.entry[0].content.state;
+            // Handle both { entry: [...] } and { entry: {...} } response shapes
+            var entry = config && config.entry;
+            if (Array.isArray(entry) && entry[0]) {
+                state = entry[0].content && entry[0].content.state;
+            } else if (entry && entry.content) {
+                state = entry.content.state;
             }
             if (state === 'created') {
                 return true;
+            }
+            // Also try the data endpoint — if it responds without error, collection is ready
+            try {
+                await splunkdRequest(dataUrl, { method: 'GET' });
+                // Data endpoint responded — collection is ready
+                return true;
+            } catch (dataErr) {
+                // 404 means collection doesn't exist yet (shouldn't happen here)
+                // 500 means collection is still initializing
+                if (dataErr.status !== 500) throw dataErr;
             }
         } catch (e) {
             // Collection still initializing — GET may 500 or 404 briefly
@@ -2363,7 +2379,8 @@ async function waitForCollectionReady(name, maxAttempts, intervalMs) {
 
 /**
  * POST or update a document in a KVStore collection with retry logic.
- * Handles: 409 (duplicate → switch to key path), 500/503 (transient → retry with backoff).
+ * Handles: 409 (duplicate → switch to key path), 404 (collection missing → ensure + retry),
+ * 500/503 (transient → retry with backoff).
  */
 async function kvStoreSetDocument(collectionName, key, body) {
     var maxAttempts = 3;
@@ -2392,7 +2409,13 @@ async function kvStoreSetDocument(collectionName, key, body) {
                 useKeyPath = true;
                 continue; // Retry immediately with the key path
             }
-            if (attempt < maxAttempts - 1 && (e.status === 500 || e.status === 503)) {
+            if (e.status === 404 && !useKeyPath) {
+                // Collection might not exist — ensure it exists and retry
+                console.warn('[KVSTORE] 404 for', collectionName, '- ensuring collection exists');
+                await ensureCollection(collectionName);
+                continue; // Retry after ensuring collection
+            }
+            if (attempt < maxAttempts - 1 && (e.status === 500 || e.status === 503 || e.status === 400)) {
                 // Transient error (collection not ready, etc.) — retry with backoff
                 var backoff = 200 * Math.pow(2, attempt);
                 console.warn('[KVSTORE] attempt', attempt + 1, 'failed for', collectionName + '/' + key, ':', e.message, '- retrying in', backoff, 'ms');
@@ -2414,53 +2437,63 @@ var collectionCreationPromises = {};
  * No schema validation needed.
  */
 async function ensureCollection(name) {
-    // Check if collection config exists — returns 404 when missing
+    // Check if collection config exists — try GET, but accept ANY error as "maybe missing"
+    // Splunk versions return different status codes for missing collections (404, 400, 200+empty)
     var configUrl = KVSTORE_CONFIG + '/' + name;
+    var collectionExists = false;
     try {
-        await splunkdRequest(configUrl, { method: 'GET' });
-        return true; // Collection exists
+        var config = await splunkdRequest(configUrl, { method: 'GET' });
+        // Only consider it "exists" if we get a valid response with entry data
+        if (config && config.entry) {
+            collectionExists = true;
+        }
     } catch (e) {
-        if (e.status !== 404) throw e;
+        // GET failed — collection likely doesn't exist (404, 400, or other)
+        console.log('[KVSTORE] GET for collection', name, 'failed (status=' + e.status + '), will attempt creation');
+    }
 
-        // If another request is already creating this collection, wait for it
-        if (collectionCreationPromises[name]) {
-            try {
-                await collectionCreationPromises[name];
-                return true;
-            } catch (waitErr) {
-                // Creation failed, fall through to try ourselves
-            }
-            delete collectionCreationPromises[name];
-        }
-
-        var createPromise = (async function() {
-            try {
-                await splunkdRequest(KVSTORE_CONFIG, {
-                    method: 'POST',
-                    body: { name: name },
-                });
-                // Wait for the collection to finish initializing
-                await waitForCollectionReady(name);
-                console.log('[KVSTORE] Created collection:', name);
-            } catch (createErr) {
-                if (createErr.status === 409) {
-                    // Someone else created it — wait for it to be ready too
-                    console.log('[KVSTORE] Collection', name, 'created by another request');
-                    await waitForCollectionReady(name);
-                    return;
-                }
-                throw createErr;
-            }
-        })();
-
-        collectionCreationPromises[name] = createPromise;
-        try {
-            await createPromise;
-        } finally {
-            delete collectionCreationPromises[name];
-        }
+    if (collectionExists) {
         return true;
     }
+
+    // If another request is already creating this collection, wait for it
+    if (collectionCreationPromises[name]) {
+        try {
+            await collectionCreationPromises[name];
+            return true;
+        } catch (waitErr) {
+            // Creation failed, fall through to try ourselves
+        }
+        delete collectionCreationPromises[name];
+    }
+
+    var createPromise = (async function() {
+        try {
+            await splunkdRequest(KVSTORE_CONFIG, {
+                method: 'POST',
+                body: { name: name },
+            });
+            // Wait for the collection to finish initializing
+            await waitForCollectionReady(name);
+            console.log('[KVSTORE] Created collection:', name);
+        } catch (createErr) {
+            if (createErr.status === 409) {
+                // Someone else created it — wait for it to be ready too
+                console.log('[KVSTORE] Collection', name, 'created by another request');
+                await waitForCollectionReady(name);
+                return;
+            }
+            throw createErr;
+        }
+    })();
+
+    collectionCreationPromises[name] = createPromise;
+    try {
+        await createPromise;
+    } finally {
+        delete collectionCreationPromises[name];
+    }
+    return true;
 }
 
 /**
