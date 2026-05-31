@@ -398,9 +398,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var val = f.value.toLowerCase();
                     if (f.field === 'username' && name !== val) return false;
                     if (f.field === 'realm') {
-                        // Parse realm to match on base realm (handles combined "prod;expiry_..." format)
-                        var _rInfo = API.parseExpiryFromRealm(credential.realm || '');
-                        var _baseRealm = _rInfo.baseRealm || '';
+                        var _baseRealm = credential.realm || '';
                         var _isGlobal = !_baseRealm || _baseRealm === 'nobody';
                         if (val === 'global' && !_isGlobal) return false;
                         if (val !== 'global' && _baseRealm.toLowerCase() !== val) return false;
@@ -557,57 +555,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             }
         }
 
-        // Migrate expiry from realm to KV Store
-        async function handleMigrateExpiry() {
-            var creds = data.credentials;
-            var withExpiry = creds.filter(function(c) { return (c.realm || '').includes('expiry_'); });
-            if (withExpiry.length === 0) {
-                showSuccess('Migration Not Needed', [
-                    'No credentials have expiry embedded in realm.',
-                    'All credentials are already migrated or have no expiry.'
-                ]);
-                return;
-            }
-
-            if (!confirm('Migrate ' + withExpiry.length + ' credential(s) from realm-embedded expiry to KV Store?\n\nThis will:\n1. Save expiry dates to KV Store\n2. Rename credentials to use clean realm names\n\nThis may take a moment. Continue?')) {
-                return;
-            }
-
-            try {
-                setResult({ title: 'Migrating...', messages: ['Scanning credentials...'] });
-                setModals(prev => ({ ...prev, result: true }));
-
-                var result = await API.migrateExpiryFromRealm(creds, function(current, total) {
-                    setResult({
-                        title: 'Migrating...',
-                        messages: ['Processing ' + current + ' of ' + total + ' credentials...']
-                    });
-                });
-
-                var messages = [
-                    `<strong>${result.migrated}</strong> credential(s) migrated successfully`
-                ];
-                if (result.skipped > 0) {
-                    messages.push(result.skipped + ' credential(s) skipped (no expiry to migrate)');
-                }
-                if (result.errors.length > 0) {
-                    messages.push('---');
-                    result.errors.forEach(function(e) { messages.push('ERROR: ' + e); });
-                }
-
-                if (result.errors.length === 0) {
-                    showSuccess('Migration Complete', messages);
-                } else {
-                    showError('Migration Complete (with errors)', messages);
-                }
-
-                await loadCredentials();
-            } catch (err) {
-                console.error('Migration failed:', err);
-                showError('Migration Failed', ['Error: ' + (err.message || 'unknown error')]);
-            }
-        }
-
         // Scan for duplicates after credentials loaded (debounced to avoid scanning on every load)
         React.useEffect(() => {
             if (credentials.length > 0 && !scanning) {
@@ -706,7 +653,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
                 // Update expiry in KV Store if changed
                 try {
-                    var currentExpiry = API.resolveExpiryDate(credential);
+                    var currentExpiry = credential.expiryDate || '';
                     var newExpiry = data.expiryDate || '';
                     if (currentExpiry !== newExpiry) {
                         var updateExpiryCred = {
@@ -730,7 +677,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     ]);
                 }
 
-                // Save tags if provided
+                // Update tags — save if non-empty, delete if cleared
                 if (data.tags && data.tags.length > 0) {
                     try {
                         var updateTagCred = {
@@ -747,6 +694,19 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             'The credential was updated, but tags could not be saved.',
                             'Error: ' + getErrorMessage(tagErr),
                         ]);
+                    }
+                } else {
+                    try {
+                        var deleteTagCred = {
+                            name: credential.name,
+                            realm: credRealm,
+                            app: data.app,
+                            namespaceOwner: data.owner,
+                            sharing: data.sharing || 'app',
+                        };
+                        await API.deleteTagsForCredential(deleteTagCred);
+                    } catch (tagErr) {
+                        console.error('[TAGS][UPDATE-DELETE] failed:', tagErr.message);
                     }
                 }
 
@@ -1088,16 +1048,67 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
                 await loadCredentials();
 
-                // Save tags for credentials that have _bulkTags
+                // Save tags for credentials that have _bulkTags.
+                // Tags are ADDED to existing tags (merge). Reload credentials first so
+                // we use up-to-date credential objects (after ACL changes) for tag lookups.
                 var tagPromises = [];
-                updates.forEach(function(c) {
+                updates.forEach(function(c, i) {
                     if (c._bulkTags && c._bulkTags.length > 0) {
-                        tagPromises.push(API.setTagsForCredential(c, c._bulkTags).catch(function(err) {
+                        // Use the reloaded credential data for tag lookup
+                        // The credential key may have changed if owner/sharing changed
+                        var newKey = API.tagCredKey({
+                            name: c.name,
+                            realm: c.realm || '',
+                            app: c.app || 'search',
+                            namespaceOwner: c.owner || (c.namespaceOwner || 'nobody'),
+                            sharing: c.sharing || 'app',
+                        });
+                        // Find matching credential in reloaded data by key
+                        var reloaded = data.credentials.find(function(rc) {
+                            return API.tagCredKey(rc) === newKey;
+                        });
+                        if (!reloaded) {
+                            console.warn('[BULK-TAGS] Could not find reloaded credential for:', c.name);
+                            return;
+                        }
+                        // Merge: existing tags + new tags
+                        var existingTags = (reloaded.tags || []).map(function(t) { return t.name || t; });
+                        var mergedTags = existingTags.slice();
+                        c._bulkTags.forEach(function(t) {
+                            if (mergedTags.indexOf(t) === -1 && mergedTags.length < 5) {
+                                mergedTags.push(t);
+                            }
+                        });
+                        tagPromises.push(API.setTagsForCredential(reloaded, mergedTags).catch(function(err) {
                             errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong> tag update failed: ' + getErrorMessage(err));
                         }));
                     }
                 });
                 await Promise.allSettled(tagPromises);
+
+                // Update expiry dates for credentials that have _bulkExpiry
+                var expiryPromises = [];
+                updates.forEach(function(c) {
+                    if (c._bulkExpiry) {
+                        var expiryCred = {
+                            name: c.name,
+                            realm: c.realm || '',
+                            app: c.app || 'search',
+                            namespaceOwner: c.owner || (c.namespaceOwner || 'nobody'),
+                            sharing: c.sharing || 'app',
+                        };
+                        if (c._bulkExpiry !== '') {
+                            expiryPromises.push(API.setExpiryForCredential(expiryCred, c._bulkExpiry).catch(function(err) {
+                                errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong> expiry update failed: ' + getErrorMessage(err));
+                            }));
+                        } else {
+                            expiryPromises.push(API.deleteExpiryForCredential(expiryCred).catch(function(err) {
+                                errorMessages.push('<strong>' + escapeHtml(c.name) + '</strong> expiry clear failed: ' + getErrorMessage(err));
+                            }));
+                        }
+                    }
+                });
+                await Promise.allSettled(expiryPromises);
 
                 handleDeselectAll();
                 setModals(prev => ({ ...prev, bulkEdit: false }));
@@ -1297,15 +1308,9 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     selectedRows.length > 0 && React.createElement(Button, {
                         onClick: () => {
                             if (selectedRows.length === 1) {
-                                setEditingCredential({
-                                    name: selectedRows[0].name,
-                                    realm: selectedRows[0].realm,
-                                    app: selectedRows[0].app,
-                                    owner: selectedRows[0].owner,
-                                    sharing: selectedRows[0].sharing,
-                                    aclRead: selectedRows[0].aclRead || '',
-                                    aclWrite: selectedRows[0].aclWrite || '',
-                                });
+                                // Pass the full enriched credential — CredentialForm needs
+                                // expiryDate, tags, namespaceOwner, rotationStatus etc.
+                                setEditingCredential(selectedRows[0]);
                                 setModals(prev => ({ ...prev, form: true }));
                             } else {
                                 setModals(prev => ({ ...prev, bulkEdit: true }));
@@ -1422,13 +1427,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                                 onClick: () => { setMoreDropdownOpen(false); handleExportCSV('selected'); },
                                 appearance: 'subtle',
                                 children: 'Export Selected CSV',
-                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
-                            }),
-                            React.createElement('hr', { style: { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' } }),
-                            React.createElement(Button, {
-                                onClick: () => { setMoreDropdownOpen(false); handleMigrateExpiry(); },
-                                appearance: 'subtle',
-                                children: 'Migrate Expiry to KV Store',
                                 style: { display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }
                             })
                         )
@@ -2023,10 +2021,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 
                     // Enrich credentials
                     var enriched = fetched.map(function(cred) {
-                        var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
-                        var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                        var expiryDate = cred.expiryDate || '';
+                        var rotationStatus = API.getRotationStatus(expiryDate);
                         return Object.assign({}, cred, {
-                            expiryDate: expiryInfo.expiryDate || '',
+                            expiryDate: expiryDate || '',
                             rotationStatus: rotationStatus,
                             tags: [],
                         });
@@ -2073,10 +2071,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     var doReload = async function() {
                         var fetched = await API.getAllCredentials();
                         var enriched = fetched.map(function(cred) {
-                            var expiryInfo = API.parseExpiryFromRealm(cred.realm || '');
-                            var rotationStatus = API.getRotationStatus(expiryInfo.expiryDate);
+                            var expiryDate = cred.expiryDate || '';
+                            var rotationStatus = API.getRotationStatus(expiryDate);
                             return Object.assign({}, cred, {
-                                expiryDate: expiryInfo.expiryDate || '',
+                                expiryDate: expiryDate || '',
                                 rotationStatus: rotationStatus,
                                 tags: [],
                             });

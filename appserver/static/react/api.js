@@ -254,7 +254,6 @@ function parseCredentialName(fullName) {
         str = str.substring(0, str.length - 1);
     }
     // Split on last colon to get realm:username — handles realms that contain colons
-    // (e.g., expiry:2026-04-28) while still working for normal realm:name stanzas.
     var colonIdx = str.lastIndexOf(':');
     if (colonIdx === -1) {
         return { name: str, realm: '' };
@@ -277,7 +276,7 @@ function flattenConfigEntry(entry) {
 
     // Extract the real namespace owner from the entry's id URL.
     // e.g., "https://host/servicesNS/admin/search/configs/..." → "admin"
-    // This is reliable because the id reflects the actual config file location,
+    // This is reliable because the id reflects the actual config file location
     // whereas acl.owner / eai:acl.owner may reflect the merged ACL metadata.
     var namespaceOwner = 'nobody';
     var id = entry.id || '';
@@ -354,7 +353,7 @@ async function _setAcl(aclPath, sharing, readRoles, writeRoles, owner) {
  */
 async function createCredential(username, password, realm, app, owner, readRoles, writeRoles, sharing = 'app') {
     const resolvedOwner = encodeURIComponent(owner || 'nobody');
-    const resolvedApp = encodeURIComponent(app || 'search');
+    const resolvedApp = encodeURIComponent(app || getCurrentApp() || 'search');
     const aclPath = `/servicesNS/${resolvedOwner}/${resolvedApp}/configs/conf-passwords/credential%3A${encodeURIComponent(realm || '')}%3A${encodeURIComponent(username)}%3A/acl`;
 
     try {
@@ -1394,7 +1393,7 @@ async function rotatePasswords(selectedRows, options) {
 
         // Compute new expiry if strategy changes it
         var newExpiryDate = null;
-        var credExpiryDate = resolveExpiryDate(cred);
+        var credExpiryDate = cred.expiryDate || null;
 
         if (expiryStrategy === 'extend-original' && credExpiryDate) {
             // Compute original period: expiryDate - mtime
@@ -1747,69 +1746,6 @@ function renamePreset(oldName, newName) {
     }
 }
 
-// ─── Expiry / Rotation helpers ───────────────────────────────────────────────
-
-/**
- * Parse expiry date from realm string.
- * Supports formats:
- *   - "prod;expiry_2026-05-26"  (base realm + expiry, combined)
- *   - "expiry_2026-05-26"        (expiry only, legacy)
- *   - "expiry:2026-05-26"       (expiry only, legacy colon format)
- *   - "prod"                      (realm only, no expiry)
- *   - ""                          (empty, no expiry)
- * Returns { hasExpiry: bool, expiryDate: string|null, baseRealm: string }
- */
-function parseExpiryFromRealm(realm) {
-    if (!realm || typeof realm !== 'string') {
-        return { hasExpiry: false, expiryDate: null, baseRealm: realm || '' };
-    }
-
-    // New combined format: "baseRealm;expiry_YYYY-MM-DD"
-    var semiIdx = realm.lastIndexOf(';');
-    if (semiIdx !== -1) {
-        var before = realm.substring(0, semiIdx);
-        var after = realm.substring(semiIdx + 1);
-        if (after.startsWith('expiry_')) {
-            var dateStr = after.substring(7);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                return { hasExpiry: true, expiryDate: dateStr, baseRealm: before };
-            }
-        }
-    }
-
-    // Legacy: "expiry_YYYY-MM-DD" (no base realm)
-    if (realm.startsWith('expiry_')) {
-        var dateStr = realm.substring(7);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
-        }
-    }
-
-    // Legacy: "expiry:YYYY-MM-DD" (no base realm)
-    if (realm.startsWith('expiry:')) {
-        var dateStr = realm.substring(7);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            return { hasExpiry: true, expiryDate: dateStr, baseRealm: '' };
-        }
-    }
-
-    return { hasExpiry: false, expiryDate: null, baseRealm: realm };
-}
-
-/**
- * Build realm string combining base realm + expiry date.
- * - both present: "baseRealm;expiry_YYYY-MM-DD"
- * - expiry only:  "expiry_YYYY-MM-DD"
- * - realm only:   "baseRealm"
- * - neither:      ""
- */
-function buildRealmWithExpiry(baseRealm, expiryDate) {
-    var parts = [];
-    if (baseRealm) parts.push(baseRealm);
-    if (expiryDate) parts.push('expiry_' + expiryDate);
-    return parts.length > 1 ? parts.join(';') : (parts[0] || '');
-}
-
 // ─── Expiry threshold configuration ──────────────────────────────────────────
 
 const DEFAULT_DUE_SOON_DAYS = 7;
@@ -1856,20 +1792,20 @@ function getRotationStatus(expiryDate, thresholdDays) {
 async function createOrUpdateExpiryAlert(config) {
     var body = {
         name: 'credential-expiry-alert',
-        search: '| rest /servicesNS/-/-/storage/passwords count=0 | ' +
-            'where like(realm, "%expiry_\%") | ' +
-            'eval expiry_date = substr(realm, match(realm, "expiry_(\\d{4}-\\d{2}-\\d{2})") + 7, 10) | ' +
-            'eval days_remaining = round((strptime(strftime(expiry_date, "%s"), "%s") - now()) / 86400, 0) | ' +
+search: '| inputlookup credential_expiry | ' +
+            'where expiry_date != "" | ' +
+            'rex field=credential_key "(?<realm>[^|]*)\\|(?<username>[^|]*)\\|(?<app>[^|]*)\\|(?<owner>[^|]*)\\|(?<sharing>[^|]*)" | ' +
+            'eval days_remaining=round((strptime(expiry_date, "%Y-%m-%d") + 86400 - now()) / 86400, 0) | ' +
             'where days_remaining <= ' + config.thresholdDays + ' | ' +
-            'table username realm expiry_date days_remaining',
-        disabled: !config.enabled,
+            'sort days_remaining | ' +
+            'table username realm app owner sharing expiry_date days_remaining',
+        disabled: config.enabled ? '0' : '1',
         cron_schedule: config.cronMinute + ' ' + config.cronHour + ' * * *',
-        alert_actions: 'email',
-        alert_email_to: config.recipients,
-        alert_compression: 'gzip',
+        'action.email': '1',
+        'action.email.to': config.recipients,
         description: 'Alert when stored credentials approach or past their expiry date',
     };
-    return splunkdRequest('/servicesNS/admin/search/saved/searches', {
+    return splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches', {
         method: 'POST',
         body: body,
     });
@@ -1877,7 +1813,7 @@ async function createOrUpdateExpiryAlert(config) {
 
 async function getExpiryAlert() {
     try {
-        return await splunkdRequest('/servicesNS/admin/search/saved/searches/credential-expiry-alert', {
+        return await splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/credential-expiry-alert', {
             method: 'GET',
         });
     } catch (e) {
@@ -1887,7 +1823,7 @@ async function getExpiryAlert() {
 }
 
 async function deleteExpiryAlert() {
-    return splunkdRequest('/servicesNS/admin/search/saved/searches/credential-expiry-alert', {
+    return splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/credential-expiry-alert', {
         method: 'DELETE',
     });
 }
@@ -1997,6 +1933,7 @@ async function savePolicyToKVStore(policy) {
     await ensurePolicyCollection();
     var body = {
         _key: 'default',
+        policy_key: 'default',
         enabled: policy.enabled,
         min_length: policy.minLength,
         max_length: policy.maxLength,
@@ -2091,7 +2028,6 @@ function validatePasswordAgainstPolicy(password, policy) {
 // ─── Credential Expiry (KVStore) ──────────────────────────────────────────
 // Expiry dates are stored in a KVStore collection instead of embedding in the realm.
 // This avoids the destructive rename dance (create new + delete old) when updating expiry.
-// Backward compat: parseExpiryFromRealm still works for legacy credentials during migration.
 
 const EXPIRY_COLLECTION = 'credential_expiry';
 
@@ -2112,6 +2048,7 @@ async function setExpiryForCredential(credential, expiryDate) {
     var key = tagCredKey(credential);
     var body = {
         _key: key,
+        credential_key: key,
         expiry_date: expiryDate || '',
     };
     await kvStoreSetDocument(EXPIRY_COLLECTION, key, body);
@@ -2158,8 +2095,8 @@ async function getAllExpiryData() {
         var docs = Array.isArray(data) ? data : (data.entries || []);
         var result = {};
         docs.forEach(function(doc) {
-            if (doc._key && doc.expiry_date) {
-                result[doc._key] = doc.expiry_date;
+            if (doc.credential_key && doc.expiry_date) {
+                result[doc.credential_key] = doc.expiry_date;
             }
         });
         return result;
@@ -2195,119 +2132,17 @@ async function deleteExpiryForCredential(credential) {
 }
 
 /**
- * Resolve expiry date for a credential — KVStore first, then realm fallback.
- * This is the unified entry point used during credential enrichment.
- *
- * @param {Object} cred - Credential object (with realm, name, app, etc.)
+ * Resolve expiry date for a credential from KVStore.
+ * @param {Object} cred - Credential object
  * @param {Object} [expiryMap] - Pre-fetched expiry map from getAllExpiryData() (optional)
  * @returns {string|null} ISO date string or null
  */
 function resolveExpiryDate(cred, expiryMap) {
-    // 1. Check KVStore map (if provided)
     if (expiryMap) {
         var key = tagCredKey(cred);
         if (expiryMap[key]) return expiryMap[key];
     }
-    // 2. Fall back to realm parsing (backward compat for legacy credentials)
-    var realm = cred.realm || '';
-    if (realm.includes('expiry_')) {
-        var info = parseExpiryFromRealm(realm);
-        if (info.expiryDate) return info.expiryDate;
-    }
     return null;
-}
-
-/**
- * Resolve base realm for a credential — strips expiry from combined format.
- * For credentials already using KV Store, realm IS the base realm.
- */
-function resolveBaseRealm(cred) {
-    var realm = cred.realm || '';
-    if (realm.includes('expiry_')) {
-        var info = parseExpiryFromRealm(realm);
-        return info.baseRealm || '';
-    }
-    return realm;
-}
-
-/**
- * Migrate expiry dates from realm to KV Store.
- * For each credential with expiry in realm:
- *   1. Write expiry to KV Store
- *   2. Rename credential: create new with clean realm + delete old
- *
- * @param {Array} credentials - Array of credential objects (from getAllCredentials)
- * @param {Function} [onProgress] - Optional callback(current, total)
- * @returns {Object} { migrated, skipped, errors }
- */
-async function migrateExpiryFromRealm(credentials, onProgress) {
-    var migrated = 0;
-    var skipped = 0;
-    var errors = [];
-
-    // Ensure expiry collection exists
-    try { await ensureExpiryCollection(); } catch(e) {
-        errors.push('Failed to ensure expiry collection: ' + e.message);
-        return { migrated: 0, skipped: 0, errors };
-    }
-
-    // Filter to credentials that have expiry in realm
-    var toMigrate = credentials.filter(function(c) {
-        return (c.realm || '').includes('expiry_');
-    });
-
-    for (var i = 0; i < toMigrate.length; i++) {
-        if (onProgress) onProgress(i + 1, toMigrate.length);
-        var cred = toMigrate[i];
-        var credRealm = cred.realm || '';
-        var expiryInfo = parseExpiryFromRealm(credRealm);
-        var baseRealm = expiryInfo.baseRealm || '';
-        var expiryDate = expiryInfo.expiryDate;
-
-        if (!expiryDate) {
-            skipped++;
-            continue;
-        }
-
-        var nsOwner = cred.namespaceOwner || cred.owner || 'nobody';
-        var credApp = cred.app || getCurrentApp() || 'search';
-        var credSharing = cred.sharing || 'app';
-        var credName = cred.name;
-
-        try {
-            // Step 1: Write expiry to KV Store
-            await setExpiryForCredential(cred, expiryDate);
-
-            // Step 2: Rename credential to use clean realm
-            var newRealm = baseRealm;
-            if (newRealm !== credRealm) {
-                var password;
-                try {
-                    password = await getCredentialPassword(credName, credRealm, credApp, nsOwner, credSharing);
-                } catch (pwdErr) {
-                    errors.push(credName + ': could not fetch password for rename — expiry saved but realm unchanged: ' + pwdErr.message);
-                    continue;
-                }
-
-                var aclReadArr = cred.aclRead ? cred.aclRead.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
-                var aclWriteArr = cred.aclWrite ? cred.aclWrite.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
-
-                await createCredential(credName, password, newRealm, credApp, nsOwner, aclReadArr, aclWriteArr, credSharing);
-
-                try {
-                    await deleteCredential(credName, credRealm, credApp, nsOwner, aclReadArr, aclWriteArr, credSharing);
-                } catch (delErr) {
-                    console.warn('[migrate] delete old failed:', delErr.message);
-                }
-            }
-
-            migrated++;
-        } catch (e) {
-            errors.push(credName + ': ' + (e.message || 'unknown error'));
-        }
-    }
-
-    return { migrated, skipped, errors };
 }
 
 // ─── Credential Tagging (KVStore) ─────────────────────────────────────────
@@ -2315,17 +2150,17 @@ async function migrateExpiryFromRealm(credentials, onProgress) {
 const TAGS_COLLECTION = 'credential_tags';
 const TAG_DEFS_COLLECTION = 'tag_definitions';
 
-// KVStore collections live at nobody/search namespace.
+// KVStore collections live at nobody/rest-storage-passwords-manager namespace.
 // Splunk requires 'nobody' user context for collection config operations.
 // Data operations work at any namespace.
 /**
  * Splunk 10.2 KV Store endpoints (replaces deprecated /data/collections).
- * - Collection management: /servicesNS/nobody/search/storage/collections/config
- * - Data operations: /servicesNS/nobody/search/storage/collections/data/<collection>
- * - Documents: /servicesNS/nobody/search/storage/collections/data/<collection>/<key>
+ * - Collection management: /servicesNS/nobody/rest-storage-passwords-manager/storage/collections/config
+ * - Data operations: /servicesNS/nobody/rest-storage-passwords-manager/storage/collections/data/<collection>
+ * - Documents: /servicesNS/nobody/rest-storage-passwords-manager/storage/collections/data/<collection>/<key>
  */
-const KVSTORE_CONFIG = '/servicesNS/nobody/search/storage/collections/config';
-const KVSTORE_DATA = '/servicesNS/nobody/search/storage/collections/data';
+const KVSTORE_CONFIG = '/servicesNS/nobody/rest-storage-passwords-manager/storage/collections/config';
+const KVSTORE_DATA = '/servicesNS/nobody/rest-storage-passwords-manager/storage/collections/data';
 
 /**
  * Hash tag name to consistent color from fixed palette.
@@ -2443,8 +2278,8 @@ var collectionCreationPromises = {};
 
 /**
  * Ensure a KVStore collection exists. Create if missing.
- * Splunk 10.2: collections are schema-less, fields auto-inferred from first document.
- * No schema validation needed.
+ * Collections are pre-defined in default/data/lookup/collections.conf.
+ * The ensureCollection fallback handles cases where the collection hasn't been deployed yet.
  */
 async function ensureCollection(name) {
     // Check if collection config exists — try GET, but accept ANY error as "maybe missing"
@@ -2516,7 +2351,7 @@ async function ensureTagCollections() {
  * Build unique key from credential object.
  * Format: realm|name|app|owner|sharing
  * URL-safe — uses | delimiter (NOT :) to avoid collision with realm strings
- * like "prod;expiry_2026-06-01".
+ * like "prod".
  */
 function tagCredKey(cred) {
     return (cred.realm || '') + '|' + (cred.name || '') + '|'+
@@ -2548,6 +2383,7 @@ async function setTagsForCredential(credential, tags) {
         if (!existingDefs.some(function(d) { return d.tag_name === tag; })) {
             await kvStoreSetDocument(TAG_DEFS_COLLECTION, tag, {
                 _key: tag,
+                tag_name: tag,
                 color: hashToColor(tag),
             });
         }
@@ -2555,6 +2391,7 @@ async function setTagsForCredential(credential, tags) {
 
     await kvStoreSetDocument(TAGS_COLLECTION, key, {
         _key: key,
+        credential_key: key,
         tags: JSON.stringify(cleanTags),
     });
 
@@ -2614,7 +2451,7 @@ async function getAllTagDefinitions() {
         // Splunk 10.2 KVStore returns plain array (not {items: [...]})
         var docs = Array.isArray(data) ? data : (data.entries || []);
         return docs.map(function(doc) {
-            return { tag_name: doc._key, color: doc.color };
+            return { tag_name: doc.tag_name, color: doc.color };
         });
     } catch (e) {
         if (e.status === 404) return [];
@@ -2635,8 +2472,8 @@ async function getAllTagsData() {
         var docs = Array.isArray(data) ? data : (data.entries || []);
         var result = {};
         docs.forEach(function(doc) {
-            if (doc._key && doc.tags) {
-                result[doc._key] = JSON.parse(doc.tags);
+            if (doc.credential_key && doc.tags) {
+                result[doc.credential_key] = JSON.parse(doc.tags);
             }
         });
         return result;
@@ -2879,11 +2716,7 @@ module.exports = {
     getAllExpiryData,
     deleteExpiryForCredential,
     resolveExpiryDate,
-    resolveBaseRealm,
-    migrateExpiryFromRealm,
     // Expiry / Rotation
-    parseExpiryFromRealm,
-    buildRealmWithExpiry,
     getRotationStatus,
     getDueSoonThreshold,
     setDueSoonThreshold,
@@ -2891,7 +2724,6 @@ module.exports = {
     getExpiryAlert,
     deleteExpiryAlert,
     // Password Policy
-    // Policy
     loadPolicy,
     savePolicy,
     loadPolicyFromKVStore,

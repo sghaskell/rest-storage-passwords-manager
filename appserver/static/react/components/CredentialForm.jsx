@@ -47,8 +47,7 @@ function getPasswordStrength(pw) {
 // Password generator — imported from api.js for reuse in bulk rotation
 var _API = require('../api');
 var generatePassword = _API.generatePassword;
-var parseExpiryFromRealm = _API.parseExpiryFromRealm;
-var resolveBaseRealm = _API.resolveBaseRealm;
+var getCurrentApp = _API.getCurrentApp;
 var loadPolicy = _API.loadPolicy;
 var validatePasswordAgainstPolicy = _API.validatePasswordAgainstPolicy;
 var getTagsForCredential = _API.getTagsForCredential;
@@ -84,7 +83,7 @@ function CredentialForm({
     const [password, setPassword] = React.useState('');
     const [confirmPassword, setConfirmPassword] = React.useState('');
     const [realm, setRealm] = React.useState('');
-    const [app, setApp] = React.useState('search');
+    const [app, setApp] = React.useState(getCurrentApp() || 'search');
     const [owner, setOwner] = React.useState('nobody');
     const [readRolesArray, setReadRolesArray] = React.useState([]);
     const [writeRolesArray, setWriteRolesArray] = React.useState([]);
@@ -158,14 +157,11 @@ function CredentialForm({
             } else {
                 setUsername(credential.name || '');
             }
-            // Resolve base realm and expiry — credential may already be enriched with expiryDate from KV Store
-            var baseRealm = resolveBaseRealm(credential.realm || '');
-            setRealm(baseRealm);
-            setApp(credential.app || 'search');
+            setRealm(credential.realm || '');
+            setApp(credential.app || getCurrentApp() || 'search');
             setOwner(credential.namespaceOwner || credential.owner || 'nobody');
             setSharing(credential.sharing || 'app');
-            // Use enriched expiryDate (KV Store) first, fall back to realm parsing
-            setExpiryDate(credential.expiryDate || (parseExpiryFromRealm(credential.realm || '').expiryDate || ''));
+            setExpiryDate(credential.expiryDate || '');
 
             var normalize = function(arr) { return arr.map(function(r) { return r === '*' ? '* (all)' : r; }); };
             var aclRead = normalize((credential.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
@@ -180,7 +176,7 @@ function CredentialForm({
             setPassword('');
             setConfirmPassword('');
             setRealm('');
-            setApp('search');
+            setApp(getCurrentApp() || 'search');
             setOwner(currentUserIdentity);
             setSharing('app');
             setExpiryDate('');

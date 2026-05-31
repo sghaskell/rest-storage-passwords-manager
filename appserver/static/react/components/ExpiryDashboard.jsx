@@ -424,8 +424,7 @@ function ExpiryDashboard({
         var status = cred.rotationStatus;
         var rowColor = getStatusColor(status);
         var daysRem = cred.daysRemaining;
-        var realmInfo = API.parseExpiryFromRealm(cred.realm || '');
-        var displayRealm = realmInfo.baseRealm || (cred.expiryDate ? 'Exp: ' + formatDateShort(cred.expiryDate) : '—');
+        var displayRealm = cred.realm || '—';
 
         // Days remaining display
         var daysDisplay;

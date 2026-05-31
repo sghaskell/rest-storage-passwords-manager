@@ -200,9 +200,8 @@ function CredentialTable({
                 var val = f.value.toLowerCase();
                 if (f.field === 'username' && name !== val) return false;
                 if (f.field === 'realm') {
-                    var _fRealmInfo = _parseRealmForDisplay(credential.realm);
-                    var _fIsGlobal = !_fRealmInfo.baseRealm || _fRealmInfo.baseRealm === 'nobody';
-                    var _fRealmLabel = !_fIsGlobal ? _fRealmInfo.baseRealm.toLowerCase() : 'none';
+                    var _fIsGlobal = !credential.realm || credential.realm === 'nobody';
+                    var _fRealmLabel = !_fIsGlobal ? (credential.realm || '').toLowerCase() : 'none';
                     if (val === 'none' && !_fIsGlobal) return false;
                     if (val !== 'none' && _fRealmLabel !== val) return false;
                 }
@@ -418,21 +417,6 @@ function CredentialTable({
         return day + ' ' + mon + ' ' + year + ' ' + hh + ':' + mm;
     }
 
-    // Parse expiry from realm — extract base realm for display
-    // Supports: "prod;expiry_2026-05-26", "expiry_2026-05-26", "prod", ""
-    function _parseRealmForDisplay(realm) {
-        if (!realm) return { baseRealm: '', hasExpiry: false, expiryDate: null };
-        // Combined: "baseRealm;expiry_YYYY-MM-DD"
-        var m = realm.match(/^(.+);(expiry_(\d{4}-\d{2}-\d{2}))$/);
-        if (m) return { baseRealm: m[1], hasExpiry: true, expiryDate: m[3] };
-        // Legacy: "expiry_YYYY-MM-DD"
-        if (realm.startsWith('expiry_')) {
-            var d = realm.substring(7);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return { baseRealm: '', hasExpiry: true, expiryDate: d };
-        }
-        return { baseRealm: realm, hasExpiry: false, expiryDate: null };
-    }
-
     // Build data cell for a column + credential
     function buildDataCell(col, cred) {
         if (col.key === 'actions') {
@@ -454,9 +438,7 @@ function CredentialTable({
             }, formatMtime(cred.mtime));
         }
         if (col.key === 'realm') {
-            var _parsed = _parseRealmForDisplay(cred.realm);
-            var baseRealm = _parsed.baseRealm;
-            var hasExpiry = _parsed.hasExpiry;
+            var baseRealm = cred.realm || '';
             var isGlobal = !baseRealm || baseRealm === 'nobody';
 
             var realmLabel = !isGlobal ? baseRealm : 'None';
@@ -631,8 +613,7 @@ function CredentialTable({
             );
         }
         if (col.key === 'expiry') {
-            var expiryInfo = _parseRealmForDisplay(cred.realm);
-            var expiryDate = expiryInfo.expiryDate;
+            var expiryDate = cred.expiryDate || '';
             if (!expiryDate) {
                 var noneColor = '#9e9e9e';
                 return React.createElement(TableCell, null,

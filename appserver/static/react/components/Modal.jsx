@@ -603,6 +603,10 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
     const [bulkTags, setBulkTags] = React.useState([]);
     const [allTagDefinitions, setAllTagDefinitions] = React.useState([]);
 
+    // Bulk expiry state
+    const [applyExpiry, setApplyExpiry] = React.useState(false);
+    const [expiryDate, setExpiryDate] = React.useState('');
+
     // Reset state when modal opens
     React.useEffect(function() {
         if (isOpen) {
@@ -618,6 +622,8 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
             setApplyTags(false);
             setTagInput('');
             setBulkTags([]);
+            setApplyExpiry(false);
+            setExpiryDate('');
 
             // Load tag definitions for autocomplete
             var _API = require('../api');
@@ -673,13 +679,14 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
     }
 
     // At least one checkbox must be checked, and checked fields must have values
-    var hasApply = applyRead || applyWrite || applyOwner || applySharing || applyTags;
+    var hasApply = applyRead || applyWrite || applyOwner || applySharing || applyTags || applyExpiry;
     var canApply = hasApply &&
                    (applyRead ? readRoles.length > 0 : true) &&
                    (applyWrite ? writeRoles.length > 0 : true) &&
                    (applyOwner ? owner !== '' : true) &&
                    (applySharing ? sharing !== '' : true) &&
-                   (applyTags ? bulkTags.length > 0 : true);
+                   (applyTags ? bulkTags.length > 0 : true) &&
+                   (applyExpiry ? expiryDate !== '' : true);
 
     function handleApply() {
         if (!canApply) return;
@@ -692,6 +699,7 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
             if (applyOwner) updated.owner = owner;
             if (applySharing) updated.sharing = sharing;
             if (applyTags) updated._bulkTags = bulkTags.slice();
+            if (applyExpiry) updated._bulkExpiry = expiryDate;
             updates.push(updated);
         });
         onApply(updates, function() {
@@ -858,6 +866,32 @@ function BulkEditModal({ isOpen, selectedRows, availableRoles, availableUsers, o
                         React.createElement('span', { style: { fontSize: '11px', color: '#666' } },
                             'Tags are ADDED to existing tags. Max 5 tags per credential.'
                         )
+                    )
+                ),
+
+                // Expiry date
+                React.createElement('div', { style: { marginBottom: '1rem' } },
+                    React.createElement('label', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '14px', fontWeight: '500' } },
+                        React.createElement('input', { type: 'checkbox', checked: applyExpiry, onChange: function(e) { setApplyExpiry(e.target.checked); } }),
+                        'Expiry Date'
+                    ),
+                    React.createElement('input', {
+                        type: 'date',
+                        value: expiryDate,
+                        onChange: function(e) { setExpiryDate(e.target.value); },
+                        disabled: !applyExpiry,
+                        style: {
+                            width: '100%',
+                            padding: '6px 8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            height: '36px',
+                            boxSizing: 'border-box',
+                        }
+                    }),
+                    React.createElement('span', { style: { fontSize: '11px', color: '#666', marginTop: '0.25rem', display: 'block' } },
+                        'Set a new expiry date for all selected credentials. Leave empty to keep current.'
                     )
                 )
             ),
