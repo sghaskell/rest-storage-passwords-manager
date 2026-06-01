@@ -1789,10 +1789,20 @@ function getRotationStatus(expiryDate, thresholdDays) {
 
 // ─── Email alert CRUD (Splunk saved searches) ──────────────────────────────────
 
+/**
+ * Reload the saved search scheduler so changes take effect immediately
+ * (no Splunk restart required).
+ */
+async function reloadSavedSearches() {
+    await splunkdRequest(
+        '/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/_reload',
+        { method: 'POST', body: { output_mode: 'json' } }
+    );
+}
+
 async function createOrUpdateExpiryAlert(config) {
     var body = {
-        name: 'credential-expiry-alert',
-search: '| inputlookup credential_expiry | ' +
+        search: '| inputlookup credential_expiry | ' +
             'where expiry_date != "" | ' +
             'rex field=credential_key "(?<realm>[^|]*)\\|(?<username>[^|]*)\\|(?<app>[^|]*)\\|(?<owner>[^|]*)\\|(?<sharing>[^|]*)" | ' +
             'eval days_remaining=round((strptime(expiry_date, "%Y-%m-%d") + 86400 - now()) / 86400, 0) | ' +
@@ -1800,15 +1810,32 @@ search: '| inputlookup credential_expiry | ' +
             'sort days_remaining | ' +
             'table username realm app owner sharing expiry_date days_remaining',
         disabled: config.enabled ? '0' : '1',
+        is_scheduled: '1',
         cron_schedule: config.cronMinute + ' ' + config.cronHour + ' * * *',
+        actions: 'email',
         'action.email': '1',
         'action.email.to': config.recipients,
         description: 'Alert when stored credentials approach or past their expiry date',
     };
-    return splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches', {
-        method: 'POST',
-        body: body,
-    });
+    var endpoint = '/servicesNS/nobody/rest-storage-passwords-manager/saved/searches';
+    var updateEndpoint = endpoint + '/credential-expiry-alert';
+    var needsCreate = true;
+    try {
+        var existing = await splunkdRequest(updateEndpoint, { method: 'GET' });
+        if (existing) {
+            needsCreate = false;
+            await splunkdRequest(updateEndpoint, { method: 'POST', body: body });
+        }
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
+    if (needsCreate) {
+        await splunkdRequest(endpoint, {
+            method: 'POST',
+            body: Object.assign({}, body, { name: 'credential-expiry-alert' }),
+        });
+    }
+    await reloadSavedSearches();
 }
 
 async function getExpiryAlert() {
@@ -1823,9 +1850,10 @@ async function getExpiryAlert() {
 }
 
 async function deleteExpiryAlert() {
-    return splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/credential-expiry-alert', {
+    await splunkdRequest('/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/credential-expiry-alert', {
         method: 'DELETE',
     });
+    await reloadSavedSearches();
 }
 
 // ─── Password Policy (localStorage + Splunk sync) ───────────────────────────
