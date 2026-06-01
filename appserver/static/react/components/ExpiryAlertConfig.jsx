@@ -41,6 +41,10 @@ function getDefaultConfig() {
         thresholdDays: API.getDueSoonThreshold(),
         includeDueSoon: true,
         lastSent: null,
+        ccRecipients: '',
+        emailSubject: '',
+        sendIfNoResults: false,
+        includeResultsInline: true,
     };
 }
 
@@ -144,6 +148,10 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
                 var parsedConfig = {
                     enabled: alert.disabled !== '1' && alert.disabled !== 'true',
                     recipients: alert.alert_email_to || '',
+                    ccRecipients: alert.alert_email_cc || '',
+                    emailSubject: alert.alert_email_subject || '',
+                    sendIfNoResults: alert.alert_email_send_if_no_results === '1' || alert.alert_email_send_if_no_results === 'true',
+                    includeResultsInline: alert.alert_email_inline === '1' || alert.alert_email_inline === 'true',
                     cronHour: parseInt(cronParts[1], 10) || 9,
                     cronMinute: parseInt(cronParts[0], 10) || 0,
                     thresholdDays: config.thresholdDays, // Not stored in alert — keep local value
@@ -160,6 +168,23 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
             }
         } catch (err) {
             setStatus('Failed to load from Splunk: ' + (err.message || err));
+            setStatusType('error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // ─── Test Send ──────────────────────────────────────────────────────────
+    async function handleTestSend() {
+        setLoading(true);
+        setStatus('');
+        try {
+            await API.createOrUpdateExpiryAlert(config);
+            await API.dispatchSavedSearch('credential-expiry-alert');
+            setStatus('Test email dispatched.');
+            setStatusType('success');
+        } catch (err) {
+            setStatus('Failed to dispatch: ' + (err.message || err));
             setStatusType('error');
         } finally {
             setLoading(false);
@@ -214,6 +239,43 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
                 onChange: function(e) { handleFieldChange('recipients', e.target.value); },
                 placeholder: 'admin@example.com, team@example.com',
                 style: inputStyle,
+            })
+        ),
+        // CC Recipients
+        formField('CC Recipients (comma-separated)',
+            React.createElement('input', {
+                type: 'text',
+                value: config.ccRecipients,
+                onChange: function(e) { handleFieldChange('ccRecipients', e.target.value); },
+                placeholder: 'manager@example.com',
+                style: inputStyle,
+            })
+        ),
+
+        // Email Subject
+        formField('Email Subject',
+            React.createElement('input', {
+                type: 'text',
+                value: config.emailSubject,
+                onChange: function(e) { handleFieldChange('emailSubject', e.target.value); },
+                placeholder: 'Credential Expiry Alert',
+                style: inputStyle,
+            })
+        ),
+
+        // Send if no results
+        formField('Send if no results',
+            React.createElement(Switch, {
+                selected: config.sendIfNoResults,
+                onClick: function() { handleFieldChange('sendIfNoResults', !config.sendIfNoResults); },
+            })
+        ),
+
+        // Include results inline
+        formField('Include results in email body',
+            React.createElement(Switch, {
+                selected: config.includeResultsInline,
+                onClick: function() { handleFieldChange('includeResultsInline', !config.includeResultsInline); },
             })
         ),
 
@@ -305,6 +367,12 @@ function ExpiryAlertConfig({ isOpen, onClose }) {
                 appearance: 'subtle',
                 disabled: loading,
                 children: 'Load from Splunk',
+            }),
+            React.createElement(Button, {
+                onClick: handleTestSend,
+                appearance: 'primary',
+                disabled: loading,
+                children: 'Test Send',
             }),
             React.createElement(Button, {
                 onClick: handleDeleteAlert,

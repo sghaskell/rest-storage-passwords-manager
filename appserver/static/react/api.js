@@ -1815,6 +1815,11 @@ async function createOrUpdateExpiryAlert(config) {
         actions: 'email',
         'action.email': '1',
         'action.email.to': config.recipients,
+        'action.email.cc': config.ccRecipients || '',
+        'action.email.subject': config.emailSubject || 'Credential Expiry Alert',
+        'action.email.send_if_no_results': config.sendIfNoResults ? '1' : '0',
+        'action.email.inline': config.includeResultsInline ? '1' : '0',
+        'action.email.results_type': 'csv',
         description: 'Alert when stored credentials approach or past their expiry date',
     };
     var endpoint = '/servicesNS/nobody/rest-storage-passwords-manager/saved/searches';
@@ -1836,6 +1841,14 @@ async function createOrUpdateExpiryAlert(config) {
         });
     }
     await reloadSavedSearches();
+}
+
+// Dispatch a saved search for immediate execution (test send)
+async function dispatchSavedSearch(name) {
+    await splunkdRequest(
+        '/servicesNS/nobody/rest-storage-passwords-manager/saved/searches/' + encodeURIComponent(name) + '/dispatch',
+        { method: 'POST' }
+    );
 }
 
 async function getExpiryAlert() {
@@ -2749,6 +2762,7 @@ module.exports = {
     getDueSoonThreshold,
     setDueSoonThreshold,
     createOrUpdateExpiryAlert,
+    dispatchSavedSearch,
     getExpiryAlert,
     deleteExpiryAlert,
     // Password Policy
