@@ -133,7 +133,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
 (function() {
     'use strict';
 
-  console.log('Credential Manager: Script loaded');
 
     /**
      * Main CredentialManager component
@@ -2093,7 +2092,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         init: function(mvc) {
             if (window.CredentialManager._initialized) return;
             window.CredentialManager._initialized = true;
-            console.log('Credential Manager: Initializing...');
             if (mvc) {
                 window.CredentialManager.mvc = mvc;
             }
@@ -2108,7 +2106,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             root.render(React.createElement(ThemeAwareApp, {
                 appComponent: CredentialManager
             }));
-            console.log('Credential Manager: Render complete');
         }
     };
 

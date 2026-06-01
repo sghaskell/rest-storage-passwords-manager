@@ -128,10 +128,6 @@ function RoleAccessDashboard({
         if (!names.some(function(r) { return r === '* (all)'; })) {
             names.unshift('* (all)');
         }
-        console.log('[RoleAccess] rolesWithCapabilities:', rolesWithCapabilities);
-        console.log('[RoleAccess] allRoleNames:', names);
-        console.log('[RoleAccess] matrixRoles:', names.slice(0, 50));
-        console.log('[RoleAccess] credentials:', credentials.length, 'creds');
         return names;
     }, [rolesWithCapabilities]);
 
