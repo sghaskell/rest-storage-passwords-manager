@@ -2232,16 +2232,19 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         }
 
         if (loading) {
-            return React.createElement('div', { style: { padding: '2rem' } }, React.createElement('p', null, 'Loading data...'));
+            return React.createElement('div', { style: { padding: '2rem' } },
+                React.createElement('p', { style: { color: 'inherit' } }, 'Loading data...')
+            );
         }
 
         if (error) {
             return React.createElement('div', { style: { padding: '2rem' } },
                 React.createElement('p', { style: { color: '#ef4444' } }, 'Error loading tags: ' + error),
-                React.createElement('button', {
+                React.createElement(Button, {
                     onClick: refresh,
-                    style: { marginTop: '1rem' }
-                }, 'Retry')
+                    appearance: 'primary',
+                    children: 'Retry'
+                })
             );
         }
 
