@@ -157,20 +157,22 @@ function CellEditPopover({
         }
 
         if (isSentinel) {
-            // Sentinel column: manipulate the * entry directly
-            // Remove existing * first
-            currentRead = removeWildcard(currentRead);
-            currentWrite = removeWildcard(currentWrite);
-
+            // Sentinel column: wildcard is a true override.
+            // Set the exact ACL arrays for the selected level.
             if (level === 'WildcardBoth') {
-                currentRead.push('*');
-                currentWrite.push('*');
+                currentRead = ['*'];
+                currentWrite = ['*'];
             } else if (level === 'WildcardRead') {
-                currentRead.push('*');
+                currentRead = ['*'];
+                currentWrite = removeWildcard(currentWrite);
             } else if (level === 'WildcardWrite') {
-                currentWrite.push('*');
+                currentRead = removeWildcard(currentRead);
+                currentWrite = ['*'];
+            } else {
+                // '-' = remove wildcard entirely
+                currentRead = removeWildcard(currentRead);
+                currentWrite = removeWildcard(currentWrite);
             }
-            // '-' = no wildcard
         } else {
             // Normal column: manipulate the specific role
             if (level === 'RW') {
