@@ -2321,10 +2321,11 @@ var collectionCreationPromises = {};
  * Ensure a KVStore collection exists. Create if missing.
  * Collections are pre-defined in default/data/lookup/collections.conf.
  * The ensureCollection fallback handles cases where the collection hasn't been deployed yet.
+ * @param {string} name - Collection name
+ * @param {object} [options] - Optional { fields: { fieldName: 'string' } }
  */
-async function ensureCollection(name) {
-    // Check if collection config exists — try GET, but accept ANY error as "maybe missing"
-    // Splunk versions return different status codes for missing collections (404, 400, 200+empty)
+async function ensureCollection(name, options) {
+    var fields = (options && options.fields) || {};
     var configUrl = KVSTORE_CONFIG + '/' + name;
     var collectionExists = false;
     try {
@@ -2356,7 +2357,7 @@ async function ensureCollection(name) {
         try {
             await splunkdRequest(KVSTORE_CONFIG, {
                 method: 'POST',
-                body: { name: name },
+                body: Object.assign({ name: name }, fields),
             });
             // Wait for the collection to finish initializing
             await waitForCollectionReady(name);
@@ -2385,7 +2386,7 @@ async function ensureCollection(name) {
  */
 async function ensureTagCollections() {
     await ensureCollection(TAGS_COLLECTION);
-    await ensureCollection(TAG_DEFS_COLLECTION);
+    await ensureCollection(TAG_DEFS_COLLECTION, { fields: { tag_name: 'string', color: 'string', description: 'string' } });
 }
 
 /**
@@ -2492,7 +2493,7 @@ async function getAllTagDefinitions() {
         // Splunk 10.2 KVStore returns plain array (not {items: [...]})
         var docs = Array.isArray(data) ? data : (data.entries || []);
         return docs.map(function(doc) {
-            return { tag_name: doc.tag_name, color: doc.color };
+            return { tag_name: doc.tag_name, color: doc.color, description: doc.description || '' };
         });
     } catch (e) {
         if (e.status === 404) return [];
@@ -2536,6 +2537,123 @@ async function deleteTagsForCredential(credential) {
     } catch (e) {
         if (e.status !== 404 && e.status !== 400) throw e;
     }
+}
+
+/**
+ * Create a tag definition (name + color + optional description).
+ */
+async function createTagDefinition(tagName, color, description) {
+    await ensureTagCollections();
+    var cleanName = tagName.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,50}$/.test(cleanName)) {
+        throw new Error('Invalid tag name: ' + cleanName);
+    }
+    var finalColor = color || hashToColor(cleanName);
+    var doc = {
+        _key: cleanName,
+        tag_name: cleanName,
+        color: finalColor
+    };
+    if (description !== undefined && description !== null && description !== '') {
+        doc.description = String(description).substring(0, 200);
+    }
+    await kvStoreSetDocument(TAG_DEFS_COLLECTION, cleanName, doc);
+    return { tag_name: cleanName, color: finalColor, description: doc.description || '' };
+}
+
+/**
+ * Rename a tag definition (preserves color and description).
+ */
+async function renameTagDefinition(oldName, newName) {
+    await ensureTagCollections();
+    var cleanNew = newName.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,50}$/.test(cleanNew)) {
+        throw new Error('Invalid tag name: ' + cleanNew);
+    }
+    var oldClean = oldName.trim().toLowerCase();
+    if (oldClean === cleanNew) return;
+    var oldData = await getAllTagDefinitions();
+    var oldDef = oldData.find(function(d) { return d.tag_name === oldClean; });
+    if (!oldDef) throw new Error('Tag definition not found: ' + oldName);
+    var exists = oldData.find(function(d) { return d.tag_name === cleanNew; });
+    if (exists) throw new Error('Tag already exists: ' + cleanNew);
+    var color = (oldDef && oldDef.color) ? oldDef.color : hashToColor(cleanNew);
+    var doc = {
+        _key: cleanNew,
+        tag_name: cleanNew,
+        color: color
+    };
+    if (oldDef && oldDef.description) {
+        doc.description = oldDef.description;
+    }
+    await kvStoreSetDocument(TAG_DEFS_COLLECTION, cleanNew, doc);
+    await deleteTagDefinition(oldClean);
+    var allTagsData = await getAllTagsData();
+    for (var credKey in allTagsData) {
+        if (!allTagsData.hasOwnProperty(credKey)) continue;
+        var tags = allTagsData[credKey] || [];
+        var idx = tags.indexOf(oldClean);
+        if (idx !== -1) {
+            tags[idx] = cleanNew;
+            await setTagsForCredential({ id: credKey }, tags);
+        }
+    }
+}
+
+/**
+ * Update tag color (preserves description).
+ */
+async function updateTagColor(tagName, newColor) {
+    var defs = await getAllTagDefinitions();
+    var existing = defs.find(function(d) { return d.tag_name === tagName.toLowerCase(); });
+    if (!existing) throw new Error('Tag definition not found: ' + tagName);
+    var doc = {
+        _key: tagName.toLowerCase(),
+        tag_name: tagName.toLowerCase(),
+        color: newColor
+    };
+    if (existing.description) {
+        doc.description = existing.description;
+    }
+    await kvStoreSetDocument(TAG_DEFS_COLLECTION, tagName.toLowerCase(), doc);
+    return { tag_name: tagName, color: newColor };
+}
+
+/**
+ * Update tag description (preserves color).
+ */
+async function updateTagDescription(tagName, newDescription) {
+    var defs = await getAllTagDefinitions();
+    var existing = defs.find(function(d) { return d.tag_name === tagName.toLowerCase(); });
+    if (!existing) throw new Error('Tag definition not found: ' + tagName);
+    var color = (existing && existing.color) ? existing.color : hashToColor(tagName.toLowerCase());
+    var doc = {
+        _key: tagName.toLowerCase(),
+        tag_name: tagName.toLowerCase(),
+        color: color
+    };
+    if (newDescription !== undefined && newDescription !== null) {
+        doc.description = String(newDescription).substring(0, 200);
+    }
+    await kvStoreSetDocument(TAG_DEFS_COLLECTION, tagName.toLowerCase(), doc);
+    return { tag_name: tagName, description: doc.description || '' };
+}
+
+/**
+ * Delete a tag definition and cascade: remove from all credential tag assignments.
+ */
+async function deleteTagDefinitionWithCascade(tagName) {
+    var cleanName = tagName.trim().toLowerCase();
+    var allTagsData = await getAllTagsData();
+    for (var credKey in allTagsData) {
+        if (!allTagsData.hasOwnProperty(credKey)) continue;
+        var tags = allTagsData[credKey] || [];
+        var filtered = tags.filter(function(t) { return t !== cleanName; });
+        if (filtered.length !== tags.length) {
+            await setTagsForCredential({ id: credKey }, filtered);
+        }
+    }
+    await deleteTagDefinition(cleanName);
 }
 
 /**
@@ -2749,6 +2867,11 @@ module.exports = {
     getAllTagsData,
     deleteTagsForCredential,
     deleteTagDefinition,
+    createTagDefinition,
+    renameTagDefinition,
+    updateTagColor,
+    updateTagDescription,
+    deleteTagDefinitionWithCascade,
     hashToColor,
     // Credential Expiry (KVStore)
     ensureExpiryCollection,

@@ -125,6 +125,8 @@ const ExpiryDashboard = require('./components/ExpiryDashboard');
 const ExpiryAlertConfig = require('./components/ExpiryAlertConfig');
 const RoleAccessDashboard = require('./components/RoleAccessDashboard');
 const BulkRoleAssignmentModal = require('./components/BulkRoleAssignmentModal');
+const TagManagementDashboard = require('./components/TagManagementDashboard');
+const BulkTagModal = require('./components/BulkTagModal');
 const API = require('./api');
 const { PasswordRevealModal, ImportCSVModal, ConfirmDeleteModal, HelpModal, BulkEditModal, ColumnPresetModal } = require('./components/Modal');
 const CredentialHistoryModal = require('./components/CredentialHistoryModal');
@@ -182,6 +184,15 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         // Filter/sort state — lifted from CredentialTable so parent can access filtered data for export
         const [filterText, setFilterText] = React.useState('');
         const [activeFilters, setActiveFilters] = React.useState([]);
+
+        // Parse tag query param on mount — apply as active filter
+        React.useEffect(function() {
+            var params = new URLSearchParams(window.location.search);
+            var tagParam = params.get('tag');
+            if (tagParam) {
+                setActiveFilters([{ field: 'tag', value: tagParam, label: tagParam }]);
+            }
+        }, []);
         const [sortConfig, setSortConfig] = React.useState({ key: null, direction: 'asc' });
 
         // Undo delete state — array of credentials for single + bulk undo
@@ -194,6 +205,10 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         const [columnsRefreshKey, setColumnsRefreshKey] = React.useState(0);
 
         // Load presets on mount
+        // Bulk tag modal state
+        const [bulkTagOpen, setBulkTagOpen] = React.useState(false);
+        const [bulkTagMode, setBulkTagMode] = React.useState('add'); // 'add' | 'remove'
+        const [allTagDefs, setAllTagDefs] = React.useState([]);
         React.useEffect(function() {
             setPresets(API.loadPresets());
         }, []);
@@ -494,6 +509,8 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 }
                 var tagColorMap = {};
                 tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
+                // Store tag definitions for bulk tag modal
+                setAllTagDefs(tagDefs);
 
                 // Enrich credentials with rotation status, tags, and expiry
                 var enriched = fetched.map(function(cred) {
@@ -1328,6 +1345,16 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                         appearance: 'subtle',
                         children: `Rotate Passwords (${selectedRows.length})`
                     }),
+                    selectedRows.length > 0 && React.createElement(Button, {
+                        onClick: () => { setBulkTagMode('add'); setBulkTagOpen(true); },
+                        appearance: 'subtle',
+                        children: `Add Tag (${selectedRows.length})`
+                    }),
+                    selectedRows.length > 0 && React.createElement(Button, {
+                        onClick: () => { setBulkTagMode('remove'); setBulkTagOpen(true); },
+                        appearance: 'subtle',
+                        children: `Remove Tag (${selectedRows.length})`
+                    }),
                     React.createElement(Button, { onClick: () => { setEditingCredential(null); setModals(prev => ({ ...prev, form: true })); }, appearance: 'primary', children: 'Create Credential' }),
                     // Duplicate scan progress + result
                     React.createElement('span', {
@@ -1586,6 +1613,29 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onSavePreset: handleSavePreset,
                 onDeletePreset: handleDeletePreset,
                 onRenamePreset: handleRenamePreset,
+            }),
+            // Bulk tag modal
+            bulkTagOpen && React.createElement(BulkTagModal, {
+                selectedRows: selectedRows,
+                availableTags: allTagDefs,
+                mode: bulkTagMode,
+                isOpen: bulkTagOpen,
+                onClose: () => {
+                    setBulkTagOpen(false);
+                    setBulkTagMode('add');
+                },
+                onApply: async function(credentials, tagNames) {
+                    if (bulkTagMode === 'add') {
+                        return await API.bulkAddTags(credentials, tagNames);
+                    } else {
+                        return await API.bulkRemoveTags(credentials, tagNames);
+                    }
+                },
+                onApplyResult: async function(result) {
+                    setBulkTagOpen(false);
+                    handleDeselectAll();
+                    await loadCredentials();
+                }
             }),
 
             // Expiry alert config modal — removed (moved to ExpiryDashboardView)
@@ -1848,13 +1898,21 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
      * navigateToView — navigate to another Splunk view within the same app.
      * Replaces the last path segment (current view name) with the target view name.
      */
-    function navigateToView(viewName) {
+    function navigateToView(viewName, queryParams) {
         var parts = window.location.pathname.split('/');
         if (parts.length >= 4) {
             parts[parts.length - 1] = viewName;
-            window.location.pathname = parts.join('/');
         } else {
             window.location.href = 'credential_management';
+            return;
+        }
+        var baseUrl = parts.join('/');
+        if (queryParams) {
+            var params = new URLSearchParams(window.location.search);
+            Object.keys(queryParams).forEach(function(k) { params.set(k, queryParams[k]); });
+            window.location.href = baseUrl + '?' + params.toString();
+        } else {
+            window.location.href = baseUrl + window.location.search;
         }
     }
 
@@ -1930,7 +1988,6 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }
                     var tagColorMap = {};
                     tagDefs.forEach(function(d) { tagColorMap[d.tag_name] = d.color; });
-
                     var enriched = fetched.map(function(cred) {
                         var expiryDate = API.resolveExpiryDate(cred, allExpiry) || '';
                         var rotationStatus = API.getRotationStatus(expiryDate);
@@ -2085,6 +2142,122 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
             })
         );
     }
+    /**
+     * TagManagementView — standalone wrapper for TagManagementDashboard.
+     * Loads tag definitions + usage data, renders the dashboard.
+     * Mounted independently when the Tag Management Splunk view is active.
+     */
+    function TagManagementView() {
+        var [tags, setTags] = React.useState([]);
+        var [tagUsages, setTagUsages] = React.useState({});
+        var [loading, setLoading] = React.useState(true);
+        var [error, setError] = React.useState(null);
+
+        React.useEffect(function() {
+            async function load() {
+                setLoading(true);
+                setError(null);
+                try {
+                    var [tagDefs, allTagsData] = await Promise.all([
+                        API.getAllTagDefinitions(),
+                        API.getAllTagsData()
+                    ]);
+                    setTags(tagDefs || []);
+                    // Compute usage counts
+                    var usage = {};
+                    for (var key in allTagsData) {
+                        if (!allTagsData.hasOwnProperty(key)) continue;
+                        (allTagsData[key] || []).forEach(function(t) {
+                            usage[t] = (usage[t] || 0) + 1;
+                        });
+                    }
+                    setTagUsages(usage);
+                } catch (err) {
+                    console.error('[TagManagement] Error loading data:', err);
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }
+            load();
+        }, []);
+
+        async function refresh() {
+            var [tagDefs, allTagsData] = await Promise.all([
+                API.getAllTagDefinitions(),
+                API.getAllTagsData()
+            ]);
+            setTags(tagDefs || []);
+            var usage = {};
+            for (var key in allTagsData) {
+                if (!allTagsData.hasOwnProperty(key)) continue;
+                (allTagsData[key] || []).forEach(function(t) {
+                    usage[t] = (usage[t] || 0) + 1;
+                });
+            }
+            setTagUsages(usage);
+        }
+
+        async function handleCreateTag(name, color, description) {
+            await API.createTagDefinition(name, color, description);
+            await refresh();
+        }
+
+        async function handleRenameTag(oldName, newName) {
+            await API.renameTagDefinition(oldName, newName);
+            await refresh();
+        }
+
+        async function handleDeleteTag(tagName) {
+            await API.deleteTagDefinitionWithCascade(tagName);
+            await refresh();
+        }
+
+        async function handleUpdateTagColor(tagName, color) {
+            await API.updateTagColor(tagName, color);
+            await refresh();
+        }
+
+        async function handleUpdateTagDescription(tagName, description) {
+            await API.updateTagDescription(tagName, description);
+            await refresh();
+        }
+
+        function handleNavigateToTable() {
+            navigateToView('credential_management');
+        }
+
+        function onViewCredentials(tagName) {
+            navigateToView('credential_management', { tag: tagName });
+        }
+
+        if (loading) {
+            return React.createElement('div', { style: { padding: '2rem' } }, React.createElement('p', null, 'Loading data...'));
+        }
+
+        if (error) {
+            return React.createElement('div', { style: { padding: '2rem' } },
+                React.createElement('p', { style: { color: '#ef4444' } }, 'Error loading tags: ' + error),
+                React.createElement('button', {
+                    onClick: refresh,
+                    style: { marginTop: '1rem' }
+                }, 'Retry')
+            );
+        }
+
+        return React.createElement(TagManagementDashboard, {
+            tags: tags,
+            tagUsages: tagUsages,
+            onNavigateToTable: handleNavigateToTable,
+            onCreateTag: handleCreateTag,
+            onRenameTag: handleRenameTag,
+            onDeleteTag: handleDeleteTag,
+            onUpdateTagColor: handleUpdateTagColor,
+            onUpdateTagDescription: handleUpdateTagDescription,
+            onViewCredentials: onViewCredentials
+        });
+    }
+
 
     window.CredentialManager = {
         Component: CredentialManager,
@@ -2149,6 +2322,18 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }));
                 }
             }
+            // TagManagement init — mount only if container exists
+            if (!window.CredentialManager._tagManagementInitialized) {
+                window.CredentialManager._tagManagementInitialized = true;
+                var tagContainer = document.getElementById('tag-management-app');
+                if (tagContainer) {
+                    var tagRoot = ReactDOM.createRoot(tagContainer);
+                    tagRoot.render(React.createElement(ThemeAwareApp, {
+                        appComponent: TagManagementView
+                    }));
+                }
+            }
+
         });
     } else {
         if (document.readyState === 'loading') {
