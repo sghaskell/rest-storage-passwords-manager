@@ -7,6 +7,7 @@
 
 const React = require('react');
 const API = require('../api');
+var CellEditPopover = require('./CellEditPopover');
 
 // Splunk design system imports
 var ButtonMod = require('@splunk/react-ui/Button');
@@ -71,7 +72,7 @@ function StatCard({ label, value, color, warning }) {
 
 // ─── Matrix Cell ────────────────────────────────────────────────────────────
 
-function MatrixCell({ accessLevel, isDark }) {
+function MatrixCell({ accessLevel, isDark, onClick, isWildcardDerived }) {
     var cellStyle = {
         textAlign: 'center',
         padding: '4px 8px',
@@ -99,7 +100,19 @@ function MatrixCell({ accessLevel, isDark }) {
         cellStyle.color = '#999';
     }
 
-    return React.createElement('div', { style: cellStyle }, accessLevel);
+    // Cursor pointer if clickable
+    if (onClick) {
+        cellStyle.cursor = 'pointer';
+    }
+
+    // Wildcard-derived indicator: append a subtle *
+    var label = isWildcardDerived ? accessLevel + '\u2009*' : accessLevel;
+
+    return React.createElement('div', {
+        style: cellStyle,
+        onClick: onClick ? function(e) { e.stopPropagation(); onClick(); } : null,
+        title: isWildcardDerived ? 'Access inherited from wildcard (*)' : undefined
+    }, label);
 }
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────
@@ -109,6 +122,7 @@ function RoleAccessDashboard({
     rolesWithCapabilities,
     onOpenBulkAssign,
     onViewCredential,
+    onRefresh
 }) {
     var isDark = detectDark();
 
@@ -116,6 +130,10 @@ function RoleAccessDashboard({
     const [filterRole, setFilterRole] = React.useState('');
     const [showOpenAccess, setShowOpenAccess] = React.useState(false);
     const [showAdminWritable, setShowAdminWritable] = React.useState(false);
+
+    // Cell editing state
+    const [editingCell, setEditingCell] = React.useState(null);
+    // { cred, role, accessLevel, isWildcardDerived, rect }
 
     // Derive admin role names and all role names
     var adminRoleNames = React.useMemo(function() {
@@ -223,6 +241,45 @@ function RoleAccessDashboard({
         if (hasRead) return 'R';
         if (hasWrite) return 'W';
         return '-';
+    }
+
+    /** Detect if access for a role on a credential is derived from wildcard */
+    function isWildcardDerived(role, cred) {
+        var readRoles = (cred.aclRead || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+        var writeRoles = (cred.aclWrite || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+
+        var readWildcard = readRoles.indexOf('*') !== -1 || readRoles.indexOf('* (all)') !== -1;
+        var writeWildcard = writeRoles.indexOf('*') !== -1 || writeRoles.indexOf('* (all)') !== -1;
+
+        // The sentinel column is its own thing
+        if (role === '* (all)') return false;
+
+        // If role is explicitly listed in either array, not wildcard-derived
+        var roleExplicit = readRoles.indexOf(role) !== -1 || writeRoles.indexOf(role) !== -1;
+        var wildcardPresent = readWildcard || writeWildcard;
+
+        // Wildcard-derived: role is NOT in the array at all AND wildcard grants access
+        return !roleExplicit && wildcardPresent;
+    }
+
+    /** Handle cell click — open the edit popover */
+    function handleCellClick(cred, role, e) {
+        var rect = e.target.getBoundingClientRect();
+        var level = getAccessLevel(role, cred);
+        var wildcard = isWildcardDerived(role, cred);
+        setEditingCell({ cred: cred, role: role, accessLevel: level, isWildcardDerived: wildcard, rect: rect });
+    }
+
+    /** Handle save from the cell edit popover */
+    async function handleCellSave(cred, newReadRoles, newWriteRoles) {
+        try {
+            await API.setCredentialRoles(cred, newReadRoles, newWriteRoles);
+            setEditingCell(null);
+            if (onRefresh) onRefresh();
+        } catch (err) {
+            console.error('[CellEdit] Save failed:', err);
+            // Don't close popover — let user retry
+        }
     }
 
     // CSS variables for theme
@@ -615,11 +672,14 @@ function RoleAccessDashboard({
                             // Access cells — one per role
                             matrixRoles.map(function(role) {
                                 var level = getAccessLevel(role, cred);
+                                var wildcard = isWildcardDerived(role, cred);
                                 return React.createElement('td', {
                                     key: role + ':' + cred.stanzaKey
                                 }, React.createElement(MatrixCell, {
                                     accessLevel: level,
-                                    isDark: isDark
+                                    isDark: isDark,
+                                    onClick: function(e) { handleCellClick(cred, role, e); },
+                                    isWildcardDerived: wildcard
                                 }));
                             })
                         );
@@ -627,6 +687,17 @@ function RoleAccessDashboard({
                 )
             )
         ) : null
+        // ── Cell edit popover ──
+        editingCell && React.createElement(CellEditPopover, {
+            cred: editingCell.cred,
+            role: editingCell.role,
+            accessLevel: editingCell.accessLevel,
+            isWildcardDerived: editingCell.isWildcardDerived,
+            onClose: function() { setEditingCell(null); },
+            onSave: handleCellSave,
+            isDark: isDark,
+            anchorRect: editingCell.rect
+        })
     );
 }
 

@@ -2111,6 +2111,22 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 onViewCredential: function(cred) {
                     navigateToView('credential_management');
                 },
+                onRefresh: function() {
+                    var doReload = async function() {
+                        var fetched = await API.getAllCredentials();
+                        var enriched = fetched.map(function(cred) {
+                            var expiryDate = cred.expiryDate || '';
+                            var rotationStatus = API.getRotationStatus(expiryDate);
+                            return Object.assign({}, cred, {
+                                expiryDate: expiryDate || '',
+                                rotationStatus: rotationStatus,
+                                tags: [],
+                            });
+                        });
+                        setCredentials(enriched);
+                    };
+                    doReload();
+                },
             }),
             bulkRoleOpen && React.createElement(BulkRoleAssignmentModal, {
                 isOpen: bulkRoleOpen,
