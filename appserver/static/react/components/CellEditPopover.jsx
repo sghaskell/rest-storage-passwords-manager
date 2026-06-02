@@ -150,8 +150,8 @@ function CellEditPopover({
         var currentRead = parseRoles(cred.aclRead);
         var currentWrite = parseRoles(cred.aclWrite);
 
-        // If wildcard was removed, strip it from both arrays
-        if (!wildcardRemoved) {
+        // If wildcard was removed by user, strip it from both arrays
+        if (wildcardRemoved) {
             currentRead = removeWildcard(currentRead);
             currentWrite = removeWildcard(currentWrite);
         }
