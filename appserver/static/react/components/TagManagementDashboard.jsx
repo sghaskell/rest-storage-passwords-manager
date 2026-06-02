@@ -3,6 +3,7 @@
  *
  * Summary cards + searchable table with descriptions, color presets, bulk delete,
  * click-through to credentials, and inline editing.
+ * Uses @splunk/react-ui Table and @splunk/react-icons for consistent styling.
  */
 
 const React = require('react');
@@ -10,6 +11,23 @@ const API = require('../api');
 
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
+
+// Splunk Table components
+var TableMod = require('@splunk/react-ui/Table');
+var Table = TableMod.default;
+var TableHead = TableMod.Head;
+var TableBody = TableMod.Body;
+var TableRow = TableMod.Row;
+var TableCell = TableMod.Cell;
+var TableHeadCell = TableMod.HeadCell;
+
+// Splunk icons
+var Pencil = require('@splunk/react-icons/Pencil').default;
+var TrashCanCross = require('@splunk/react-icons/TrashCanCross').default;
+var Eye = require('@splunk/react-icons/Eye').default;
+var PlusSquare = require('@splunk/react-icons/PlusSquare').default;
+var Checkmark = require('@splunk/react-icons/Checkmark').default;
+var Cross = require('@splunk/react-icons/Cross').default;
 
 // ─── Color Palette Presets ─────────────────────────────────────────────────
 
@@ -107,7 +125,7 @@ function ColorPresetPicker({ selectedColor, onChange, idPrefix }) {
                 }
             });
         }),
-        // Custom color picker (small swatch that opens native picker)
+        // Custom color picker
         React.createElement('span', {
             title: 'Custom color',
             style: {
@@ -140,7 +158,6 @@ function ColorPresetPicker({ selectedColor, onChange, idPrefix }) {
 // ─── Tag Row ────────────────────────────────────────────────────────────────
 
 function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdateDescription, onViewCredentials, isSelected, onToggleSelect }) {
-    var cardBorder = isDark ? '#333' : '#e0e0e0';
     var inputBg = isDark ? '#2d2d2d' : '#fff';
     var inputBorder = isDark ? '#555' : '#ccc';
     var inputColor = isDark ? '#e0e0e0' : '#333';
@@ -184,21 +201,98 @@ function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdat
         finally { setDeleting(false); }
     }
 
-    return React.createElement('tr', {
+    // ── Inline edit helper ──
+    function inlineEditInput(value, onChange, onSave, onCancel, width, placeholder) {
+        return React.createElement('div', { style: { display: 'flex', gap: '2px', alignItems: 'center' } },
+            React.createElement('input', {
+                type: 'text',
+                value: value,
+                onChange: function(e) { onChange(e.target.value); },
+                onKeyDown: function(e) {
+                    if (e.key === 'Enter') onSave();
+                    if (e.key === 'Escape') onCancel();
+                },
+                style: {
+                    padding: '2px 6px',
+                    border: '1px solid ' + inputBorder,
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    backgroundColor: inputBg,
+                    color: inputColor,
+                    width: width
+                },
+                autoFocus: true,
+                placeholder: placeholder
+            }),
+            React.createElement(Button, {
+                onClick: onSave,
+                appearance: 'subtle',
+                title: 'Save',
+                icon: React.createElement(Checkmark, { variant: 'filled' })
+            }),
+            React.createElement(Button, {
+                onClick: onCancel,
+                appearance: 'subtle',
+                title: 'Cancel',
+                icon: React.createElement(Cross, { variant: 'filled' })
+            })
+        );
+    }
+
+    // ── Action buttons (icon-only, matching CredentialTable) ──
+    function actionButtons() {
+        var btns = [];
+
+        // View credentials
+        if (onViewCredentials) {
+            btns.push(
+                React.createElement(Button, {
+                    key: 'view',
+                    onClick: function() { onViewCredentials(tag.tag_name); },
+                    appearance: 'subtle',
+                    title: 'View credentials with this tag',
+                    icon: React.createElement(Eye, { variant: 'filled' })
+                })
+            );
+        }
+
+        // Rename
+        if (!editingName) {
+            btns.push(
+                React.createElement(Button, {
+                    key: 'rename',
+                    onClick: startRename,
+                    appearance: 'subtle',
+                    title: 'Rename tag',
+                    icon: React.createElement(Pencil, { variant: 'filled' })
+                })
+            );
+        }
+
+        // Delete
+        btns.push(
+            React.createElement(Button, {
+                key: 'delete',
+                onClick: handleDelete,
+                appearance: 'subtle',
+                title: deleting ? 'Deleting...' : 'Delete tag',
+                disabled: deleting,
+                icon: React.createElement(TrashCanCross, { variant: 'filled' })
+            })
+        );
+
+        return React.createElement('div', {
+            style: { display: 'flex', gap: '0.25rem' }
+        }, btns);
+    }
+
+    return React.createElement(TableRow, {
         style: {
-            borderBottom: '1px solid ' + cardBorder,
-            backgroundColor: isSelected ? (isDark ? '#1a2332' : '#eef2ff') : 'transparent',
-            transition: 'background-color 0.1s'
-        },
-        onMouseEnter: function(e) {
-            if (!isSelected) e.currentTarget.style.backgroundColor = isDark ? '#1a2332' : '#f8fafc';
-        },
-        onMouseLeave: function(e) {
-            if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+            backgroundColor: isSelected ? (isDark ? '#1a2332' : '#eef2ff') : 'transparent'
         }
     },
         // Checkbox
-        React.createElement('td', { style: { padding: '8px 8px', width: '36px', textAlign: 'center' } },
+        React.createElement(TableCell, { style: { textAlign: 'center', width: '36px' } },
             React.createElement('input', {
                 type: 'checkbox',
                 checked: !!isSelected,
@@ -208,40 +302,12 @@ function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdat
         ),
 
         // Name
-        React.createElement('td', { style: { padding: '8px 12px' } },
+        React.createElement(TableCell, null,
             editingName
-                ? React.createElement('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-                    React.createElement('input', {
-                        type: 'text',
-                        value: editValue,
-                        onChange: function(e) { setEditValue(e.target.value); },
-                        onKeyDown: function(e) {
-                            if (e.key === 'Enter') handleRename();
-                            if (e.key === 'Escape') setEditingName(false);
-                        },
-                        style: {
-                            padding: '2px 6px',
-                            border: '1px solid ' + inputBorder,
-                            borderRadius: '4px',
-                            fontSize: '13px',
-                            backgroundColor: inputBg,
-                            color: inputColor,
-                            width: '140px'
-                        },
-                        autoFocus: true
-                    }),
-                    React.createElement(Button, {
-                        onClick: handleRename,
-                        appearance: 'subtle',
-                        children: '\u2713',
-                        style: { fontSize: '12px', padding: '2px 6px' }
-                    }),
-                    React.createElement(Button, {
-                        onClick: function() { setEditingName(false); },
-                        appearance: 'subtle',
-                        children: '\u2715',
-                        style: { fontSize: '12px', padding: '2px 6px' }
-                    })
+                ? inlineEditInput(
+                    editValue, setEditValue,
+                    handleRename, function() { setEditingName(false); },
+                    '140px', 'Tag name...'
                 )
                 : React.createElement('span', {
                     style: { fontSize: '13px', fontWeight: '600', fontFamily: 'monospace', color: inputColor }
@@ -249,41 +315,12 @@ function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdat
         ),
 
         // Description
-        React.createElement('td', { style: { padding: '8px 12px', maxWidth: '220px' } },
+        React.createElement(TableCell, null,
             editingDesc
-                ? React.createElement('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-                    React.createElement('input', {
-                        type: 'text',
-                        value: descValue,
-                        onChange: function(e) { setDescValue(e.target.value); },
-                        onKeyDown: function(e) {
-                            if (e.key === 'Enter') handleSaveDesc();
-                            if (e.key === 'Escape') setEditingDesc(false);
-                        },
-                        style: {
-                            padding: '2px 6px',
-                            border: '1px solid ' + inputBorder,
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                            backgroundColor: inputBg,
-                            color: inputColor,
-                            width: '160px'
-                        },
-                        autoFocus: true,
-                        placeholder: 'Description...'
-                    }),
-                    React.createElement(Button, {
-                        onClick: handleSaveDesc,
-                        appearance: 'subtle',
-                        children: '\u2713',
-                        style: { fontSize: '12px', padding: '2px 6px' }
-                    }),
-                    React.createElement(Button, {
-                        onClick: function() { setEditingDesc(false); },
-                        appearance: 'subtle',
-                        children: '\u2715',
-                        style: { fontSize: '12px', padding: '2px 6px' }
-                    })
+                ? inlineEditInput(
+                    descValue, setDescValue,
+                    handleSaveDesc, function() { setEditingDesc(false); },
+                    '160px', 'Description...'
                 )
                 : React.createElement('span', {
                     onClick: startEditDesc,
@@ -302,7 +339,7 @@ function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdat
         ),
 
         // Color
-        React.createElement('td', { style: { padding: '8px 12px', textAlign: 'center', width: '60px' } },
+        React.createElement(TableCell, { style: { textAlign: 'center', width: '60px' } },
             React.createElement(ColorSwatch, {
                 color: tagColor,
                 onChange: function(newColor) { onUpdateColor(tag.tag_name, newColor); },
@@ -311,44 +348,16 @@ function TagRow({ tag, usage, isDark, onRename, onDelete, onUpdateColor, onUpdat
             })
         ),
 
-        // Usage — clickable link
-        React.createElement('td', { style: { padding: '8px 12px', textAlign: 'center', width: '120px' } },
+        // Usage — plain text (no hyperlink)
+        React.createElement(TableCell, { style: { textAlign: 'center', width: '100px' } },
             React.createElement('span', {
-                onClick: function() { if (onViewCredentials) onViewCredentials(tag.tag_name); },
-                style: {
-                    color: usage > 0 ? '#3b82f6' : subText,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    textUnderlineOffset: '2px'
-                },
-                title: 'Click to view credentials with this tag'
-            }, usage + ' credential' + (usage !== 1 ? 's' : ''))
+                style: { fontSize: '13px', color: inputColor }
+            }, usage)
         ),
 
-        // Actions
-        React.createElement('td', { style: { padding: '8px 12px' } },
-            React.createElement('div', { style: { display: 'flex', gap: '6px' } },
-                onViewCredentials && React.createElement(Button, {
-                    onClick: function() { onViewCredentials(tag.tag_name); },
-                    appearance: 'subtle',
-                    children: 'View',
-                    style: { fontSize: '11px', padding: '1px 6px', height: '24px', color: '#3b82f6' }
-                }),
-                !editingName && React.createElement(Button, {
-                    onClick: startRename,
-                    appearance: 'subtle',
-                    children: 'Rename',
-                    style: { fontSize: '11px', padding: '1px 6px', height: '24px' }
-                }),
-                React.createElement(Button, {
-                    onClick: handleDelete,
-                    appearance: 'subtle',
-                    children: deleting ? 'Deleting...' : 'Delete',
-                    disabled: deleting,
-                    style: { fontSize: '11px', padding: '1px 6px', height: '24px', color: '#ef4444' }
-                })
-            )
+        // Actions (icon buttons)
+        React.createElement(TableCell, null,
+            actionButtons()
         )
     );
 }
@@ -369,8 +378,6 @@ function TagManagementDashboard({
     var isDark = detectDark();
     var cardBg = isDark ? '#1e293b' : '#fff';
     var cardBorder = isDark ? '#333' : '#e0e0e0';
-    var headerBg = isDark ? '#15191e' : '#f5f5f5';
-    var headerColor = isDark ? '#e0e0e0' : '#333';
     var inputBg = isDark ? '#2d2d2d' : '#fff';
     var inputBorder = isDark ? '#555' : '#ccc';
     var inputColor = isDark ? '#e0e0e0' : '#333';
@@ -494,16 +501,14 @@ function TagManagementDashboard({
         );
     }
 
-    function compactButton(props) {
-        var style = props.style || {};
-        style.width = 'auto'; style.minWidth = 'auto'; style.flexShrink = 0;
-        return React.createElement(Button, {
-            onClick: props.onClick,
-            appearance: props.appearance,
-            children: props.children,
-            style: style
-        });
-    }
+    // ── Column definitions ──
+    var TAG_COLUMNS = [
+        { key: 'name', label: 'Name' },
+        { key: 'description', label: 'Description', width: '220px' },
+        { key: 'color', label: 'Color', width: '60px' },
+        { key: 'usage', label: 'Usage', width: '100px' },
+        { key: 'actions', label: 'Actions' }
+    ];
 
     return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
         // ── Summary Cards ──
@@ -539,11 +544,12 @@ function TagManagementDashboard({
             React.createElement('div', { style: { flex: 1 } }),
             // New Tag button / form (right)
             !showCreate
-                ? compactButton({
+                ? React.createElement(Button, {
                     onClick: function() { setShowCreate(true); },
                     appearance: 'primary',
-                    children: '+ New Tag',
-                    style: { fontSize: '12px', padding: '2px 12px', height: '30px' }
+                    icon: React.createElement(PlusSquare, { variant: 'filled' }),
+                    children: 'New Tag',
+                    style: { fontSize: '12px', padding: '2px 10px', height: '28px' }
                 })
                 : React.createElement('div', {
                     style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }
@@ -578,17 +584,18 @@ function TagManagementDashboard({
                         onChange: function(c) { setNewTagColor(c); },
                         idPrefix: 'create-new'
                     }),
-                    compactButton({
+                    React.createElement(Button, {
                         onClick: handleCreateTag,
                         appearance: 'primary',
                         children: creating ? '...' : 'Create',
-                        style: { fontSize: '12px', padding: '2px 10px', height: '28px' }
+                        style: { fontSize: '12px', padding: '2px 10px', height: '28px', width: 'auto', minWidth: 'auto', flexShrink: 0 }
                     }),
-                    compactButton({
+                    React.createElement(Button, {
                         onClick: function() { setShowCreate(false); setNewTagName(''); setCreateError(''); setNewTagDesc(''); },
                         appearance: 'subtle',
-                        children: '\u2715',
-                        style: { fontSize: '12px', padding: '1px 6px', height: '28px' }
+                        title: 'Cancel',
+                        icon: React.createElement(Cross, { variant: 'filled' }),
+                        style: { width: 'auto', minWidth: 'auto', flexShrink: 0 }
                     }),
                     createError && React.createElement('span', {
                         style: { color: '#ef4444', fontSize: '11px', whiteSpace: 'nowrap' }
@@ -610,17 +617,17 @@ function TagManagementDashboard({
             React.createElement('span', { style: { color: inputColor } },
                 selectedTags.length + ' tag' + (selectedTags.length !== 1 ? 's' : '') + ' selected'),
             React.createElement('div', { style: { flex: 1 } }),
-            compactButton({
+            React.createElement(Button, {
                 onClick: function() { setSelectedTags([]); },
                 appearance: 'subtle',
                 children: 'Clear',
-                style: { fontSize: '11px', height: '24px' }
+                style: { fontSize: '11px', height: '24px', width: 'auto', minWidth: 'auto', flexShrink: 0 }
             }),
-            compactButton({
+            React.createElement(Button, {
                 onClick: handleBulkDelete,
                 appearance: 'primary',
                 children: bulkDeleting ? 'Deleting...' : 'Delete Selected',
-                style: { fontSize: '11px', height: '24px', backgroundColor: '#ef4444', color: '#fff' }
+                style: { fontSize: '11px', height: '24px', backgroundColor: '#ef4444', color: '#fff', width: 'auto', minWidth: 'auto', flexShrink: 0 }
             })
         ),
 
@@ -633,69 +640,56 @@ function TagManagementDashboard({
                 overflow: 'hidden'
             }
         },
-            React.createElement('div', { style: { overflowX: 'auto' } },
-                React.createElement('table', {
-                    style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: inputColor }
-                },
-                    React.createElement('thead', null,
-                        React.createElement('tr', {
-                            style: { backgroundColor: headerBg, borderBottom: '2px solid ' + cardBorder }
+            React.createElement(Table, null,
+                React.createElement(TableHead, null,
+                    React.createElement(TableRow, null,
+                        React.createElement(TableHeadCell, {
+                            style: { textAlign: 'center', width: '36px' }
                         },
-                            React.createElement('th', {
-                                key: 'check',
-                                style: { padding: '8px 8px', textAlign: 'center', fontWeight: '600', color: headerColor, borderBottom: '1px solid ' + cardBorder, fontSize: '12px', width: '36px' }
-                            },
-                                React.createElement('input', {
-                                    type: 'checkbox',
-                                    checked: tags.length > 0 && selectedTags.length === filteredTags.length && filteredTags.length > 0,
-                                    onChange: function() {
-                                        if (selectedTags.length === filteredTags.length) {
-                                            setSelectedTags([]);
-                                        } else {
-                                            setSelectedTags(filteredTags.map(function(t) { return t.tag_name; }));
-                                        }
-                                    },
-                                    style: { cursor: 'pointer', width: '14px', height: '14px' }
-                                })
-                            ),
-                            ['Name', 'Description', 'Color', 'Usage', 'Actions'].map(function(h) {
-                                var w = h === 'Description' ? '220px' : h === 'Color' ? '60px' : h === 'Usage' ? '120px' : 'auto';
-                                return React.createElement('th', {
-                                    key: h,
-                                    style: {
-                                        padding: '8px 12px', textAlign: 'left', fontWeight: '600',
-                                        color: headerColor, borderBottom: '1px solid ' + cardBorder,
-                                        fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.03em',
-                                        width: w
+                            React.createElement('input', {
+                                type: 'checkbox',
+                                checked: tags.length > 0 && selectedTags.length === filteredTags.length && filteredTags.length > 0,
+                                onChange: function() {
+                                    if (selectedTags.length === filteredTags.length) {
+                                        setSelectedTags([]);
+                                    } else {
+                                        setSelectedTags(filteredTags.map(function(t) { return t.tag_name; }));
                                     }
-                                }, h);
+                                },
+                                style: { cursor: 'pointer', width: '14px', height: '14px' }
                             })
-                        )
-                    ),
-                    React.createElement('tbody', null,
-                        filteredTags.length === 0
-                            ? React.createElement('tr', null,
-                                React.createElement('td', {
-                                    colSpan: 6,
-                                    style: { textAlign: 'center', padding: '2rem', color: subText, fontStyle: 'italic' }
-                                }, searchText ? 'No tags match "' + searchText + '"' : 'No tags defined yet. Click "+ New Tag" above to get started.')
-                            )
-                            : filteredTags.map(function(tag) {
-                                return React.createElement(TagRow, {
-                                    key: tag.tag_name,
-                                    tag: tag,
-                                    usage: tagUsages[tag.tag_name] || 0,
-                                    isDark: isDark,
-                                    onRename: onRenameTag,
-                                    onDelete: onDeleteTag,
-                                    onUpdateColor: onUpdateTagColor,
-                                    onUpdateDescription: onUpdateTagDescription,
-                                    onViewCredentials: onViewCredentials,
-                                    isSelected: selectedTags.indexOf(tag.tag_name) !== -1,
-                                    onToggleSelect: toggleSelect
-                                });
-                            })
+                        ),
+                        TAG_COLUMNS.map(function(col) {
+                            return React.createElement(TableHeadCell, {
+                                key: col.key,
+                                style: { width: col.width || 'auto' }
+                            }, col.label);
+                        })
                     )
+                ),
+                React.createElement(TableBody, null,
+                    filteredTags.length === 0
+                        ? React.createElement(TableRow, null,
+                            React.createElement(TableCell, {
+                                colSpan: 6,
+                                style: { textAlign: 'center', padding: '2rem', color: subText, fontStyle: 'italic' }
+                            }, searchText ? 'No tags match "' + searchText + '"' : 'No tags defined yet. Click "New Tag" above to get started.')
+                        )
+                        : filteredTags.map(function(tag) {
+                            return React.createElement(TagRow, {
+                                key: tag.tag_name,
+                                tag: tag,
+                                usage: tagUsages[tag.tag_name] || 0,
+                                isDark: isDark,
+                                onRename: onRenameTag,
+                                onDelete: onDeleteTag,
+                                onUpdateColor: onUpdateTagColor,
+                                onUpdateDescription: onUpdateTagDescription,
+                                onViewCredentials: onViewCredentials,
+                                isSelected: selectedTags.indexOf(tag.tag_name) !== -1,
+                                onToggleSelect: toggleSelect
+                            });
+                        })
                 )
             )
         )
