@@ -115,6 +115,9 @@ function MatrixCell({ accessLevel, isDark, onClick, isWildcardDerived }) {
     }, label);
 }
 
+// ─── Constants ──────────────────────────────────────────────────────────────
+var PAGE_SIZES = [25, 50, 100, 200, 'All'];
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────
 
 function RoleAccessDashboard({
@@ -134,6 +137,10 @@ function RoleAccessDashboard({
     // Cell editing state
     const [editingCell, setEditingCell] = React.useState(null);
     // { cred, role, accessLevel, isWildcardDerived, rect }
+
+    // Matrix row pagination state
+    const [matrixPage, setMatrixPage] = React.useState(0);
+    const [matrixPageSize, setMatrixPageSize] = React.useState(50);
 
     // Derive admin role names and all role names
     var adminRoleNames = React.useMemo(function() {
@@ -207,17 +214,20 @@ function RoleAccessDashboard({
         });
     }, [uniqueCredentials, filterRole, showOpenAccess, showAdminWritable, adminRoleNames]);
 
-    // Sort: open access first, then by name
+    // Reset matrix page to 0 when filters change
+    React.useEffect(function() { setMatrixPage(0); }, [filterRole, showOpenAccess, showAdminWritable]);
+
+    // Sort: alphabetical by name (consistent across pages)
     filteredCreds.sort(function(a, b) {
-        var aOpen = hasOpenAccess(a) ? 0 : 1;
-        var bOpen = hasOpenAccess(b) ? 0 : 1;
-        if (aOpen !== bOpen) return aOpen - bOpen;
         return (a.name || '').localeCompare(b.name || '');
     });
 
-    // Performance cap for matrix
-    var matrixRoles = allRoleNames.slice(0, 50);
-    var matrixCreds = filteredCreds.slice(0, 200);
+    // Row pagination for matrix (replaces hard performance cap)
+    var matrixRoles = allRoleNames.slice(0, 50); // keep role cap
+    var effectivePageSize = matrixPageSize === 'All' ? filteredCreds.length : matrixPageSize;
+    var totalPages = Math.max(1, Math.ceil(filteredCreds.length / effectivePageSize));
+    var clampedPage = Math.min(matrixPage, totalPages - 1);
+    var matrixCreds = filteredCreds.slice(clampedPage * effectivePageSize, (clampedPage + 1) * effectivePageSize);
 
     // Compute matrix cell — get access level for role × credential
     function getAccessLevel(role, cred) {
@@ -584,13 +594,35 @@ function RoleAccessDashboard({
                     return React.createElement('span', { key: item }, item);
                 })
             ),
+            // Info line + pagination controls
             React.createElement('div', {
-                style: {
-                    fontSize: '11px',
-                    color: '#f59e0b',
-                    marginBottom: '0.5rem'
-                }
-            }, '⚠ Performance cap: showing ' + matrixCreds.length + ' credentials × ' + matrixRoles.length + ' roles (max 200×50)'),
+                style: { fontSize: '11px', color: subText, marginBottom: '0.25rem' }
+            }, 'Showing credentials ' + ((clampedPage * effectivePageSize) + 1) + '\u2013' + Math.min((clampedPage + 1) * effectivePageSize, filteredCreds.length) + ' of ' + filteredCreds.length + ' \u00d7 ' + matrixRoles.length + ' roles'),
+            React.createElement('div', {
+                style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '12px', color: subText }
+            },
+                React.createElement('label', { style: { fontSize: '12px' } }, 'Show:'),
+                React.createElement('select', {
+                    value: matrixPageSize,
+                    onChange: function(e) { setMatrixPageSize(e.target.value === 'All' ? 'All' : parseInt(e.target.value, 10)); setMatrixPage(0); },
+                    style: { padding: '2px 6px', fontSize: '12px', border: '1px solid ' + inputBorder, borderRadius: '3px', backgroundColor: inputBg, color: inputColor }
+                }, PAGE_SIZES.map(function(sz) {
+                    return React.createElement('option', { key: sz, value: sz }, sz === 'All' ? 'All (' + filteredCreds.length + ')' : sz);
+                })),
+                React.createElement(Button, {
+                    onClick: function() { setMatrixPage(Math.max(0, clampedPage - 1)); },
+                    appearance: 'subtle',
+                    disabled: clampedPage === 0,
+                    children: '\u2190 Prev'
+                }),
+                React.createElement('span', null, 'Page ' + (clampedPage + 1) + ' of ' + totalPages),
+                React.createElement(Button, {
+                    onClick: function() { setMatrixPage(Math.min(totalPages - 1, clampedPage + 1)); },
+                    appearance: 'subtle',
+                    disabled: clampedPage >= totalPages - 1,
+                    children: 'Next \u2192'
+                })
+            ),
             React.createElement('table', {
                 style: {
                     width: '100%',
