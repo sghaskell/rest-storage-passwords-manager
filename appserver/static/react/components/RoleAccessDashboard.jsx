@@ -110,7 +110,7 @@ function MatrixCell({ accessLevel, isDark, onClick, isWildcardDerived }) {
 
     return React.createElement('div', {
         style: cellStyle,
-        onClick: onClick ? function(e) { e.stopPropagation(); onClick(); } : null,
+        onClick: onClick ? function(e) { e.stopPropagation(); onClick(e); } : null,
         title: isWildcardDerived ? 'Access inherited from wildcard (*)' : undefined
     }, label);
 }
@@ -686,7 +686,7 @@ function RoleAccessDashboard({
                     })
                 )
             )
-        ) : null
+        ) : null,
         // ── Cell edit popover ──
         editingCell && React.createElement(CellEditPopover, {
             cred: editingCell.cred,

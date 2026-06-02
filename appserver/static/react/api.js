@@ -2766,6 +2766,10 @@ function aggregateByRole(credentials, roleNames) {
 async function setCredentialRoles(credential, readRoles, writeRoles) {
     var stanzaKey = credential.stanzaKey ||
         ((credential.realm || '') + ':' + (credential.name || '') + ':');
+    // Normalize: strip leading "credential:" if present — buildAclPath adds it
+    if (stanzaKey.indexOf('credential:') === 0) {
+        stanzaKey = stanzaKey.slice('credential:'.length);
+    }
     var aclPath = buildAclPath(
         stanzaKey,
         credential.namespaceOwner || credential.owner || 'nobody',
