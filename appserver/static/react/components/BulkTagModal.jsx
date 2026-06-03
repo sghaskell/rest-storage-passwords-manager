@@ -15,6 +15,9 @@ SplunkModalMod.Footer && (SplunkModal.Footer = SplunkModalMod.Footer);
 var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
 
+var TagColorPicker = require('./TagColorPicker');
+var ColorPresetPicker = TagColorPicker.ColorPresetPicker;
+
 // Detect dark theme
 function detectDark() {
     var html = document.documentElement;
@@ -66,6 +69,23 @@ function BulkTagModal({
             return { label: t.tag_name, value: t.tag_name };
         });
     }, [availableTags]);
+
+    // Collect unique tag names + colors across all selected credentials
+    var selectedTags = React.useMemo(function() {
+        var seen = {};
+        var items = [];
+        (selectedRows || []).forEach(function(cred) {
+            (cred.tags || []).forEach(function(t) {
+                var name = typeof t === 'string' ? t : (t.name || '');
+                var color = typeof t === 'object' ? (t.color || '') : '';
+                if (name && !seen[name]) {
+                    seen[name] = true;
+                    items.push({ name: name, color: color });
+                }
+            });
+        });
+        return items;
+    }, [selectedRows]);
 
     async function handleApply() {
         if (!selectedTagNames.length && !newTagName.trim()) return;
@@ -129,6 +149,51 @@ function BulkTagModal({
                         : 'Remove selected tag(s) from ' + selectedRows.length + ' credential(s).'
                 ),
 
+                // Existing tags summary (informational only)
+                selectedTags.length > 0 && React.createElement(
+                    'div',
+                    {
+                        style: {
+                            display: 'flex',
+                            gap: '4px',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            marginBottom: '1rem'
+                        }
+                    },
+                    React.createElement(
+                        'span',
+                        {
+                            style: {
+                                fontSize: '12px',
+                                color: subText,
+                                marginRight: '4px'
+                            }
+                        },
+                        'Selected credentials have these tags:'
+                    ),
+                    selectedTags.map(function(tag, i) {
+                        var tagColor = tag.color || '#1565c0';
+                        return React.createElement(
+                            'span',
+                            {
+                                key: i,
+                                style: {
+                                    display: 'inline-block',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    backgroundColor: tagColor + '22',
+                                    color: tagColor,
+                                    border: '1px solid ' + tagColor + '40',
+                                    whiteSpace: 'nowrap'
+                                }
+                            },
+                            tag.name
+                        );
+                    })
+                ),
                 // Tag selector
                 React.createElement('div', { style: { marginBottom: '1rem' } },
                     React.createElement('label', {
@@ -191,11 +256,10 @@ function BulkTagModal({
                             flex: 1
                         }
                     }),
-                    React.createElement('input', {
-                        type: 'color',
-                        value: newTagColor,
-                        onChange: function(e) { setNewTagColor(e.target.value); },
-                        title: 'Tag color'
+                    React.createElement(ColorPresetPicker, {
+                        selectedColor: newTagColor,
+                        onChange: function(c) { setNewTagColor(c); },
+                        idPrefix: 'bulk-tag-color'
                     })
                 ),
 

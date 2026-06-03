@@ -613,6 +613,7 @@ function RoleAccessDashboard({
                     onClick: function() { setMatrixPage(Math.max(0, clampedPage - 1)); },
                     appearance: 'subtle',
                     disabled: clampedPage === 0,
+                    style: { width: 'auto', padding: '2px 8px', fontSize: '12px' },
                     children: '\u2190 Prev'
                 }),
                 React.createElement('span', null, 'Page ' + (clampedPage + 1) + ' of ' + totalPages),
@@ -620,6 +621,7 @@ function RoleAccessDashboard({
                     onClick: function() { setMatrixPage(Math.min(totalPages - 1, clampedPage + 1)); },
                     appearance: 'subtle',
                     disabled: clampedPage >= totalPages - 1,
+                    style: { width: 'auto', padding: '2px 8px', fontSize: '12px' },
                     children: 'Next \u2192'
                 })
             ),

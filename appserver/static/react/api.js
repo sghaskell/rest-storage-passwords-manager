@@ -2483,6 +2483,82 @@ async function removeTagFromCredential(credential, tagToRemove) {
 }
 
 /**
+ * Bulk add tags to multiple credentials (preserves existing tags).
+ * @param {Array} credentials - Array of credential objects
+ * @param {Array} tagNames - Array of tag names to add
+ * @param {Function} onProgress - Optional progress callback(index, total)
+ * @returns {Array} Results array
+ */
+async function bulkAddTags(credentials, tagNames, onProgress) {
+    var results = [];
+    var cleanNewTags = tagNames
+        .map(function(t) { return t.trim().toLowerCase(); })
+        .filter(Boolean)
+        .slice(0, 5);
+
+    // Ensure all new tag definitions exist
+    var existingDefs = await getAllTagDefinitions();
+    for (var i = 0; i < cleanNewTags.length; i++) {
+        var tag = cleanNewTags[i];
+        if (!existingDefs.some(function(d) { return d.tag_name === tag; })) {
+            await kvStoreSetDocument(TAG_DEFS_COLLECTION, tag, {
+                _key: tag,
+                tag_name: tag,
+                color: hashToColor(tag),
+            });
+        }
+    }
+
+    for (var j = 0; j < credentials.length; j++) {
+        var cred = credentials[j];
+        try {
+            var existing = await getTagsForCredential(cred);
+            var merged = existing.concat(cleanNewTags);
+            // Deduplicate
+            merged = merged.filter(function(tag, idx) {
+                return merged.indexOf(tag) === idx;
+            }).slice(0, 5);
+            await setTagsForCredential(cred, merged);
+            results.push({ credential: cred, success: true, tags: merged });
+        } catch (e) {
+            results.push({ credential: cred, success: false, error: e.message });
+        }
+        if (onProgress) onProgress(j + 1, credentials.length);
+    }
+    return results;
+}
+
+/**
+ * Bulk remove tags from multiple credentials.
+ * @param {Array} credentials - Array of credential objects
+ * @param {Array} tagNames - Array of tag names to remove
+ * @param {Function} onProgress - Optional progress callback(index, total)
+ * @returns {Array} Results array
+ */
+async function bulkRemoveTags(credentials, tagNames, onProgress) {
+    var results = [];
+    var tagsToRemove = tagNames
+        .map(function(t) { return t.trim().toLowerCase(); })
+        .filter(Boolean);
+
+    for (var j = 0; j < credentials.length; j++) {
+        var cred = credentials[j];
+        try {
+            var existing = await getTagsForCredential(cred);
+            var updated = existing.filter(function(t) {
+                return tagsToRemove.indexOf(t) === -1;
+            });
+            await setTagsForCredential(cred, updated);
+            results.push({ credential: cred, success: true, tags: updated });
+        } catch (e) {
+            results.push({ credential: cred, success: false, error: e.message });
+        }
+        if (onProgress) onProgress(j + 1, credentials.length);
+    }
+    return results;
+}
+
+/**
  * Get all tag definitions (tag name → color mapping).
  */
 async function getAllTagDefinitions() {
@@ -2877,6 +2953,8 @@ module.exports = {
     updateTagDescription,
     deleteTagDefinitionWithCascade,
     hashToColor,
+    bulkAddTags,
+    bulkRemoveTags,
     // Credential Expiry (KVStore)
     ensureExpiryCollection,
     setExpiryForCredential,
