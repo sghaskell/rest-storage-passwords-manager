@@ -308,6 +308,7 @@ function CredentialTable({
         { key: 'owner', label: 'Owner' },
         { key: 'rotation', label: 'Rotation' },
         { key: 'tag', label: 'Tag' },
+        { key: 'modified', label: 'Modified' },
         { key: 'readRoles', label: 'Read Roles' },
         { key: 'writeRoles', label: 'Write Roles' },
         { key: 'isDuplicate', label: 'Duplicate' },
@@ -324,6 +325,7 @@ function CredentialTable({
         tags: 'tag',
         aclRead: 'readRoles',
         aclWrite: 'writeRoles',
+        mtime: 'modified',
     };
 
     // Check if a filter is active for a given field/value
@@ -434,9 +436,26 @@ function CredentialTable({
             );
         }
         if (col.key === 'mtime') {
-            return React.createElement(TableCell, {
-                style: { fontSize: '12px', color: 'var(--ct-text-muted)', whiteSpace: 'nowrap' }
-            }, formatMtime(cred.mtime));
+            var mtimeLabel = formatMtime(cred.mtime);
+            if (!mtimeLabel) return React.createElement(TableCell, null, '');
+            var mtimeActive = isFilterActive('modified', mtimeLabel);
+            return React.createElement(TableCell, null,
+                React.createElement('span', {
+                    onClick: function() { handleAddFilter('modified', mtimeLabel); },
+                    style: {
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: mtimeActive ? 'var(--ct-pill-modified-active-bg)' : 'var(--ct-pill-modified-bg)',
+                        color: mtimeActive ? 'var(--ct-pill-modified-active-color)' : 'var(--ct-pill-modified-color)',
+                        border: '1px solid ' + (mtimeActive ? 'var(--ct-pill-modified-active-border)' : 'var(--ct-pill-modified-border)'),
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                    }
+                }, mtimeLabel)
+            );
         }
         if (col.key === 'realm') {
             var baseRealm = cred.realm || '';
@@ -850,6 +869,8 @@ function CredentialTable({
         '  --ct-pill-read-active-bg: ' + (isDark ? '#6a1b9a' : '#e1bee7') + '; --ct-pill-read-active-color: ' + (isDark ? '#f3e5f5' : '#7b1fa2') + '; --ct-pill-read-active-border: ' + (isDark ? '#ba68c8' : '#7b1fa2') + ';',
         '  --ct-pill-write-bg: ' + (isDark ? '#b71c1c' : '#fce4ec') + '; --ct-pill-write-color: ' + (isDark ? '#f8bbd0' : '#c62828') + '; --ct-pill-write-border: ' + (isDark ? '#e57373' : '#f48fb1') + ';',
         '  --ct-pill-write-active-bg: ' + (isDark ? '#c62828' : '#f8bbd0') + '; --ct-pill-write-active-color: ' + (isDark ? '#fce4ec' : '#c62828') + '; --ct-pill-write-active-border: ' + (isDark ? '#ef9a9a' : '#c62828') + ';',
+        '  --ct-pill-modified-bg: ' + (isDark ? '#4a148c' : '#f3e5f5') + '; --ct-pill-modified-color: ' + (isDark ? '#ce93d8' : '#7b1fa2') + '; --ct-pill-modified-border: ' + (isDark ? '#7b1fa2' : '#ce93d8') + ';',
+        '  --ct-pill-modified-active-bg: ' + (isDark ? '#6a1b9a' : '#e1bee7') + '; --ct-pill-modified-active-color: ' + (isDark ? '#f3e5f5' : '#4a148c') + '; --ct-pill-modified-active-border: ' + (isDark ? '#ab47bc' : '#7b1fa2') + ';',
         '  --ct-filter-pill-bg: ' + (isDark ? '#0a2a66' : '#e3f2fd') + '; --ct-filter-pill-color: ' + (isDark ? '#90caf9' : '#1565c0') + '; --ct-filter-pill-border: ' + (isDark ? '#1e88e5' : '#90caf9') + ';',
         '  --ct-clear-text: ' + (isDark ? '#999' : '#888') + ';',
         '  --ct-empty-text: ' + (isDark ? '#aaa' : '#666') + ';',
