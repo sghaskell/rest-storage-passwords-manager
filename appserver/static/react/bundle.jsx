@@ -419,6 +419,11 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }
                     if (f.field === 'app' && (credential.app || '').toLowerCase() !== val) return false;
                     if (f.field === 'owner' && (credential.owner || '').toLowerCase() !== val) return false;
+                    if (f.field === 'expiry') {
+                        var _expDate = credential.expiryDate || '';
+                        if (_expDate !== val) return false;
+                    }
+                    if (f.field === 'rotation' && (credential.rotationStatus || 'none').toLowerCase() !== val) return false;
                     if (f.field === 'readRoles' && aclRead.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                     if (f.field === 'writeRoles' && aclWrite.split(',').map(function(r){return r.trim();}).indexOf(val) === -1) return false;
                     if (f.field === 'modified' && mtime !== val) return false;
