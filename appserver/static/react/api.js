@@ -1397,16 +1397,36 @@ async function rotatePasswords(selectedRows, options) {
 
         if (expiryStrategy === 'extend-original' && credExpiryDate) {
             // Compute original period: expiryDate - mtime
+            // Splunk mtime is epoch seconds (e.g. "1717427890.123456")
             var mtime = cred.mtime || '';
             var expiryDateParsed = new Date(credExpiryDate + 'T00:00:00');
-            var mtimeParsed = new Date(mtime);
-            if (!isNaN(expiryDateParsed) && !isNaN(mtimeParsed)) {
+            var mtimeParsed = null;
+            if (mtime) {
+                var mtimeNum = parseFloat(mtime);
+                if (!isNaN(mtimeNum) && mtimeNum > 946684800) {
+                    // Epoch seconds — convert to milliseconds
+                    mtimeParsed = new Date(mtimeNum * 1000);
+                } else {
+                    // Try as-is (ISO format or milliseconds)
+                    mtimeParsed = new Date(mtime);
+                    if (isNaN(mtimeParsed.getTime())) {
+                        mtimeParsed = null;
+                    }
+                }
+            }
+            if (!isNaN(expiryDateParsed.getTime()) && mtimeParsed && !isNaN(mtimeParsed.getTime())) {
                 var originalMs = expiryDateParsed.getTime() - mtimeParsed.getTime();
                 var originalDays = Math.max(1, Math.round(originalMs / 86400000));
                 var today = new Date();
                 today.setHours(0, 0, 0, 0);
                 var newExpiry = new Date(today.getTime() + originalDays * 86400000);
                 newExpiryDate = newExpiry.toISOString().split('T')[0];
+            } else {
+                // Fallback: mtime unavailable — default to 90 days from now
+                var todayFallback = new Date();
+                todayFallback.setHours(0, 0, 0, 0);
+                var newExpiryFallback = new Date(todayFallback.getTime() + 90 * 86400000);
+                newExpiryDate = newExpiryFallback.toISOString().split('T')[0];
             }
         } else if (expiryStrategy === 'custom' && customExpiryDate) {
             newExpiryDate = customExpiryDate;

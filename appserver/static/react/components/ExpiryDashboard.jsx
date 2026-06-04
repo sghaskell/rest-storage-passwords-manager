@@ -203,6 +203,7 @@ function ExpiryDashboard({
     onRefresh,
     onRotate,
     onRotateBulk,
+    onRotationComplete,
 }) {
     const [autoRefresh, setAutoRefreshState] = React.useState(getAutoRefreshEnabled());
     const [autoRefreshInterval, setAutoRefreshIntervalState] = React.useState(getAutoRefreshInterval());
@@ -231,6 +232,11 @@ function ExpiryDashboard({
     }
 
     // Toggle row selection
+
+    // Clear row selection after rotation
+    function clearSelection() {
+        setSelectedRows([]);
+    }
     function handleToggleSelect(cred) {
         setSelectedRows(function(prev) {
             var idx = prev.findIndex(function(r) { return credKey(r) === credKey(cred); });
@@ -576,7 +582,7 @@ function ExpiryDashboard({
 
         // Rotate Overdue button — only render if onRotateBulk is provided
         onRotateBulk && stats.overdue + stats.dueSoon > 0 ? React.createElement(Button, {
-            onClick: onRotateBulk,
+            onClick: function() { onRotateBulk(selectedRows, clearSelection); },
             appearance: 'subtle',
             icon: React.createElement(ArrowClockwise, null),
             children: 'Rotate ' + (selectedRows.length > 0 ? 'Selected (' + selectedRows.length + ')' : 'Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')')

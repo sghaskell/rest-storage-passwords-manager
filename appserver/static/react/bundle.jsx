@@ -1930,6 +1930,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
         // Rotation modal state
         var [rotationOpen, setRotationOpen] = React.useState(false);
         var [rotationCreds, setRotationCreds] = React.useState([]);
+        var clearSelectionRef = React.useRef(null);
 
         // Reload credentials with full enrichment
         async function reloadCredentials() {
@@ -2028,22 +2029,25 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     setRotationCreds([cred]);
                     setRotationOpen(true);
                 },
-                onRotateBulk: function(selectedRows) {
+                onRotateBulk: function(selectedRows, clearSelection) {
                     var toRotate = selectedRows && selectedRows.length > 0 ? selectedRows :
                         credentials.filter(function(c) {
                             return c.rotationStatus === 'overdue' || c.rotationStatus === 'due-soon';
                         });
                     if (toRotate.length > 0) {
                         setRotationCreds(toRotate);
+                        clearSelectionRef.current = clearSelection;
                         setRotationOpen(true);
                     }
                 },
                 onRefresh: reloadCredentials,
+                onRotationComplete: function() { }
             }),
             rotationOpen && React.createElement(PasswordRotationModal, {
                 selectedRows: rotationCreds,
                 isOpen: rotationOpen,
                 onClose: function() {
+                    if (clearSelectionRef.current) clearSelectionRef.current();
                     setRotationOpen(false);
                     setRotationCreds([]);
                 },
