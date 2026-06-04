@@ -438,10 +438,11 @@ function CredentialTable({
         if (col.key === 'mtime') {
             var mtimeLabel = formatMtime(cred.mtime);
             if (!mtimeLabel) return React.createElement(TableCell, null, '');
-            var mtimeActive = isFilterActive('modified', mtimeLabel);
+            var mtimeRaw = String(cred.mtime || '');
+            var mtimeActive = isFilterActive('modified', mtimeRaw);
             return React.createElement(TableCell, null,
                 React.createElement('span', {
-                    onClick: function() { handleAddFilter('modified', mtimeLabel); },
+                    onClick: function() { handleAddFilter('modified', mtimeRaw); },
                     style: {
                         display: 'inline-block',
                         padding: '2px 8px',
@@ -813,7 +814,7 @@ function CredentialTable({
                         whiteSpace: 'nowrap',
                     }
                 },
-                React.createElement('span', null, (fieldLabel ? fieldLabel.label : f.field) + ': ' + f.value),
+                React.createElement('span', null, (fieldLabel ? fieldLabel.label : f.field) + ': ' + (f.field === 'modified' ? formatMtime(Number(f.value)) : f.value)),
                 React.createElement(
                     'span',
                     {
