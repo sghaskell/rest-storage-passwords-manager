@@ -7,6 +7,7 @@
  */
 
 const React = require('react');
+var { isDarkTheme } = require('../utils/theme');
 
 // Splunk design system imports
 var TableMod = require('@splunk/react-ui/Table');
@@ -825,10 +826,7 @@ function CredentialTable({
     ) : null;
 
     // Detect dark theme at render time — ThemeAwareApp syncs .dark-theme to document.documentElement
-    var isDark = document.documentElement.classList.contains('dark-theme') ||
-        document.documentElement.classList.contains('theme-dark') ||
-        document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (document.body && document.body.classList.contains('dark-theme'));
+    var isDark = isDarkTheme();
 
     // Inject theme-aware CSS custom properties — inline variables so they resolve at render time
     var themeStyles = React.createElement('style', null,
