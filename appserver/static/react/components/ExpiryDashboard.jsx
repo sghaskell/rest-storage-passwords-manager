@@ -3,20 +3,51 @@
  *
  * Stats bar with 4 cards (total/overdue/due-soon/ok), sortable table with days
  * remaining indicator, color-coded rows, auto-refresh, and threshold slider.
+ * Uses @splunk/react-ui Table, Paginator, Button, and Switch components.
  */
 
 const React = require('react');
-const ButtonMod = require('@splunk/react-ui/Button');
+
+// Splunk design system imports
+var ButtonMod = require('@splunk/react-ui/Button');
 var Button = ButtonMod.default;
-const SwitchMod = require('@splunk/react-ui/Switch');
+var SwitchMod = require('@splunk/react-ui/Switch');
 var Switch = SwitchMod.default;
+var TableMod = require('@splunk/react-ui/Table');
+var Table = TableMod.default;
+var TableHead = TableMod.Head;
+var TableBody = TableMod.Body;
+var TableCell = TableMod.Cell;
+var TableRow = TableMod.Row;
+var TableHeadCell = TableMod.HeadCell;
+var PaginatorMod = require('@splunk/react-ui/Paginator');
+var Paginator = PaginatorMod.default;
+
+// Splunk icons
+var ArrowLeft = require('@splunk/react-icons/ArrowLeft').default;
+var ArrowClockwise = require('@splunk/react-icons/ArrowClockwise').default;
+var Cog = require('@splunk/react-icons/Cog').default;
+
 const API = require('../api');
+var { isDarkTheme } = require('../utils/theme');
+
+// ─── Column definitions ─────────────────────────────────────────────────────
+var COLUMNS = [
+    { key: 'name',            label: 'Username',       sortable: true  },
+    { key: 'realm',           label: 'Realm',          sortable: true  },
+    { key: 'expiryDate',      label: 'Expiry Date',    sortable: true  },
+    { key: 'daysRemaining',   label: 'Days Remaining', sortable: false },
+    { key: 'rotationStatus',  label: 'Status',         sortable: true  },
+    { key: 'actions',         label: 'Actions',        sortable: false }
+];
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const AUTO_REFRESH_KEY = 'expiry-auto-refresh-enabled';
 const AUTO_REFRESH_INTERVAL_KEY = 'expiry-auto-refresh-interval';
+const ROWS_PER_PAGE_KEY = 'expiry-dashboard-rows-per-page';
 const DEFAULT_AUTO_REFRESH = true;
 const DEFAULT_AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_ROWS_PER_PAGE = 10;
 
 // ─── Color palette (matches CredentialTable rotation colors) ─────────────────
 var STATUS_COLORS = {
@@ -77,6 +108,87 @@ function formatDateShort(dateStr) {
     return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
 }
 
+function loadRowsPerPage() {
+    try {
+        var stored = localStorage.getItem(ROWS_PER_PAGE_KEY);
+        if (stored) {
+            var parsed = parseInt(stored, 10);
+            if ([10, 25, 50].indexOf(parsed) !== -1) return parsed;
+        }
+    } catch (e) {}
+    return DEFAULT_ROWS_PER_PAGE;
+}
+
+function saveRowsPerPage(count) {
+    try { localStorage.setItem(ROWS_PER_PAGE_KEY, String(count)); } catch (e) {}
+}
+
+// ─── Sort helper ──────────────────────────────────────────────────────────────
+
+function compareCreds(a, b, key, direction) {
+    var modifier = direction === 'asc' ? 1 : -1;
+    if (key === 'daysRemaining') {
+        // Sort by numeric daysRemaining, null at bottom
+        var aVal = a.daysRemaining;
+        var bVal = b.daysRemaining;
+        if (aVal === null && bVal === null) return 0;
+        if (aVal === null) return modifier;
+        if (bVal === null) return -modifier;
+        return (aVal - bVal) * modifier;
+    }
+    if (key === 'expiryDate') {
+        // Credentials with expiry first (soonest), none at bottom
+        var aHas = !!a.expiryDate;
+        var bHas = !!b.expiryDate;
+        if (aHas && !bHas) return -1 * modifier;
+        if (!aHas && bHas) return 1 * modifier;
+        if (!aHas && !bHas) {
+            // No expiry — sort alphabetically by name
+            var aN = (a.name || '').toLowerCase();
+            var bN = (b.name || '').toLowerCase();
+            if (aN < bN) return -1 * modifier;
+            if (aN > bN) return 1 * modifier;
+            return 0;
+        }
+        var aD = (a.expiryDate || '').toString();
+        var bD = (b.expiryDate || '').toString();
+        if (aD < bD) return -1 * modifier;
+        if (aD > bD) return 1 * modifier;
+        return 0;
+    }
+    if (key === 'rotationStatus') {
+        // overdue first, then due-soon, then ok, then none
+        // Secondary sort: within same status, sort by expiryDate (soonest first)
+        var order = { overdue: 0, 'due-soon': 1, ok: 2, none: 3 };
+        var aO = order[a.rotationStatus] !== undefined ? order[a.rotationStatus] : 3;
+        var bO = order[b.rotationStatus] !== undefined ? order[b.rotationStatus] : 3;
+        if (aO < bO) return -1 * modifier;
+        if (aO > bO) return 1 * modifier;
+        // Same status — secondary sort by expiryDate (ascending, nulls last)
+        var aHasExpiry = !!a.expiryDate;
+        var bHasExpiry = b.expiryDate != null;
+        if (aHasExpiry && !bHasExpiry) return -1;
+        if (!aHasExpiry && bHasExpiry) return 1;
+        if (!aHasExpiry && !bHasExpiry) {
+            var aN2 = (a.name || '').toLowerCase();
+            var bN2 = (b.name || '').toLowerCase();
+            if (aN2 < bN2) return -1;
+            if (aN2 > bN2) return 1;
+            return 0;
+        }
+        var aDate = (a.expiryDate || '').toString();
+        var bDate = (b.expiryDate || '').toString();
+        if (aDate < bDate) return -1;
+        if (aDate > bDate) return 1;
+        return 0;
+    }
+    var aValue = (a[key] || '').toString();
+    var bValue = (b[key] || '').toString();
+    if (aValue < bValue) return -1 * modifier;
+    if (aValue > bValue) return 1 * modifier;
+    return 0;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 function ExpiryDashboard({
@@ -93,6 +205,23 @@ function ExpiryDashboard({
     const [lastRefresh, setLastRefresh] = React.useState(Date.now());
     const [refreshing, setRefreshing] = React.useState(false);
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = React.useState(1);
+    const [rowsPerPage, setRowsPerPage] = React.useState(loadRowsPerPage);
+
+    // Sorting state — default to expiryDate desc (soonest first)
+    const [sortConfig, setSortConfig] = React.useState({ key: 'expiryDate', direction: 'asc' });
+
+    // Persist rowsPerPage
+    React.useEffect(function() {
+        saveRowsPerPage(rowsPerPage);
+    }, [rowsPerPage]);
+
+    // Reset page when threshold changes (reclassifies data)
+    React.useEffect(function() {
+        setCurrentPage(1);
+    }, [thresholdDays]);
+
     // Re-classify credentials using current threshold
     const classifiedCreds = React.useMemo(function() {
         return credentials.map(function(cred) {
@@ -106,15 +235,22 @@ function ExpiryDashboard({
         });
     }, [credentials, thresholdDays]);
 
-    // Sort: soonest first, none at bottom
+    // Sort credentials by sortConfig
     const sortedCreds = React.useMemo(function() {
-        var withExpiry = classifiedCreds.filter(function(c) { return c.expiryDate; });
-        var none = classifiedCreds.filter(function(c) { return !c.expiryDate; });
-        withExpiry.sort(function(a, b) {
-            return (a.expiryDate || '').localeCompare(b.expiryDate || '');
+        var key = sortConfig.key;
+        var direction = sortConfig.direction;
+        return [...classifiedCreds].sort(function(a, b) {
+            return compareCreds(a, b, key, direction);
         });
-        return withExpiry.concat(none);
-    }, [classifiedCreds]);
+    }, [classifiedCreds, sortConfig.key, sortConfig.direction]);
+
+    // Paginate credentials
+    const paginatedCreds = React.useMemo(function() {
+        var startIndex = (currentPage - 1) * rowsPerPage;
+        return sortedCreds.slice(startIndex, startIndex + rowsPerPage);
+    }, [sortedCreds, currentPage, rowsPerPage]);
+
+    const totalPages = Math.ceil(sortedCreds.length / rowsPerPage);
 
     // Stats
     const stats = React.useMemo(function() {
@@ -190,11 +326,22 @@ function ExpiryDashboard({
         });
     }
 
+    // Sort handlers
+    function handleSort(key) {
+        var direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key: key, direction: direction });
+    }
+
+    function getSortIndicator(key) {
+        if (sortConfig.key !== key) return '\u2195';
+        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
+    }
+
     // Dark theme detection
-    var isDark = document.documentElement.classList.contains('dark-theme') ||
-        document.documentElement.classList.contains('theme-dark') ||
-        document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (document.body && document.body.classList.contains('dark-theme'));
+    var isDark = isDarkTheme();
 
     // Inline theme variables
     var themeCSS = React.createElement('style', null,
@@ -232,7 +379,8 @@ function ExpiryDashboard({
         onNavigateToTable ? React.createElement(Button, {
             onClick: onNavigateToTable,
             appearance: 'subtle',
-            children: '\u2190 Credentials Table'
+            icon: React.createElement(ArrowLeft, null),
+            children: 'Credentials Table'
         }) : null,
 
         // Refresh + timestamp
@@ -242,27 +390,19 @@ function ExpiryDashboard({
             React.createElement(Button, {
                 onClick: handleRefresh,
                 appearance: 'subtle',
-                children: React.createElement('span', {
+                icon: React.createElement(ArrowClockwise, null),
+                children: 'Refresh' + (refreshing ? ' ' + React.createElement('span', {
                     style: {
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
+                        display: 'inline-block',
+                        width: '10px',
+                        height: '10px',
+                        border: '2px solid var(--ed-text-muted)',
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 0.6s linear infinite',
+                        verticalAlign: 'middle',
                     }
-                },
-                    '\u21bb',
-                    'Refresh',
-                    refreshing && React.createElement('span', {
-                        style: {
-                            display: 'inline-block',
-                            width: '10px',
-                            height: '10px',
-                            border: '2px solid var(--ed-text-muted)',
-                            borderTopColor: 'transparent',
-                            borderRadius: '50%',
-                            animation: 'spin 0.6s linear infinite',
-                        }
-                    })
-                )
+                }) : '')
             }),
             React.createElement('span', {
                 style: {
@@ -346,18 +486,48 @@ function ExpiryDashboard({
             }, thresholdDays + 'd')
         ),
 
+        // Rows per page selector
+        React.createElement('strong', {
+            style: { display: 'flex', alignItems: 'center', height: '28px', fontSize: '13px' }
+        }, 'Rows:'),
+        React.createElement('select', {
+            value: rowsPerPage,
+            onChange: function(e) { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); },
+            style: {
+                padding: '0.25rem 0.5rem',
+                border: '1px solid var(--ed-border)',
+                borderRadius: '4px',
+                fontSize: '13px',
+                height: '28px',
+                boxSizing: 'border-box',
+            }
+        },
+            React.createElement('option', { value: 10 }, '10'),
+            React.createElement('option', { value: 25 }, '25'),
+            React.createElement('option', { value: 50 }, '50')
+        ),
+
+        // Compact page control in toolbar
+        totalPages > 1 ? React.createElement(Paginator.PageControl, {
+            current: currentPage,
+            totalPages: totalPages,
+            onChange: function(event, data) { setCurrentPage(data.page); }
+        }) : null,
+
         // Alert config button — only render if onOpenAlertConfig is provided
         onOpenAlertConfig ? React.createElement(Button, {
             onClick: onOpenAlertConfig,
             appearance: 'subtle',
-            children: '\u2699 Alert Settings'
+            icon: React.createElement(Cog, null),
+            children: 'Alert Settings'
         }) : null,
 
         // Rotate Overdue button — only render if onRotateBulk is provided
         onRotateBulk && stats.overdue + stats.dueSoon > 0 ? React.createElement(Button, {
             onClick: onRotateBulk,
             appearance: 'subtle',
-            children: '\u21bb Rotate Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')'
+            icon: React.createElement(ArrowClockwise, null),
+            children: 'Rotate Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')'
         }) : null
     );
 
@@ -398,176 +568,184 @@ function ExpiryDashboard({
     );
 
     // ─── Table ────────────────────────────────────────────────────────────
-    var tableHeader = React.createElement('div', {
-        style: {
-            display: 'grid',
-            gridTemplateColumns: '1fr 1.2fr 1fr 1fr 100px 120px',
-            padding: '0.5rem 0.75rem',
-            fontWeight: '600',
-            fontSize: '12px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: 'var(--ed-header-color)',
-            backgroundColor: 'var(--ed-header-bg)',
-            borderBottom: '1px solid var(--ed-header-border)',
+
+    // Build header cells with sort indicators
+    var headerCells = COLUMNS.map(function(col) {
+        if (col.sortable) {
+            return React.createElement(TableHeadCell, {
+                key: col.key,
+                onClick: function() { handleSort(col.key); },
+                appearClickable: sortConfig.key === col.key
+            }, col.label + ' ', getSortIndicator(col.key));
         }
-    },
-        React.createElement('span', null, 'Username'),
-        React.createElement('span', null, 'Realm'),
-        React.createElement('span', null, 'Expiry Date'),
-        React.createElement('span', null, 'Days Remaining'),
-        React.createElement('span', null, 'Status'),
-        React.createElement('span', null, 'Actions')
-    );
-
-    var tableRows = sortedCreds.map(function(cred, i) {
-        var status = cred.rotationStatus;
-        var rowColor = getStatusColor(status);
-        var daysRem = cred.daysRemaining;
-        var displayRealm = cred.realm || '—';
-
-        // Days remaining display
-        var daysDisplay;
-        if (daysRem === null) {
-            daysDisplay = '—';
-        } else if (daysRem < 0) {
-            daysDisplay = daysRem + ' days overdue';
-        } else if (daysRem === 0) {
-            daysDisplay = 'Today';
-        } else {
-            daysDisplay = daysRem + ' days';
-        }
-
-        // Days pill color
-        var daysPillColor = daysRem !== null && daysRem < 0 ? '#d32f2f' :
-                           daysRem !== null && daysRem <= thresholdDays ? '#f59e0b' :
-                           daysRem !== null ? '#0d8469' : '#9e9e9e';
-
-        return React.createElement('div', {
-            key: cred.stanzaKey || (cred.name + ':' + (cred.realm || '') + ':' + i),
-            style: {
-                display: 'grid',
-                gridTemplateColumns: '1fr 1.2fr 1fr 1fr 100px 120px',
-                alignItems: 'center',
-                padding: '0.5rem 0.75rem',
-                fontSize: '13px',
-                borderBottom: '1px solid var(--ed-border)',
-                backgroundColor: i % 2 === 0 ? 'transparent' : 'var(--ed-card-bg)',
-                color: 'var(--ed-text)',
-                borderLeft: '3px solid ' + rowColor,
-            }
-        },
-            // Username — pill
-            React.createElement('span', {
-                style: {
-                    justifySelf: 'start',
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    backgroundColor: isDark ? '#1a237e' : '#e8eaf6',
-                    color: isDark ? '#c5cae9' : '#283593',
-                    border: '1px solid ' + (isDark ? '#5c6bc0' : '#9fa8da'),
-                    whiteSpace: 'nowrap',
-                }
-            }, cred.name || '—'),
-            // Realm — pill
-            React.createElement('span', {
-                style: {
-                    justifySelf: 'start',
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    backgroundColor: isDark ? '#37474f' : '#f5f5f5',
-                    color: isDark ? '#b0bec5' : '#757575',
-                    border: '1px solid ' + (isDark ? '#546e7a' : '#e0e0e0'),
-                    whiteSpace: 'nowrap',
-                }
-            }, displayRealm),
-            // Expiry Date — pill
-            React.createElement('span', {
-                style: {
-                    justifySelf: 'start',
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    backgroundColor: cred.expiryDate ? (isDark ? rowColor + '22' : rowColor + '15') : (isDark ? '#9e9e9e22' : '#9e9e9e22'),
-                    color: cred.expiryDate ? rowColor : '#9e9e9e',
-                    border: '1px solid ' + (cred.expiryDate ? rowColor + '40' : (isDark ? '#9e9e9e88' : '#9e9e9e55')),
-                    whiteSpace: 'nowrap',
-                }
-            }, cred.expiryDate ? formatDateShort(cred.expiryDate) : '—'),
-            // Days Remaining — pill
-            React.createElement('span', {
-                style: {
-                    justifySelf: 'start',
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: daysRem !== null && daysRem <= thresholdDays ? '700' : '600',
-                    backgroundColor: isDark ? daysPillColor + '22' : daysPillColor + '15',
-                    color: daysPillColor,
-                    border: '1px solid ' + daysPillColor + '40',
-                    whiteSpace: 'nowrap',
-                }
-            }, daysDisplay),
-            // Status badge
-            React.createElement('span', {
-                style: {
-                    justifySelf: 'start',
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    backgroundColor: rowColor + (isDark ? '33' : '22'),
-                    color: rowColor,
-                    border: '1px solid ' + rowColor + '40',
-                    whiteSpace: 'nowrap',
-                }
-            }, status.charAt(0).toUpperCase() + status.slice(1)),
-            // Actions — Rotate button for overdue and due-soon credentials
-            onRotate && (status === 'overdue' || status === 'due-soon')
-                ? React.createElement(Button, {
-                    onClick: function() { onRotate(cred); },
-                    appearance: status === 'overdue' ? 'destructive' : 'subtle',
-                    children: '\u21bb Rotate'
-                })
-                : React.createElement('span', { style: { visibility: 'hidden' } }, '-')
-        );
+        return React.createElement(TableHeadCell, { key: col.key }, col.label);
     });
+
+    // Build data rows
+    var dataRows;
+    if (paginatedCreds.length > 0) {
+        dataRows = paginatedCreds.map(function(cred, i) {
+            var status = cred.rotationStatus;
+            var rowColor = getStatusColor(status);
+            var daysRem = cred.daysRemaining;
+            var displayRealm = cred.realm || '\u2014';
+
+            // Days remaining display
+            var daysDisplay;
+            if (daysRem === null) {
+                daysDisplay = '\u2014';
+            } else if (daysRem < 0) {
+                daysDisplay = daysRem + ' days overdue';
+            } else if (daysRem === 0) {
+                daysDisplay = 'Today';
+            } else {
+                daysDisplay = daysRem + ' days';
+            }
+
+            // Days pill color
+            var daysPillColor = daysRem !== null && daysRem < 0 ? '#d32f2f' :
+                               daysRem !== null && daysRem <= thresholdDays ? '#f59e0b' :
+                               daysRem !== null ? '#0d8469' : '#9e9e9e';
+
+            // Status label
+            var statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+
+return React.createElement(TableRow, {
+                key: cred.stanzaKey || (cred.name + ':' + (cred.realm || '') + ':' + i),
+                style: {
+                    borderLeft: '3px solid ' + rowColor,
+                }
+            },
+                // Username — pill
+                React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: isDark ? '#1a237e' : '#e8eaf6',
+                            color: isDark ? '#c5cae9' : '#283593',
+                            border: '1px solid ' + (isDark ? '#5c6bc0' : '#9fa8da'),
+                            whiteSpace: 'nowrap',
+                        }
+                    }, cred.name || '\u2014')
+                ),
+                // Realm — pill
+                React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: isDark ? '#37474f' : '#f5f5f5',
+                            color: isDark ? '#b0bec5' : '#757575',
+                            border: '1px solid ' + (isDark ? '#546e7a' : '#e0e0e0'),
+                            whiteSpace: 'nowrap',
+                        }
+                    }, displayRealm)
+                ),
+                // Expiry Date — pill
+                React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: cred.expiryDate ? (isDark ? rowColor + '22' : rowColor + '15') : (isDark ? '#9e9e9e22' : '#9e9e9e22'),
+                            color: cred.expiryDate ? rowColor : '#9e9e9e',
+                            border: '1px solid ' + (cred.expiryDate ? rowColor + '40' : (isDark ? '#9e9e9e88' : '#9e9e9e55')),
+                            whiteSpace: 'nowrap',
+                        }
+                    }, cred.expiryDate ? formatDateShort(cred.expiryDate) : '\u2014')
+                ),
+                // Days Remaining — pill
+                React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: daysRem !== null && daysRem <= thresholdDays ? '700' : '600',
+                            backgroundColor: isDark ? daysPillColor + '22' : daysPillColor + '15',
+                            color: daysPillColor,
+                            border: '1px solid ' + daysPillColor + '40',
+                            whiteSpace: 'nowrap',
+                        }
+                    }, daysDisplay)
+                ),
+                // Status badge
+                React.createElement(TableCell, null,
+                    React.createElement('span', {
+                        style: {
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: rowColor + (isDark ? '33' : '22'),
+                            color: rowColor,
+                            border: '1px solid ' + rowColor + '40',
+                            whiteSpace: 'nowrap',
+                        }
+                    }, statusLabel)
+                ),
+                // Actions — Rotate button for overdue and due-soon credentials
+                React.createElement(TableCell, null,
+                    onRotate && (status === 'overdue' || status === 'due-soon')
+                        ? React.createElement(Button, {
+                            onClick: function() { onRotate(cred); },
+                            appearance: status === 'overdue' ? 'destructive' : 'subtle',
+                            icon: React.createElement(ArrowClockwise, null),
+                            children: 'Rotate'
+                        })
+                        : React.createElement('span', { style: { visibility: 'hidden' } }, '-')
+                )
+            );
+        });
+    } else {
+        dataRows = [React.createElement(TableRow, { key: 'empty' },
+            React.createElement(TableCell, { colSpan: COLUMNS.length }, 'No credentials found')
+        )];
+    }
 
     // ─── Render ───────────────────────────────────────────────────────────
     return React.createElement('div', { className: 'expiry-dashboard' },
         themeCSS,
         toolbar,
         statsCards,
-        React.createElement('div', {
-            style: {
-                border: '1px solid var(--ed-border)',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                backgroundColor: 'var(--ed-bg)',
-            }
+
+        // Splunk Table
+        React.createElement(Table, {
+            outerStyle: { width: '100%', marginBottom: '1rem' },
+            tableStyle: { width: '100%' }
         },
-            tableHeader,
-            tableRows.length > 0
-                ? React.createElement(React.Fragment, null, ...tableRows)
-                : React.createElement('div', {
-                    style: {
-                        textAlign: 'center',
-                        padding: '2rem',
-                        color: 'var(--ed-text-muted)',
-                    }
-                }, 'No credentials found')
+            React.createElement(TableHead, null, ...headerCells),
+            React.createElement(TableBody, { key: currentPage }, ...dataRows)
         ),
-        // No timestamp here — it's in the toolbar now
+
+        // Row count + Pagination
+        React.createElement(
+            'div',
+            { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' } },
+            React.createElement('span', { style: { fontSize: '12px', color: 'var(--ed-text-muted)' } },
+                sortedCreds.length === 0
+                    ? 'No credentials'
+                    : 'Showing ' + ((currentPage - 1) * rowsPerPage + 1) + '-' + Math.min(currentPage * rowsPerPage, sortedCreds.length) + ' of ' + sortedCreds.length + ' credential' + (sortedCreds.length !== 1 ? 's' : '')
+            ),
+            totalPages > 1 ? React.createElement(Paginator, {
+                current: currentPage,
+                totalPages: totalPages,
+                numPageLinks: totalPages,
+                onChange: function(event, data) { setCurrentPage(data.page); }
+            }) : null
+        )
     );
 }
 
