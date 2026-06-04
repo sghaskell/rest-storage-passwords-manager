@@ -534,6 +534,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                 setData(prev => ({ ...prev, credentials: enriched }));
                 // Clear duplicate cache since credentials changed
                 API.clearDuplicateCache();
+                return enriched;
             } catch (err) {
                 console.error('Error loading credentials:', err);
                 setData(prev => ({ ...prev, error: getErrorMessage(err) }));
@@ -635,7 +636,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }
                 }
 
-                await loadCredentials();
+                var enrichedCredentials = await loadCredentials();
                 setModals(prev => ({ ...prev, form: false }));
                 setEditingCredential(null);
                 setCopyCredential(null);
@@ -1045,7 +1046,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             null,
                             normalizeRoles(c.aclRead),
                             normalizeRoles(c.aclWrite),
-                            c.owner || undefined,
+                            c.namespaceOwner || c.owner || undefined,
                             undefined,
                             c.sharing || 'app',
                             c.app || 'search'
@@ -1062,7 +1063,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     }
                 });
 
-                await loadCredentials();
+                var enrichedCredentials = await loadCredentials();
 
                 // Save tags for credentials that have _bulkTags.
                 // Tags are ADDED to existing tags (merge). Reload credentials first so
@@ -1076,11 +1077,11 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             name: c.name,
                             realm: c.realm || '',
                             app: c.app || 'search',
-                            namespaceOwner: c.owner || (c.namespaceOwner || 'nobody'),
+                            namespaceOwner: c.namespaceOwner || c.owner || 'nobody',
                             sharing: c.sharing || 'app',
                         });
                         // Find matching credential in reloaded data by key
-                        var reloaded = data.credentials.find(function(rc) {
+                        var reloaded = enrichedCredentials.find(function(rc) {
                             return API.tagCredKey(rc) === newKey;
                         });
                         if (!reloaded) {
@@ -1110,7 +1111,7 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                             name: c.name,
                             realm: c.realm || '',
                             app: c.app || 'search',
-                            namespaceOwner: c.owner || (c.namespaceOwner || 'nobody'),
+                            namespaceOwner: c.namespaceOwner || c.owner || 'nobody',
                             sharing: c.sharing || 'app',
                         };
                         if (c._bulkExpiry !== '') {
@@ -2027,12 +2028,13 @@ const PasswordRotationModal = require('./components/PasswordRotationModal');
                     setRotationCreds([cred]);
                     setRotationOpen(true);
                 },
-                onRotateBulk: function() {
-                    var overdueCreds = credentials.filter(function(c) {
-                        return c.rotationStatus === 'overdue' || c.rotationStatus === 'due-soon';
-                    });
-                    if (overdueCreds.length > 0) {
-                        setRotationCreds(overdueCreds);
+                onRotateBulk: function(selectedRows) {
+                    var toRotate = selectedRows && selectedRows.length > 0 ? selectedRows :
+                        credentials.filter(function(c) {
+                            return c.rotationStatus === 'overdue' || c.rotationStatus === 'due-soon';
+                        });
+                    if (toRotate.length > 0) {
+                        setRotationCreds(toRotate);
                         setRotationOpen(true);
                     }
                 },

@@ -26,7 +26,12 @@ var Paginator = PaginatorMod.default;
 // Splunk icons
 var ArrowLeft = require('@splunk/react-icons/ArrowLeft').default;
 var ArrowClockwise = require('@splunk/react-icons/ArrowClockwise').default;
+var ArrowDown = require('@splunk/react-icons/ArrowDown').default;
+var ArrowUp = require('@splunk/react-icons/ArrowUp').default;
+var ArrowUpDown = require('@splunk/react-icons/ArrowUpDown').default;
 var Cog = require('@splunk/react-icons/Cog').default;
+var CheckboxMod = require('@splunk/react-ui/Checkbox');
+var Checkbox = CheckboxMod.default;
 
 const API = require('../api');
 var { isDarkTheme } = require('../utils/theme');
@@ -212,6 +217,29 @@ function ExpiryDashboard({
     // Sorting state — default to expiryDate desc (soonest first)
     const [sortConfig, setSortConfig] = React.useState({ key: 'expiryDate', direction: 'asc' });
 
+    // Row selection — for bulk rotate of selected credentials
+    const [selectedRows, setSelectedRows] = React.useState([]);
+
+    // Credential row key
+    function credKey(cred) {
+        return (cred.name || '') + '|' + (cred.realm || '') + '|' + (cred.app || 'search');
+    }
+
+    // Check if a row is selected
+    function isSelected(cred) {
+        return selectedRows.some(function(r) { return credKey(r) === credKey(cred); });
+    }
+
+    // Toggle row selection
+    function handleToggleSelect(cred) {
+        setSelectedRows(function(prev) {
+            var idx = prev.findIndex(function(r) { return credKey(r) === credKey(cred); });
+            if (idx >= 0) return prev.filter(function(_, i) { return i !== idx; });
+            return prev.concat([cred]);
+        });
+    }
+
+
     // Persist rowsPerPage
     React.useEffect(function() {
         saveRowsPerPage(rowsPerPage);
@@ -249,6 +277,28 @@ function ExpiryDashboard({
         var startIndex = (currentPage - 1) * rowsPerPage;
         return sortedCreds.slice(startIndex, startIndex + rowsPerPage);
     }, [sortedCreds, currentPage, rowsPerPage]);
+    // Toggle select-all for visible page
+    function handlePageSelectAll() {
+        if (paginatedCreds.every(function(c) { return isSelected(c); })) {
+            setSelectedRows(function(prev) {
+                return prev.filter(function(r) {
+                    return !paginatedCreds.some(function(c) { return credKey(r) === credKey(c); });
+                });
+            });
+        } else {
+            setSelectedRows(function(prev) {
+                var newKeys = paginatedCreds.filter(function(c) {
+                    return !prev.some(function(r) { return credKey(r) === credKey(c); });
+                });
+                return prev.concat(newKeys);
+            });
+        }
+    }
+
+    // Determine rowSelection state for header checkbox
+    var someSelected = paginatedCreds.some(function(c) { return isSelected(c); });
+    var allSelected = paginatedCreds.length > 0 && paginatedCreds.every(function(c) { return isSelected(c); });
+    var rowSelectionState = allSelected ? 'all' : (someSelected ? 'some' : 'none');
 
     const totalPages = Math.ceil(sortedCreds.length / rowsPerPage);
 
@@ -336,8 +386,10 @@ function ExpiryDashboard({
     }
 
     function getSortIndicator(key) {
-        if (sortConfig.key !== key) return '\u2195';
-        return sortConfig.direction === 'asc' ? '\u2191' : '\u2193';
+        if (sortConfig.key !== key) return React.createElement(ArrowUpDown, { style: { verticalAlign: 'middle', width: '12px', height: '12px' } });
+        return sortConfig.direction === 'asc'
+            ? React.createElement(ArrowUp, { style: { verticalAlign: 'middle', width: '12px', height: '12px' } })
+            : React.createElement(ArrowDown, { style: { verticalAlign: 'middle', width: '12px', height: '12px' } });
     }
 
     // Dark theme detection
@@ -527,7 +579,7 @@ function ExpiryDashboard({
             onClick: onRotateBulk,
             appearance: 'subtle',
             icon: React.createElement(ArrowClockwise, null),
-            children: 'Rotate Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')'
+            children: 'Rotate ' + (selectedRows.length > 0 ? 'Selected (' + selectedRows.length + ')' : 'Overdue/Due-Soon (' + (stats.overdue + stats.dueSoon) + ')')
         }) : null
     );
 
@@ -612,6 +664,8 @@ function ExpiryDashboard({
 
 return React.createElement(TableRow, {
                 key: cred.stanzaKey || (cred.name + ':' + (cred.realm || '') + ':' + i),
+                selected: isSelected(cred),
+                onRequestToggle: function() { handleToggleSelect(cred); },
                 style: {
                     borderLeft: '3px solid ' + rowColor,
                 }
@@ -724,7 +778,9 @@ return React.createElement(TableRow, {
         // Splunk Table
         React.createElement(Table, {
             outerStyle: { width: '100%', marginBottom: '1rem' },
-            tableStyle: { width: '100%' }
+            tableStyle: { width: '100%' },
+            rowSelection: rowSelectionState,
+            onRequestToggleAllRows: handlePageSelectAll
         },
             React.createElement(TableHead, null, ...headerCells),
             React.createElement(TableBody, { key: currentPage }, ...dataRows)
