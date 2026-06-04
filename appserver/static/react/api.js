@@ -203,6 +203,11 @@ function flattenCredential(entry) {
         }
     }
 
+    // mtime (epoch seconds) may not be present — fall back to `updated` (ISO 8601)
+    var mtime = entry.mtime || '';
+    if (!mtime && entry.updated) {
+        mtime = (Math.floor(new Date(entry.updated).getTime() / 1000)).toString();
+    }
     return {
         name: content.username || '',
         realm: content.realm || '',
@@ -214,7 +219,7 @@ function flattenCredential(entry) {
         sharing: acl.sharing || 'app',
         stanzaKey: entry.name || '',
         editLink: (entry.links && entry.links.edit) || null,
-        mtime: entry.mtime || '',
+        mtime: mtime,
     };
 }
 
@@ -287,6 +292,11 @@ function flattenConfigEntry(entry) {
         }
     }
 
+    // mtime (epoch seconds) may not be present — fall back to `updated` (ISO 8601)
+    var mtime = entry.mtime || '';
+    if (!mtime && entry.updated) {
+        mtime = (Math.floor(new Date(entry.updated).getTime() / 1000)).toString();
+    }
     return {
         name: parsed.name,
         realm: parsed.realm,
@@ -299,7 +309,7 @@ function flattenConfigEntry(entry) {
         stanzaKey: fullName,
         editLink: (entry.links && entry.links.edit) || null,
         deletePath: (entry.links && entry.links.edit) ? entry.links.edit.replace(/\/edit$/, '') : null,
-        mtime: entry.mtime || '',
+        mtime: mtime,
     };
 }
 
