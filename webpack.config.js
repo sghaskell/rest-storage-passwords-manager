@@ -34,15 +34,15 @@ module.exports = (env, argv) => {
     externals: {
       'splunkjs/mvc/simplexml/ready!': 'splunkjs/mvc/simplexml/ready!',
     },
-    plugins: [
+    plugins: isProduction ? [
       new TerserPlugin({
         terserOptions: {
           compress: {
-            drop_console: true,
+            drop_console: false,
           },
         },
       }),
-    ],
+    ] : [],
     devServer: {
       static: {
         directory: path.join(__dirname, 'appserver/static/react'),

@@ -1,0 +1,16 @@
+<!--
+  tag_management.xml  –  React-based Splunk Dashboard for tag management
+-->
+<dashboard version="1.1" script="react/bundle.js" theme="dark">
+  <label>Tag Management</label>
+  
+  <row>
+    <panel>
+      <html>
+        <div id="tag-management-app">
+          <!-- React TagManagementDashboard component will be mounted here -->
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

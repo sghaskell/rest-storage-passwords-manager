@@ -4,6 +4,8 @@ node_modules/
 # Build artifacts
 appserver/static/react/bundle.js
 appserver/static/react/bundle.js.map
+static/react/bundle.js
+static/react/bundle.js.LICENSE.txt
 
 # Lock files
 pnpm-lock.yaml
